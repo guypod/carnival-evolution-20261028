@@ -2,6 +2,7 @@ import './style.css';
 import { applyTheme, bestScore, type CarnivalGame } from './carnival';
 import { registry } from './games';
 import { onEscapeKey } from './escape';
+import { boothScoresText } from './booth-scores';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
 
@@ -60,7 +61,7 @@ function renderMidway() {
     card.querySelector('h2')!.textContent = game?.name ?? 'Coming soon';
     card.querySelector('.description')!.textContent =
       game?.description ?? 'This booth is waiting for a game. Build one and it opens here.';
-    card.querySelector('.best')!.textContent = game ? bestText(game) : '';
+    card.querySelector('.best')!.textContent = game ? boothScoresText(game.id) : '';
     const link = card.querySelector<HTMLAnchorElement>('.play')!;
     link.hidden = !game;
     if (game) link.href = `#/play/${game.id}`;
