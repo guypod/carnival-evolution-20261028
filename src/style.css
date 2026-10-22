@@ -1,0 +1,265 @@
+/* Colours and fonts come from src/carnival/theme.ts via applyTheme(). */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-family);
+}
+
+a {
+  color: var(--color-accent);
+}
+
+.awning {
+  padding: 20px 16px 28px;
+  text-align: center;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-stripeA) 0 48px,
+    var(--color-stripeB) 48px 96px
+  );
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 80%,
+    95% 100%,
+    90% 80%,
+    85% 100%,
+    80% 80%,
+    75% 100%,
+    70% 80%,
+    65% 100%,
+    60% 80%,
+    55% 100%,
+    50% 80%,
+    45% 100%,
+    40% 80%,
+    35% 100%,
+    30% 80%,
+    25% 100%,
+    20% 80%,
+    15% 100%,
+    10% 80%,
+    5% 100%,
+    0 80%
+  );
+}
+
+.brand {
+  display: inline-block;
+  padding: 6px 18px;
+  border-radius: var(--radius);
+  background: var(--color-background);
+  color: var(--color-accent);
+  font-size: 28px;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+body[data-view='midway'] {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+body[data-view='midway'] main {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  padding: 0;
+}
+
+.midway {
+  position: absolute;
+  inset: 0;
+}
+
+.midway-map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.midway-help,
+.midway-guide,
+.midway-credit,
+.booth-card {
+  position: absolute;
+  margin: 0;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+}
+
+.midway-help {
+  bottom: 16px;
+  left: 16px;
+  max-width: 340px;
+  padding: 10px 14px;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.midway-credit {
+  top: 16px;
+  left: 16px;
+  padding: 6px 12px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.midway-credit a {
+  color: var(--color-accent);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.midway-credit a:hover,
+.midway-credit a:focus-visible {
+  text-decoration: underline;
+}
+
+kbd {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-weight: bold;
+}
+
+.midway-guide {
+  top: 16px;
+  right: 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.midway-guide h2 {
+  margin: 0 0 6px;
+  color: var(--color-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.midway-guide ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.midway-guide a {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 3px 0;
+  color: var(--color-text);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.midway-guide a:hover .name,
+.midway-guide a:focus-visible .name {
+  color: var(--color-accent);
+}
+
+.midway-guide .best {
+  color: var(--color-muted);
+  font-weight: normal;
+}
+
+.booth-card {
+  bottom: 16px;
+  left: 50%;
+  width: min(360px, calc(100% - 32px));
+  padding: 16px 20px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.booth-card[hidden] {
+  display: none;
+}
+
+.booth-card.closed {
+  border-color: var(--color-muted);
+  box-shadow: none;
+}
+
+.booth-card h2 {
+  margin: 0 0 6px;
+}
+
+.booth-card .description {
+  margin: 0 0 10px;
+  color: var(--color-muted);
+}
+
+.booth-card .best {
+  margin: 0 0 12px;
+  font-weight: bold;
+}
+
+.booth-card .best:empty {
+  display: none;
+}
+
+.play {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.play[hidden] {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .midway-help,
+  .midway-credit {
+    display: none;
+  }
+}
+
+.game-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px;
+  margin-bottom: 16px;
+}
+
+.game-header h1 {
+  margin: 0;
+}
+
+.game canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  cursor: crosshair;
+  touch-action: none;
+}
