@@ -1,6 +1,7 @@
 import './style.css';
 import { applyTheme, bestScore, type CarnivalGame } from './carnival';
 import { registry } from './games';
+import { onEscapeKey } from './escape';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
 
@@ -84,7 +85,12 @@ function renderGame(game: CarnivalGame) {
       <canvas></canvas>
     </section>`;
   app.querySelector('h1')!.textContent = game.name;
-  stop = game.start(app.querySelector('canvas')!);
+  const stopGame = game.start(app.querySelector('canvas')!);
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    stopGame();
+  };
 }
 
 function route() {
