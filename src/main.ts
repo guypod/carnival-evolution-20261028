@@ -20,6 +20,7 @@ function renderMidway() {
     <section class="midway">
       <canvas class="midway-map" aria-label="The carnival midway. Walk up to a booth to play its game."></canvas>
       <p class="midway-help">
+        Welcome to Guy's Carnival!<br />
         <kbd>WASD</kbd> or <kbd>arrows</kbd> to walk, or click where you want to go.
         <kbd>E</kbd> to play.
       </p>
