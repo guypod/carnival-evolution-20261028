@@ -1,0 +1,209 @@
+// The factory contract: the exact shape tessl.json must keep. Any change to an
+// approved action, a route's guards, its concurrency or its action fails the
+// check, so a change to the factory has to change this file too, in review.
+
+export const REPOSITORY_ID = 1430175635;
+export const OWNER_ID = 1106394;
+export const REVIEWER_ID = 325629464;
+
+const ENVIRONMENT = 'carnival-factory-lab-20261022-factory';
+const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
+
+const action = (name, timeout) => ({
+  skill: `${SKILL_PREFIX}${name}`,
+  environment: ENVIRONMENT,
+  agent: 'claude-code',
+  model: 'claude-opus-5-5',
+  timeout,
+});
+
+export const EXPECTED_ACTIONS = {
+  'implement-github-issue': action('implement-github-issue', '15m'),
+  shepherd: action('shepherd', '10m'),
+  'follow-ticket-changes': action('follow-ticket-changes', '5m'),
+};
+
+const tesslLabel = (path) => ({ [path]: { any: { equals: 'tessl' } } });
+const tesslPr = {
+  ...tesslLabel('event.pull_request.labels.*.name'),
+  'event.pull_request.head.ref': { matches: '^tessl/' },
+  'event.pull_request.head.repo.id': REPOSITORY_ID,
+};
+const repo = { 'event.repository.id': REPOSITORY_ID };
+const key = (template, extra = {}) => ({ ...extra, keys: [{ key: template, limit: 1 }] });
+const shepherdKey = (number) => key(`shepherd:{{ ${number} }}`, { debounce: '90s' });
+const followKey = (number) =>
+  key(`follow-ticket-changes:{{ event.repository.id }}#{{ ${number} }}`);
+const implementKey = key('implement:{{ event.repository.id }}#{{ event.issue.number }}');
+const follow = (change) => ({ use: 'follow-ticket-changes', inputs: { TICKET_CHANGE: change } });
+
+export const EXPECTED_TRIGGERS = {
+  'github-issue-labelled': {
+    on: ['github:issues.labeled'],
+    when: {
+      'event.label.name': 'tessl',
+      'event.sender.type': 'User',
+      'event.sender.id': OWNER_ID,
+      'event.issue.state': 'open',
+      ...repo,
+    },
+    concurrency: implementKey,
+    action: 'implement-github-issue',
+  },
+  'shepherd-pr-review': {
+    on: ['github:pull_request_review.submitted'],
+    when: { ...tesslPr, 'event.pull_request.state': 'open', 'event.sender.id': OWNER_ID, ...repo },
+    concurrency: shepherdKey('event.pull_request.number'),
+    action: 'shepherd',
+  },
+  'shepherd-pr-review-comment': {
+    on: ['github:pull_request_review_comment.created'],
+    when: { ...tesslPr, 'event.pull_request.state': 'open', 'event.sender.id': OWNER_ID, ...repo },
+    concurrency: shepherdKey('event.pull_request.number'),
+    action: 'shepherd',
+  },
+  'shepherd-pr-comment': {
+    on: ['github:issue_comment.created'],
+    when: {
+      isPullRequest: 'true',
+      ...tesslLabel('event.issue.labels.*.name'),
+      'event.issue.state': 'open',
+      'event.sender.id': OWNER_ID,
+      ...repo,
+    },
+    concurrency: shepherdKey('event.issue.number'),
+    action: 'shepherd',
+  },
+  'shepherd-checks-failed': {
+    on: ['github:check_run.completed'],
+    when: {
+      'event.check_run.pull_requests.0.number': { exists: true },
+      'event.check_run.pull_requests.0.head.repo.id': REPOSITORY_ID,
+      'event.check_run.check_suite.head_branch': { matches: '^tessl/' },
+      'event.check_run.conclusion': {
+        in: ['failure', 'timed_out', 'startup_failure', 'action_required'],
+      },
+      ...repo,
+    },
+    concurrency: shepherdKey('event.check_run.pull_requests.0.number'),
+    action: 'shepherd',
+  },
+  'shepherd-checks-passed': {
+    on: ['github:check_suite.completed'],
+    when: {
+      'event.check_suite.pull_requests.0.number': { exists: true },
+      'event.check_suite.pull_requests.0.head.repo.id': REPOSITORY_ID,
+      'event.check_suite.head_branch': { matches: '^tessl/' },
+      'event.check_suite.conclusion': 'success',
+      ...repo,
+    },
+    concurrency: shepherdKey('event.check_suite.pull_requests.0.number'),
+    action: 'shepherd',
+  },
+  'shepherd-pr-review-by-reviewer': {
+    on: ['github:pull_request_review.submitted'],
+    when: {
+      ...tesslPr,
+      'event.pull_request.state': 'open',
+      'event.sender.id': REVIEWER_ID,
+      ...repo,
+    },
+    concurrency: shepherdKey('event.pull_request.number'),
+    action: 'shepherd',
+  },
+  'follow-ticket-changes-pr-closed': {
+    on: ['github:pull_request.closed'],
+    when: {
+      ...tesslPr,
+      'event.sender.id': OWNER_ID,
+      'event.pull_request.state': 'closed',
+      ...repo,
+    },
+    concurrency: followKey('event.pull_request.number'),
+    action: follow('pr-closed'),
+  },
+  'follow-ticket-changes-github-taken-back': {
+    on: ['github:issues.unlabeled'],
+    // No issue state on purpose: taking an issue back must cancel work even
+    // after the issue is closed.
+    when: { 'event.label.name': 'tessl', 'event.sender.id': OWNER_ID, ...repo },
+    concurrency: followKey('event.issue.number'),
+    action: follow('taken-back'),
+  },
+  'follow-ticket-changes-github-ended': {
+    on: ['github:issues.closed'],
+    when: {
+      ...tesslLabel('event.issue.labels.*.name'),
+      'event.sender.id': OWNER_ID,
+      'event.issue.state': 'closed',
+      ...repo,
+    },
+    concurrency: followKey('event.issue.number'),
+    action: follow('issue-ended'),
+  },
+  'follow-ticket-changes-github-replied': {
+    on: ['github:issue_comment.created'],
+    when: {
+      isPullRequest: 'false',
+      'event.issue.state': 'open',
+      ...tesslLabel('event.issue.labels.*.name'),
+      'event.sender.id': OWNER_ID,
+      ...repo,
+    },
+    // Shares the implement lock, so a reply waits for a running implementation.
+    concurrency: implementKey,
+    action: follow('replied'),
+  },
+};
+
+/** Compare as data, ignoring object key order. */
+function sameData(a, b) {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => sameData(item, b[i]))
+    );
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((k) => Object.hasOwn(b, k) && sameData(a[k], b[k]))
+    );
+  }
+  return a === b;
+}
+
+function compareSet(label, actual, expected, errors) {
+  if (actual === null || typeof actual !== 'object' || Array.isArray(actual)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  for (const name of Object.keys(expected)) {
+    if (!Object.hasOwn(actual, name)) {
+      errors.push(`${label}.${name} is missing`);
+      continue;
+    }
+    for (const field of new Set([...Object.keys(expected[name]), ...Object.keys(actual[name])])) {
+      if (!sameData(actual[name][field], expected[name][field])) {
+        errors.push(`${label}.${name}.${field} differs from the contract`);
+      }
+    }
+  }
+  for (const name of Object.keys(actual)) {
+    if (!Object.hasOwn(expected, name)) errors.push(`${label}.${name} is not in the contract`);
+  }
+}
+
+/** Every way the manifest breaks the contract; empty when it holds. */
+export function checkContract(manifest) {
+  if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    return ['manifest must be an object'];
+  }
+  const errors = [];
+  compareSet('actions', manifest.actions, EXPECTED_ACTIONS, errors);
+  compareSet('triggers', manifest.triggers, EXPECTED_TRIGGERS, errors);
+  return errors;
+}

@@ -26,4 +26,9 @@ export default tseslint.config(
       globals: { ...globals.browser },
     },
   },
+  {
+    // The factory scripts run in Node, not the browser.
+    files: ['scripts/factory/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 );
