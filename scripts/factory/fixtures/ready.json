@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "repository": "guypod/carnival-factory-lab-20261022",
+  "issue": { "number": 101, "state": "OPEN", "labels": ["tessl"] },
+  "pullRequest": {
+    "number": 202,
+    "state": "OPEN",
+    "isDraft": false,
+    "headRefName": "tessl/issue-101",
+    "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "baseRefName": "main",
+    "headRepository": "guypod/carnival-factory-lab-20261022",
+    "labels": ["tessl"],
+    "closingIssues": [101]
+  },
+  "checks": {
+    "complete": true,
+    "items": [
+      {
+        "name": "check",
+        "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ]
+  },
+  "reviews": {
+    "complete": true,
+    "items": [
+      {
+        "authorId": 325629464,
+        "state": "APPROVED",
+        "commitId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submittedAt": "2026-01-02T10:00:00Z"
+      }
+    ]
+  },
+  "reviewThreads": { "complete": true, "items": [{ "id": "thread-1", "isResolved": true }] },
+  "runs": {
+    "complete": true,
+    "items": [
+      {
+        "id": "run-1",
+        "kind": "implement",
+        "status": "succeeded",
+        "issueNumber": 101,
+        "prNumber": null
+      }
+    ]
+  },
+  "readErrors": []
+}
