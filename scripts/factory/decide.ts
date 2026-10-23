@@ -272,19 +272,20 @@ export function decide(input: unknown): Decision {
   // Reviews: the required reviewer's latest review must approve the head, and
   // nobody's latest review may request changes.
   // Equal-time conflicting states cannot be ordered reliably from API list order.
-  for (const [index, review] of s.reviews.items.entries()) {
+  // One pass: compare each review with the first one seen for its reviewer and
+  // timestamp, so long review histories stay linear.
+  const firstAtTime = new Map<string, Review>();
+  const conflicted = new Set<string>();
+  for (const review of s.reviews.items) {
     if (review.state === 'COMMENTED') continue;
-    if (
-      s.reviews.items
-        .slice(index + 1)
-        .some(
-          (other) =>
-            other.state !== 'COMMENTED' &&
-            other.authorId === review.authorId &&
-            Date.parse(other.submittedAt) === Date.parse(review.submittedAt) &&
-            (other.state !== review.state || other.commitId !== review.commitId),
-        )
+    const key = `${review.authorId}@${Date.parse(review.submittedAt)}`;
+    const first = firstAtTime.get(key);
+    if (!first) firstAtTime.set(key, review);
+    else if (
+      !conflicted.has(key) &&
+      (first.state !== review.state || first.commitId !== review.commitId)
     ) {
+      conflicted.add(key);
       unknown.push(`reviewer ${review.authorId} has conflicting reviews at the same timestamp`);
     }
   }

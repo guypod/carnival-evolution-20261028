@@ -94,6 +94,17 @@ describe('decide', () => {
     expectNotReady(s, 'UNKNOWN', /same timestamp/);
   });
 
+  it('scans a long review history for equal-time conflicts in one pass', () => {
+    const s = ready();
+    const older = Array.from({ length: 50_000 }, (_, i) =>
+      review({ submittedAt: new Date(Date.UTC(2025, 0, 1) + i * 1000).toISOString() }),
+    );
+    s.reviews.items.unshift(...older);
+    expect(decide(s).verdict).toBe('READY');
+    s.reviews.items.push(review({ state: 'DISMISSED' }));
+    expectNotReady(s, 'UNKNOWN', /same timestamp/);
+  });
+
   it('treats an approval and check on an old head as not current', () => {
     const d = decide(load('stale-approval'));
     expect(d.verdict).toBe('WAITING');

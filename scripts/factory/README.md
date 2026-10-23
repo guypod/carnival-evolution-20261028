@@ -66,7 +66,11 @@ looked at) and `caveats`.
 There is no live mode yet. `--pr <number>` is not supported. To check a real
 PR, collect a snapshot by hand with read-only `gh` calls (`gh pr view`,
 `gh pr checks`, `gh api graphql` for review threads) and pass it with
-`--snapshot`. Mark a list `"complete": false` when you did not read every page,
+`--snapshot`. The `runs` list does not come from GitHub: list the factory runs you
+can see for this repository, one entry per visible factory run with
+its `id`, `kind`, `status`, and the `issueNumber` and `prNumber` it names (`null`
+when it names none). A snapshot without a complete `runs` list returns
+`UNKNOWN`. Mark a list `"complete": false` when you did not read every page,
 and add a line to `readErrors` for any call that failed. Never paste tokens
 into a snapshot.
 
@@ -94,7 +98,9 @@ into a snapshot.
 - Reviewer ID `325629464`'s latest review is an approval of the current head.
 - No reviewer's latest review requests changes.
 - No review thread is unresolved.
-- No visible queued or running factory run names the issue or the PR.
+- No visible active factory run (status `queued`, `pending`, `running`,
+  `in_progress` or `waiting`) names the issue or the PR, and no active run
+  lacks both an issue and a PR number.
 - Every list was read completely and no read failed.
 
 ### Latest-review semantics
