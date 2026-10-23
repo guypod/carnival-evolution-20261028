@@ -186,6 +186,10 @@ function compareSet(label, actual, expected, errors) {
       errors.push(`${label}.${name} is missing`);
       continue;
     }
+    if (actual[name] === null || typeof actual[name] !== 'object' || Array.isArray(actual[name])) {
+      errors.push(`${label}.${name} must be an object`);
+      continue;
+    }
     for (const field of new Set([...Object.keys(expected[name]), ...Object.keys(actual[name])])) {
       if (!sameData(actual[name][field], expected[name][field])) {
         errors.push(`${label}.${name}.${field} differs from the contract`);

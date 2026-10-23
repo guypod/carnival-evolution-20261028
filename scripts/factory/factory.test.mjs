@@ -182,6 +182,39 @@ test('malformed payloads do not match and unsupported predicates throw', () => {
   assert.throws(() => matchesTrigger(bad, 'github:issues.labeled', {}));
 });
 
+test('malformed nested subjects and ticket identifiers fail local fixture validation', () => {
+  const cases = [
+    ['follow-ticket-changes-github-taken-back', (p) => delete p.issue],
+    ['github-issue-labelled', (p) => delete p.issue.number],
+    ['github-issue-labelled', (p) => (p.issue.number = '7')],
+    ['github-issue-labelled', (p) => (p.issue.number = 0)],
+    ['github-issue-labelled', (p) => (p.issue.number = -7)],
+    ['github-issue-labelled', (p) => (p.issue.number = 1.5)],
+    ['shepherd-checks-passed', (p) => (p.check_suite.pull_requests[0].number = {})],
+    ['shepherd-checks-failed', (p) => (p.check_run.pull_requests[0].number = null)],
+    ['shepherd-pr-comment', (p) => (p.issue.pull_request = 'bogus')],
+    ['shepherd-pr-comment', (p) => (p.issue.pull_request = [])],
+    ['shepherd-pr-review', (p) => delete p.pull_request.number],
+  ];
+  for (const [name, change] of cases)
+    assert.equal(mutate(name, change), false, `${name} ${change}`);
+});
+
+test('malformed trigger shapes fail closed and malformed contract entries produce diagnostics', () => {
+  const [event, payload] = positives['github-issue-labelled'];
+  for (const when of [undefined, null, [], '', {}, 1]) {
+    const trigger = structuredClone(manifest.triggers['github-issue-labelled']);
+    trigger.when = when;
+    assert.equal(matchesTrigger(trigger, event, payload), false);
+  }
+  assert.equal(matchesTrigger(null, event, payload), false);
+  for (const value of [null, [], 1, 'bogus']) {
+    const m = clone();
+    m.actions.shepherd = value;
+    assert.ok(checkContract(m).some((error) => error.includes('actions.shepherd')));
+  }
+});
+
 test('the original manifest fails the narrow guard contract', () => {
   const original = clone();
   for (const trigger of Object.values(original.triggers))

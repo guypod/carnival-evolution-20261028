@@ -11,7 +11,10 @@ pins that file to an approved contract and tests the routes offline.
 - `matcher.mjs`: an offline model of how a trigger's `when` block matches a
   payload. It supports only the predicates this manifest uses (equality,
   `matches`, `exists`, `in`, `any.equals` over `*`, `isPullRequest`) and throws
-  on anything else. It is not the production scheduler and not a security
+  on anything else. Local fixture validation also rejects missing or malformed
+  ticket numbers, subject objects, PR markers, and trigger shapes. This extra
+  input validation is not a claim about the platform's payload validation.
+  It is not the production scheduler and not a security
   boundary; online validation is still required.
 - `factory.test.mjs`: positive fixtures for all eleven routes, negative
   fixtures, and unsafe mutants.

@@ -26,6 +26,33 @@ function isScalar(value) {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isNumber = (value) => Number.isSafeInteger(value) && value > 0;
+const isSubject = (value) => isObject(value) && isNumber(value.number);
+
+// Validate fixture subjects before evaluating predicates. This is local input
+// validation, not a claim that Tessl's production scheduler uses this schema.
+function validSubject(eventName, payload) {
+  if (eventName.startsWith('github:issues.')) return isSubject(payload.issue);
+  if (eventName === 'github:issue_comment.created') {
+    return (
+      isSubject(payload.issue) &&
+      (!Object.hasOwn(payload.issue, 'pull_request') || isObject(payload.issue.pull_request))
+    );
+  }
+  if (eventName.startsWith('github:pull_request')) return isSubject(payload.pull_request);
+  if (eventName === 'github:check_run.completed' || eventName === 'github:check_suite.completed') {
+    const check = payload[eventName === 'github:check_run.completed' ? 'check_run' : 'check_suite'];
+    return (
+      isObject(check) &&
+      Array.isArray(check.pull_requests) &&
+      check.pull_requests.length > 0 &&
+      check.pull_requests.every(isSubject)
+    );
+  }
+  return false;
+}
+
 /** Throw when a predicate is outside the supported subset. */
 export function assertSupportedPredicate(key, predicate) {
   if (key === 'isPullRequest') {
@@ -80,12 +107,15 @@ function matchOne(key, predicate, payload) {
  * payloads and events of another type do not match.
  */
 export function matchesTrigger(trigger, eventName, payload) {
-  for (const [key, predicate] of Object.entries(trigger.when ?? {})) {
+  if (!isObject(trigger) || !isObject(trigger.when) || Object.keys(trigger.when).length === 0) {
+    return false;
+  }
+  for (const [key, predicate] of Object.entries(trigger.when)) {
     assertSupportedPredicate(key, predicate);
   }
   if (!Array.isArray(trigger.on) || !trigger.on.includes(eventName)) return false;
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return false;
-  return Object.entries(trigger.when ?? {}).every(([key, predicate]) =>
+  if (!isObject(payload) || !validSubject(eventName, payload)) return false;
+  return Object.entries(trigger.when).every(([key, predicate]) =>
     matchOne(key, predicate, payload),
   );
 }
