@@ -238,6 +238,10 @@ test('unsafe mutants fail the contract', () => {
     'remove the issue-ended hook': (m) => delete m.triggers['follow-ticket-changes-github-ended'],
     'remove the pr-closed hook': (m) => delete m.triggers['follow-ticket-changes-pr-closed'],
     'disable taken-back': (m) => (m.triggers['follow-ticket-changes-github-taken-back'].on = []),
+    'remove implementation verification': (m) =>
+      delete m.actions['implement-github-issue'].instructions,
+    'remove shepherd verification': (m) => delete m.actions.shepherd.instructions,
+    'weaken verification': (m) => (m.actions.shepherd.instructions = 'Skip checks'),
     'change the model': (m) => (m.actions.shepherd.model = 'other-model'),
     'change the skill': (m) => (m.actions.shepherd.skill = 'tessl-labs/factory@0.7.0#shepherd'),
     'change the environment': (m) => (m.actions['implement-github-issue'].environment = 'x'),

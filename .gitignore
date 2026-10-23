@@ -6,3 +6,6 @@ coverage/
 
 # Local preview config
 .claude/launch.json
+
+# Mutable local factory verification evidence
+.factory-artifacts/

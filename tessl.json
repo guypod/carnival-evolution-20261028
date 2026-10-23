@@ -8,14 +8,16 @@
       "environment": "carnival-factory-lab-20261022-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "15m"
+      "timeout": "15m",
+      "instructions": "Keep all published skill invariants and fresh-read requirements. After the final source change, base merge and final commit, run npm run factory:verify, then npm run factory:verify -- --validate before reporting completion. Cite the exact current Git HEAD and the recorded npm run check and npm run build exit codes/outcomes. If HEAD or source changes, rerun verification; report failures and timeouts honestly rather than claiming success. The ignored local receipt is mutable evidence, not an attestation, a substitute for required CI/review, or authorization to push, mark ready or merge."
     },
     "shepherd": {
       "skill": "tessl-labs/factory@0.6.0#shepherd",
       "environment": "carnival-factory-lab-20261022-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "10m"
+      "timeout": "10m",
+      "instructions": "Keep all published skill invariants and fresh-read requirements. After the final source change, base merge and final commit, run npm run factory:verify, then npm run factory:verify -- --validate before reporting completion. Cite the exact current Git HEAD and the recorded npm run check and npm run build exit codes/outcomes. If HEAD or source changes, rerun verification; report failures and timeouts honestly rather than claiming success. The ignored local receipt is mutable evidence, not an attestation, a substitute for required CI/review, or authorization to push, mark ready or merge."
     },
     "follow-ticket-changes": {
       "skill": "tessl-labs/factory@0.6.0#follow-ticket-changes",

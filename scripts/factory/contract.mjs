@@ -17,9 +17,15 @@ const action = (name, timeout) => ({
   timeout,
 });
 
+export const VERIFICATION_INSTRUCTIONS =
+  'Keep all published skill invariants and fresh-read requirements. After the final source change, base merge and final commit, run npm run factory:verify, then npm run factory:verify -- --validate before reporting completion. Cite the exact current Git HEAD and the recorded npm run check and npm run build exit codes/outcomes. If HEAD or source changes, rerun verification; report failures and timeouts honestly rather than claiming success. The ignored local receipt is mutable evidence, not an attestation, a substitute for required CI/review, or authorization to push, mark ready or merge.';
+
 export const EXPECTED_ACTIONS = {
-  'implement-github-issue': action('implement-github-issue', '15m'),
-  shepherd: action('shepherd', '10m'),
+  'implement-github-issue': {
+    ...action('implement-github-issue', '15m'),
+    instructions: VERIFICATION_INSTRUCTIONS,
+  },
+  shepherd: { ...action('shepherd', '10m'), instructions: VERIFICATION_INSTRUCTIONS },
   'follow-ticket-changes': action('follow-ticket-changes', '5m'),
 };
 

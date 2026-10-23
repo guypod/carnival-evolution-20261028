@@ -11,3 +11,6 @@ package-lock.json
 .vscode
 .github/skills
 tessl.json
+
+# Generated local verification evidence
+.factory-artifacts
