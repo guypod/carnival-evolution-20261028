@@ -11,3 +11,6 @@ package-lock.json
 .vscode
 .github/skills
 tessl.json
+
+# Reviewed byte-hashed replay fixtures. Update hashes with intentional edits.
+tools/offline-replay/resources/

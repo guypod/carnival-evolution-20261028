@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "DETERMINISTIC_LOCAL_CHECKS_NOT_MODEL_EVIDENCE",
+  "statuses": {
+    "LOCAL_PREFLIGHT_PASS": "Exact reviewed local boundaries, inventories, hashes, source provenance and nearest project ancestor match. No remote validation or submission.",
+    "LOCAL_REFERENCE_PASS": "Scripted miniature feature and workflow checks pass using mutable local state. Not independent model evidence.",
+    "WORKFLOW_PASS_ACCEPTANCE_PENDING": "Legacy real-source workflow-only status. Not emitted by supported miniature setup; independent feature acceptance would remain required.",
+    "FAIL": "An applicable check failed or an unsupported/policy event was recorded. Missing check keys are not passes."
+  },
+  "exit_codes": {
+    "0": "Successful command or applicable local pass.",
+    "1": "Preflight/audit failure; also used by normal child-command failures.",
+    "2": "Argument parsing error or Git exact-branch no-match with --exit-code; inspect the operation.",
+    "97": "Adapter denied or unsupported operation."
+  },
+  "fixed_claims": {
+    "historical_calibration": "INCOMPLETE_UNCHANGED",
+    "model_runs": 0,
+    "external_service_calls": 0,
+    "sandbox_isolation_established": false,
+    "explicit_skill_invocation_established": false,
+    "live_factory_skill_hash_verified": false,
+    "mutable_ledger_is_trusted_model_evidence": false,
+    "source_commit_is_operational_replay_ref": false
+  },
+  "scope": "Fixed claims apply to the supplied scripts and deterministic tests, not arbitrary shell commands entered by a user."
+}

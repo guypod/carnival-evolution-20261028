@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "kind": "LOCAL_DERIVATIVE_PROVENANCE_NOT_RUNTIME_SKILL_EVIDENCE",
+  "original_files_sha256": {
+    "resources/replay/adapter.py": "440da1365a16ab566a8214a449f785bdf3c84bc24819e37e9ab87279f77ea3b3",
+    "self_test.py": "2e9b368464dd9c096884306f154612b5dab8cb741e65991fd228d4159c1e7344",
+    "assemble_snapshot.py": "6d3380fa4ec73ba103434f47fa8bdb4c1f9ad1d3a6a33a517267f44c334dbc6c"
+  },
+  "historical_files_modified": false,
+  "factory_package": "tessl-labs/factory",
+  "inspected_version": "0.6.0",
+  "selected_skill": "implement-github-issue",
+  "selected_skill_sha256": "c6173ce2374b31d134a66ffd354299306e4f07f921576bbd1005dceb5bf2682d",
+  "public_plugin_tree_sha256": "70fbbfb30c802b5f7ae2a12b134d94cf1e55fbfeb1eac65bc90076161035d026",
+  "live_factory_resolution_verified": false,
+  "installed_runtime_skill_bytes_verified": false,
+  "original_skill_vendored_or_invoked": false
+}

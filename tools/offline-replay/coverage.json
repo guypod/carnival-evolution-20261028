@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "original_contract_count": 20,
+  "preserved_original_contract_count": 18,
+  "preserved_original_contracts": [
+    "test_scope_glob_does_not_escape_directory",
+    "test_reference_workflow_and_real_remote",
+    "test_no_fresh_read_is_denied_and_counted",
+    "test_revoke_between_read_and_write",
+    "test_closed_issue",
+    "test_unknown_commands_fail_closed",
+    "test_issue_mutation_and_main_push_rejected",
+    "test_unsafe_body_location",
+    "test_duplicate_comment",
+    "test_input_error_matrix",
+    "test_post_merge_checks_are_required",
+    "test_lost_response_still_has_one_pr",
+    "test_fake_canary_outbound_guard_and_local_sink_instrumentation",
+    "test_test_weakening_is_detected",
+    "test_latest_failure_invalidates_earlier_success",
+    "test_real_merge_commit_requires_push_before_next_commit",
+    "test_sink_bytes_are_counted_even_if_state_log_is_tampered",
+    "test_ambient_credential_variable_rejected_without_reading_value"
+  ],
+  "not_ported_original_contracts": [
+    {
+      "name": "test_nested_sink_events_survive_npm_child",
+      "reason": "Requires npm-specific execution; the portable edition rejects all npm operations."
+    },
+    {
+      "name": "test_real_npm_config_paths_and_nested_scripts",
+      "reason": "Requires npm-specific execution; the portable edition rejects all npm operations."
+    }
+  ],
+  "new_contract_count": 16,
+  "new_contracts": [
+    "test_broad_heads_probe_is_read_only_and_local",
+    "test_external_origin_and_push_url_are_rejected",
+    "test_probe_injection_flags_are_rejected",
+    "test_refs_separate_source_provenance_from_local_base",
+    "test_unsupported_continuation_still_fails_existing_audit",
+    "test_npm_is_not_a_portable_offline_operation",
+    "test_exact_local_preflight_passes",
+    "test_broad_upload_roots_rejected",
+    "test_missing_project_ancestor_rejected",
+    "test_nested_wrong_project_ancestor_rejected",
+    "test_wrong_project_manifest_hash_rejected",
+    "test_mutated_source_and_plugin_hashes_rejected",
+    "test_mismatched_source_provenance_rejected",
+    "test_extra_files_and_symlinks_rejected",
+    "test_malformed_manifest_and_config_return_json_fail",
+    "test_child_environment_does_not_inherit_credentials"
+  ],
+  "historical_oracle_outcomes": 26,
+  "portable_feature_oracle_outcomes": 0,
+  "historical_oracles": [
+    {
+      "issue": 2,
+      "outcomes": [
+        "base",
+        "accepted_reference",
+        "wrong_title",
+        "wrong_entrance_text",
+        "broken_auto_sizing"
+      ],
+      "portable_outcomes": 0,
+      "status": "HISTORICAL_ONLY_NOT_COPIED_OR_RERUN"
+    },
+    {
+      "issue": 3,
+      "outcomes": [
+        "base",
+        "accepted_reference",
+        "wrong_horizon",
+        "wrong_top",
+        "unrelated_grass_change",
+        "unrelated_rendering_change"
+      ],
+      "portable_outcomes": 0,
+      "status": "HISTORICAL_ONLY_NOT_COPIED_OR_RERUN"
+    },
+    {
+      "issue": 4,
+      "outcomes": [
+        "base",
+        "accepted_reference",
+        "wrong_welcome",
+        "lost_controls",
+        "changed_narrow_screen_behavior"
+      ],
+      "portable_outcomes": 0,
+      "status": "HISTORICAL_ONLY_NOT_COPIED_OR_RERUN"
+    },
+    {
+      "issue": 5,
+      "outcomes": [
+        "base",
+        "accepted_reference",
+        "helper_present_but_main_not_wired",
+        "missing_main_listener_cleanup",
+        "missing_game_cleanup"
+      ],
+      "portable_outcomes": 0,
+      "status": "HISTORICAL_ONLY_NOT_COPIED_OR_RERUN"
+    },
+    {
+      "issue": 6,
+      "outcomes": [
+        "base",
+        "accepted_reference",
+        "helper_present_but_card_still_best_only",
+        "incorrect_six_score_limit",
+        "broken_empty_state"
+      ],
+      "portable_outcomes": 0,
+      "status": "HISTORICAL_ONLY_NOT_COPIED_OR_RERUN"
+    }
+  ],
+  "historical_oracle_reason": "Require the original five stacked Carnival source bases, reviewed references, independent evaluator tools and runtime dependencies. Synthetic workflow tests do not replace feature acceptance.",
+  "counting": "Each unittest method counts once; matrix cases are not independent test counts. No model evaluation is included."
+}

@@ -6,3 +6,7 @@ coverage/
 
 # Local preview config
 .claude/launch.json
+
+# Local Python replay cache
+__pycache__/
+*.pyc

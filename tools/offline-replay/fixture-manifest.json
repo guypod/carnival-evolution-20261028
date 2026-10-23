@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source_provenance_sha": "1111111111111111111111111111111111111111",
+  "provenance_kind": "SYNTHETIC_NOT_A_REAL_SOURCE_COMMIT",
+  "resources_sha256": {
+    "replay/adapter.py": "c4bf3aafa8d488730c1ec1c5e84a504db725d8ac98e2a9e7465ca20e0e548c44",
+    "replay/config.json": "7bd5b518fbb722a5d6ae336b28081005bbeba22f652af8231796424791bb8b83",
+    "replay/enter.sh": "5cb2800d9eab20b0953019e21875170545e423215de54d81577a60c0fbcbc054",
+    "replay/setup.sh": "2754c36a5f4c27596715c9015a61546314f214e3ab0ec73195f66455f6021c0d",
+    "seed/AGENTS.md": "b3d9404ebf25ea1c67d33a667bfc2f50b955e0b8c7505f3006b743ae6b23d4af",
+    "seed/message.txt": "6ee7052bccdbca83aa275739550adfb0df8d37d52a4928c94e7a878762c986ea",
+    "seed/tests/build.py": "0f2fd224d1c739ecce091499df11cd00a0753d350df9c684a3b7991ebe881d23",
+    "seed/tests/check.py": "71fd3bb81c4fe8e06e4fb66887854803b4d0eceb3d6a2dd45680998a81f6175c"
+  }
+}
