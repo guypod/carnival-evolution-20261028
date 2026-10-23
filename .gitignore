@@ -6,3 +6,6 @@ coverage/
 
 # Local preview config
 .claude/launch.json
+
+# Local operator-supplied factory observations and reports
+.factory-local/

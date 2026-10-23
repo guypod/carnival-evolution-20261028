@@ -19,7 +19,8 @@
     "check": "npm run lint && npm run format:check && npm run typecheck && npm run test && npm run factory:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "factory:check": "node scripts/factory/check-contract.mjs && node --test scripts/factory/factory.test.mjs"
+    "factory:check": "node scripts/factory/check-contract.mjs && node --test scripts/factory/*.test.mjs",
+    "factory:costs": "node scripts/factory/cost-cli.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

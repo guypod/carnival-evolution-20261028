@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "repository": "guypod/carnival-factory-lab-20261022",
+  "relationships": [
+    {
+      "issueNumber": 101,
+      "prNumber": 202
+    }
+  ],
+  "observations": [
+    {
+      "repository": "guypod/carnival-factory-lab-20261022",
+      "operationId": "synthetic-implementation",
+      "category": "implementation",
+      "issueNumber": 101,
+      "prNumber": null,
+      "status": "completed",
+      "outcome": "succeeded",
+      "observedAt": "2026-01-01T10:00:00Z",
+      "billing": {
+        "total": "12.5",
+        "platform": "10",
+        "ai": "2.5",
+        "usage": "0",
+        "finality": "unknown"
+      },
+      "effects": "unknown"
+    },
+    {
+      "repository": "guypod/carnival-factory-lab-20261022",
+      "operationId": "synthetic-review",
+      "category": "review",
+      "issueNumber": null,
+      "prNumber": 202,
+      "status": "completed",
+      "outcome": "succeeded",
+      "observedAt": "2026-01-01T10:00:00Z",
+      "billing": null,
+      "effects": "unknown"
+    },
+    {
+      "repository": "guypod/carnival-factory-lab-20261022",
+      "operationId": "synthetic-no-action",
+      "category": "shepherd",
+      "issueNumber": 101,
+      "prNumber": 202,
+      "status": "completed",
+      "outcome": "no_action",
+      "observedAt": "2026-01-01T10:00:00Z",
+      "billing": {
+        "total": "11.25",
+        "platform": "10",
+        "ai": "1.25",
+        "usage": "0",
+        "finality": "unknown"
+      },
+      "effects": "none"
+    },
+    {
+      "repository": "guypod/carnival-factory-lab-20261022",
+      "operationId": "synthetic-cancelled",
+      "category": "bookkeeping",
+      "issueNumber": 101,
+      "prNumber": null,
+      "status": "completed",
+      "outcome": "cancelled",
+      "observedAt": "2026-01-01T10:00:00Z",
+      "billing": {
+        "total": "10.75",
+        "platform": "10",
+        "ai": "0.75",
+        "usage": "0",
+        "finality": "unknown"
+      },
+      "effects": "unknown"
+    },
+    {
+      "repository": "guypod/carnival-factory-lab-20261022",
+      "operationId": "synthetic-failed",
+      "category": "implementation",
+      "issueNumber": 101,
+      "prNumber": null,
+      "status": "completed",
+      "outcome": "failed",
+      "observedAt": "2026-01-01T10:00:00Z",
+      "billing": {
+        "total": "2.5",
+        "platform": "0",
+        "ai": "2.5",
+        "usage": "0",
+        "finality": "unknown"
+      },
+      "effects": "unknown"
+    }
+  ]
+}

@@ -32,3 +32,8 @@ node --test scripts/factory/factory.test.mjs                      # mutants fail
 
 Changing the factory on purpose means changing `contract.mjs` in the same pull
 request.
+
+## Local lifecycle cost reports
+
+See [COSTS.md](COSTS.md) for the offline credit reporter, explicit attribution,
+missing/final billing semantics and a synthetic late-billing demonstration.
