@@ -1,6 +1,8 @@
-// The factory contract: the exact shape tessl.json must keep. Any change to an
-// approved action, a route's guards, its concurrency or its action fails the
-// check, so a change to the factory has to change this file too, in review.
+// The factory contract: the exact actions and triggers tessl.json must keep.
+// Any change to an approved action, a route's guards, its concurrency or its
+// action fails the check, so a change to the factory has to change this file
+// too, in review. The top-level name, mode and dependencies are not checked:
+// tessl install manages them.
 
 export const REPOSITORY_ID = 1430175635;
 export const OWNER_ID = 1106394;
