@@ -34,7 +34,8 @@
         "event.label.name": "tessl",
         "event.sender.type": "User",
         "event.sender.id": 1106394,
-        "event.issue.state": "open"
+        "event.issue.state": "open",
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "keys": [
@@ -61,7 +62,8 @@
         },
         "event.pull_request.head.repo.id": 1430175635,
         "event.pull_request.state": "open",
-        "event.sender.id": 1106394
+        "event.sender.id": 1106394,
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "debounce": "90s",
@@ -89,7 +91,8 @@
         },
         "event.pull_request.head.repo.id": 1430175635,
         "event.pull_request.state": "open",
-        "event.sender.id": 1106394
+        "event.sender.id": 1106394,
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "debounce": "90s",
@@ -114,7 +117,8 @@
           }
         },
         "event.issue.state": "open",
-        "event.sender.id": 1106394
+        "event.sender.id": 1106394,
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "debounce": "90s",
@@ -146,7 +150,8 @@
             "startup_failure",
             "action_required"
           ]
-        }
+        },
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "debounce": "90s",
@@ -171,7 +176,8 @@
         "event.check_suite.head_branch": {
           "matches": "^tessl/"
         },
-        "event.check_suite.conclusion": "success"
+        "event.check_suite.conclusion": "success",
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "debounce": "90s",
@@ -199,7 +205,8 @@
         },
         "event.pull_request.head.repo.id": 1430175635,
         "event.pull_request.state": "open",
-        "event.sender.id": 325629464
+        "event.sender.id": 325629464,
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "debounce": "90s",
@@ -226,7 +233,9 @@
           "matches": "^tessl/"
         },
         "event.sender.id": 1106394,
-        "event.pull_request.head.repo.id": 1430175635
+        "event.pull_request.head.repo.id": 1430175635,
+        "event.repository.id": 1430175635,
+        "event.pull_request.state": "closed"
       },
       "concurrency": {
         "keys": [
@@ -249,7 +258,8 @@
       ],
       "when": {
         "event.label.name": "tessl",
-        "event.sender.id": 1106394
+        "event.sender.id": 1106394,
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "keys": [
@@ -276,7 +286,9 @@
             "equals": "tessl"
           }
         },
-        "event.sender.id": 1106394
+        "event.sender.id": 1106394,
+        "event.repository.id": 1430175635,
+        "event.issue.state": "closed"
       },
       "concurrency": {
         "keys": [
@@ -305,7 +317,8 @@
             "equals": "tessl"
           }
         },
-        "event.sender.id": 1106394
+        "event.sender.id": 1106394,
+        "event.repository.id": 1430175635
       },
       "concurrency": {
         "keys": [
