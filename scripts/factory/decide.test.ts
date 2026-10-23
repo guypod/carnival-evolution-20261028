@@ -166,6 +166,17 @@ describe('decide', () => {
     expectNotReady(s, 'WAITING', /42 requested changes[\s\S]*1 review thread/);
   });
 
+  it('does not promote advisory comment text into formal approval', () => {
+    const s = ready();
+    s.reviews.items = [
+      {
+        ...review({ state: 'COMMENTED' }),
+        body: '<!-- tessl-code-review:result:v1 approved=true findings-total=0 -->',
+      } as Review,
+    ];
+    expectNotReady(s, 'WAITING', /reviewer 325629464 has not approved/);
+  });
+
   it('waits when the only approval is from the wrong reviewer', () => {
     const s = ready();
     s.reviews.items = [review({ authorId: 325629465 })];

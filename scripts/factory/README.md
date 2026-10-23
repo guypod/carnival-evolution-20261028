@@ -1,4 +1,43 @@
-# Factory readiness
+# Factory contract check
+
+`tessl.json` decides which GitHub events start Tessl's factory. This folder
+pins that file to an approved contract and tests the routes offline.
+
+- `contract.mjs`: the exact actions (skill `tessl-labs/factory@0.6.0`, agent
+  `claude-code`, model `claude-opus-5-5`, environment, timeouts) and the eleven
+  triggers, with their guards, concurrency keys (the existing 90s shepherd
+  debounce, and replies sharing the implement lock) and actions.
+- `check-contract.mjs`: fails when `tessl.json`'s `actions` or `triggers`
+  differ from the contract. It does not check the top-level `name`, `mode` or
+  `dependencies`, which `tessl install` manages.
+- `matcher.mjs`: an offline model of how a trigger's `when` block matches a
+  payload. It supports only the predicates this manifest uses (equality,
+  `matches`, `exists`, `in`, `any.equals` over `*`, `isPullRequest`) and throws
+  on anything else. Local fixture validation also rejects missing or malformed
+  ticket numbers and subject objects, a malformed PR marker, and malformed
+  trigger shapes. An absent `issue.pull_request` marker is accepted: it means
+  the comment is on an issue, not a pull request. This extra
+  input validation is not a claim about the platform's payload validation.
+  It is not the production scheduler and not a security
+  boundary; online validation is still required.
+- `factory.test.mjs`: positive fixtures for all eleven routes, negative
+  fixtures, and unsafe mutants.
+
+`npm run check` runs `npm run factory:check` after its other steps.
+
+## Demo
+
+```sh
+git show 56c1e19:tessl.json > /tmp/original-tessl.json
+node scripts/factory/check-contract.mjs /tmp/original-tessl.json  # fails 11 checks: no repository guard, no closed state
+node scripts/factory/check-contract.mjs                           # factory contract: tessl.json holds
+node --test scripts/factory/factory.test.mjs                      # mutants fail; cancellation and dependency routes still match
+```
+
+Changing the factory on purpose means changing `contract.mjs` in the same pull
+request.
+
+# Current-head readiness
 
 A read-only decision aid that says whether one Tessl pull request looks ready
 for its owner to review for merge. It is not a scheduler, a merge bot or a
@@ -75,3 +114,14 @@ an earlier approval.
   webhooks before dispatch. An empty run list does not prove that no run is
   queued.
 - The required check name and reviewer ID are fixed in `decide.ts`.
+
+The readiness CLI requires Node 24 or newer (the factory and CI use Node 24).
+
+### Advisory-only reviews
+
+This repository's current Tessl Code Review publication mode is advisory: it
+publishes `COMMENTED` reviews, even when its text reports no blocking findings.
+The helper does not treat a comment body or an `approved=true` text marker as a
+formal GitHub approval. A real snapshot containing only those advisory reviews
+therefore remains `WAITING`. It is a conservative decision aid, not a replacement
+for the owner's authorized review-and-merge process.
