@@ -13,6 +13,9 @@ npm run factory:readiness -- --snapshot scripts/factory/fixtures/ready.json
 npm run factory:readiness -- --snapshot scripts/factory/fixtures/stale-approval.json
 ```
 
+The fixture issue, PR, hashes, reviews and runs are synthetic; the fixed public
+repository and reviewer identities match this isolated factory.
+
 The first prints `READY` and exits 0. The second prints `WAITING` and exits 10,
 because its approval and check are on an older commit than the PR head.
 
@@ -42,6 +45,7 @@ into a snapshot.
 
 ## What READY needs
 
+- The repository is exactly `guypod/carnival-factory-lab-20261022`, with base `main`.
 - The issue is open and has the `tessl` label.
 - The PR is open, not a draft, has the `tessl` label, comes from
   `tessl/issue-<n>` in the same repository and closes the issue.
@@ -57,12 +61,15 @@ into a snapshot.
 ### Latest-review semantics
 
 For each reviewer, comment-only reviews are ignored, and the review with the
-latest `submittedAt` is that reviewer's current state (a tie goes to the one
-later in the list). A later `DISMISSED` or `CHANGES_REQUESTED` review replaces
+latest `submittedAt` is that reviewer's current state. Timestamps must be valid
+UTC ISO dates ending in `Z`, with optional three-digit milliseconds. Conflicting
+equal-time reviews return UNKNOWN rather than relying on list order. A later `DISMISSED` or `CHANGES_REQUESTED` review replaces
 an earlier approval.
 
 ## Limits
 
+- READY describes only the supplied snapshot; no live freshness check occurs.
+- Unknown run statuses and unattributed active runs return UNKNOWN.
 - READY never grants merge authorization.
 - The run list has visibility lag, and the platform does not deduplicate
   webhooks before dispatch. An empty run list does not prove that no run is

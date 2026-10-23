@@ -3,11 +3,14 @@
 
 export type Verdict = 'READY' | 'WAITING' | 'STOPPED' | 'UNKNOWN';
 
+export const REQUIRED_REPOSITORY = 'guypod/carnival-factory-lab-20261022';
+export const REQUIRED_BASE = 'main';
 export const REQUIRED_REVIEWER_ID = 325629464;
 export const REQUIRED_CHECK = 'check';
 export const TESSL_LABEL = 'tessl';
 
 export const CAVEATS = [
+  'The verdict describes the supplied snapshot only; no live collection or freshness verification occurs.',
   'READY never grants merge authorization: a person decides whether to merge.',
   'An empty run list is not proof that no webhook is queued: the platform has visibility lag and no pre-dispatch deduplication.',
 ];
@@ -66,14 +69,25 @@ export interface Decision {
 type Obj = Record<string, unknown>;
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
-const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+const isPosInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) > 0;
+const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 const isSha = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{40}$/.test(v);
 const isRepo = (v: unknown): v is string =>
   typeof v === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(v);
 const isTextList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isText);
 const oneOf = (v: unknown, values: readonly string[]) =>
   typeof v === 'string' && values.includes(v);
+
+// GitHub UTC timestamps only: reject timezone-free and normalized impossible dates.
+function isTimestamp(v: unknown): v is string {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(v))
+    return false;
+  const time = Date.parse(v);
+  return (
+    Number.isFinite(time) &&
+    new Date(time).toISOString() === (v.includes('.') ? v : v.replace('Z', '.000Z'))
+  );
+}
 
 function listProblems(v: unknown, name: string, item: (x: unknown) => boolean): string[] {
   if (!isObj(v)) return [`${name} is missing`];
@@ -133,8 +147,7 @@ export function validateSnapshot(input: unknown): string[] {
         isPosInt(r.authorId) &&
         oneOf(r.state, ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED', 'COMMENTED']) &&
         isSha(r.commitId) &&
-        isText(r.submittedAt) &&
-        !Number.isNaN(Date.parse(r.submittedAt)),
+        isTimestamp(r.submittedAt),
     ),
     ...listProblems(
       input.reviewThreads,
@@ -149,6 +162,7 @@ export function validateSnapshot(input: unknown): string[] {
         isText(r.id) &&
         isText(r.kind) &&
         isText(r.status) &&
+        KNOWN_RUN_STATUSES.includes(r.status.toLowerCase()) &&
         (r.issueNumber === null || isPosInt(r.issueNumber)) &&
         (r.prNumber === null || isPosInt(r.prNumber)),
     ),
@@ -158,6 +172,16 @@ export function validateSnapshot(input: unknown): string[] {
 }
 
 const ACTIVE_RUN_STATUSES = ['queued', 'pending', 'running', 'in_progress', 'waiting'];
+const KNOWN_RUN_STATUSES = [
+  ...ACTIVE_RUN_STATUSES,
+  'completed',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'canceled',
+  'timed_out',
+  'error',
+];
 
 // Latest-review semantics: for each reviewer, COMMENTED reviews are ignored and
 // the reviewer's latest remaining review by submittedAt (later array position
@@ -203,6 +227,10 @@ export function decide(input: unknown): Decision {
     stopped.push(`issue #${issue.number} no longer has the ${TESSL_LABEL} label`);
   if (pr.state === 'MERGED') stopped.push(`PR #${pr.number} is already merged`);
   if (pr.state === 'CLOSED') stopped.push(`PR #${pr.number} is closed`);
+  if (s.repository !== REQUIRED_REPOSITORY)
+    stopped.push(`repository ${s.repository} is not the approved ${REQUIRED_REPOSITORY}`);
+  if (pr.baseRefName !== REQUIRED_BASE)
+    stopped.push(`PR base ${pr.baseRefName} is not ${REQUIRED_BASE}`);
   if (pr.headRepository !== s.repository)
     stopped.push(`PR head repository ${pr.headRepository} is not ${s.repository}`);
   if (pr.headRefName !== `tessl/issue-${issue.number}`)
@@ -243,6 +271,23 @@ export function decide(input: unknown): Decision {
 
   // Reviews: the required reviewer's latest review must approve the head, and
   // nobody's latest review may request changes.
+  // Equal-time conflicting states cannot be ordered reliably from API list order.
+  for (const [index, review] of s.reviews.items.entries()) {
+    if (review.state === 'COMMENTED') continue;
+    if (
+      s.reviews.items
+        .slice(index + 1)
+        .some(
+          (other) =>
+            other.state !== 'COMMENTED' &&
+            other.authorId === review.authorId &&
+            Date.parse(other.submittedAt) === Date.parse(review.submittedAt) &&
+            (other.state !== review.state || other.commitId !== review.commitId),
+        )
+    ) {
+      unknown.push(`reviewer ${review.authorId} has conflicting reviews at the same timestamp`);
+    }
+  }
   const latest = latestReviews(s.reviews.items);
   latest.forEach((r, author) =>
     observations.push(
@@ -273,6 +318,14 @@ export function decide(input: unknown): Decision {
 
   if (pr.isDraft) waiting.push(`PR #${pr.number} is a draft`);
 
+  s.runs.items
+    .filter(
+      (r) =>
+        ACTIVE_RUN_STATUSES.includes(r.status.toLowerCase()) &&
+        r.issueNumber === null &&
+        r.prNumber === null,
+    )
+    .forEach((r) => unknown.push(`active factory run ${r.id} has unknown issue/PR attribution`));
   const active = s.runs.items.filter(
     (r) =>
       ACTIVE_RUN_STATUSES.includes(r.status.toLowerCase()) &&

@@ -42,6 +42,58 @@ describe('decide', () => {
     expect(d.observations.length).toBeGreaterThan(0);
   });
 
+  it('pins repository and base independently of supplied matching identities', () => {
+    const wrongRepo = ready();
+    wrongRepo.repository = wrongRepo.pullRequest.headRepository = 'other/project';
+    expectNotReady(wrongRepo, 'STOPPED', /not the approved/);
+    const wrongBase = ready();
+    wrongBase.pullRequest.baseRefName = 'feature/unreviewed-base';
+    expectNotReady(wrongBase, 'STOPPED', /PR base.*not main/);
+  });
+
+  it.each(['unknown-platform-state', '   '])('rejects unrecognized run status %s', (status) => {
+    const s = ready();
+    s.runs.items[0].status = status;
+    expectNotReady(s, 'UNKNOWN', /runs.items/);
+  });
+
+  it('does not assume an unattributed active run is irrelevant', () => {
+    const s = ready();
+    s.runs.items.push({
+      id: 'unknown-run',
+      kind: 'shepherd',
+      status: 'running',
+      issueNumber: null,
+      prNumber: null,
+    });
+    expectNotReady(s, 'UNKNOWN', /unknown issue\/PR attribution/);
+  });
+
+  it('rejects unsafe integer identifiers', () => {
+    const s = ready();
+    s.issue.number = Number.MAX_SAFE_INTEGER + 1;
+    s.pullRequest.headRefName = `tessl/issue-${s.issue.number}`;
+    s.pullRequest.closingIssues = [s.issue.number];
+    expectNotReady(s, 'UNKNOWN', /issue.number/);
+  });
+
+  it.each(['2026-01-02T10:00:00', '2026-02-30T10:00:00Z', '2026-01-02T25:00:00Z'])(
+    'rejects ambiguous or impossible review time %s',
+    (submittedAt) => {
+      const s = ready();
+      s.reviews.items[0].submittedAt = submittedAt;
+      expectNotReady(s, 'UNKNOWN', /reviews.items/);
+    },
+  );
+
+  it('does not choose a conflicting equal-time review by array position', () => {
+    const s = ready();
+    s.reviews.items.push(review({ state: 'DISMISSED' }));
+    expectNotReady(s, 'UNKNOWN', /same timestamp/);
+    s.reviews.items.reverse();
+    expectNotReady(s, 'UNKNOWN', /same timestamp/);
+  });
+
   it('treats an approval and check on an old head as not current', () => {
     const d = decide(load('stale-approval'));
     expect(d.verdict).toBe('WAITING');

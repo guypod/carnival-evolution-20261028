@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "repository": "example-org/example-carnival",
+  "repository": "guypod/carnival-factory-lab-20261022",
   "issue": { "number": 101, "state": "OPEN", "labels": ["tessl"] },
   "pullRequest": {
     "number": 202,
@@ -9,7 +9,7 @@
     "headRefName": "tessl/issue-101",
     "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "baseRefName": "main",
-    "headRepository": "example-org/example-carnival",
+    "headRepository": "guypod/carnival-factory-lab-20261022",
     "labels": ["tessl"],
     "closingIssues": [101]
   },
