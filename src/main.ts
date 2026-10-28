@@ -1,5 +1,5 @@
 import './style.css';
-import { applyTheme, bestScore, type CarnivalGame } from './carnival';
+import { applyTheme, bestScore, onScoreRecorded, type CarnivalGame } from './carnival';
 import { registry } from './games';
 import { onEscapeKey } from './escape';
 import { boothScoresText } from './booth-scores';
@@ -23,7 +23,17 @@ import {
   type DirectoryStatus,
 } from './booth-directory';
 import { favorites } from './favorites';
-import { circuit, circuitProgress, circuitStatus, legText, restartCircuit } from './circuit';
+import {
+  circuit,
+  circuitHistory,
+  circuitProgress,
+  circuitStatus,
+  legText,
+  restartCircuit,
+  saveFinishedCircuits,
+  savedProgress,
+  runText,
+} from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -274,10 +284,18 @@ function renderCircuit() {
       </div>
       <p class="circuit-error" role="alert" hidden>The circuit could not be saved in this browser.</p>
       <ol class="circuit-legs"></ol>
-      <p class="note">The circuit is kept in this browser only. Free play, scores and records are unchanged.</p>
+      <section class="circuit-history" aria-labelledby="circuit-history-title">
+        <h2 id="circuit-history-title">Past circuits</h2>
+        <p class="circuit-best"></p>
+        <ol class="circuit-runs"></ol>
+      </section>
+      <p class="note">The circuit and its history are kept in this browser only. Free play, scores and records are unchanged.</p>
     </section>`;
 
-  const progress = circuitProgress(registry.all(), circuit.startedAt());
+  const worked = circuitProgress(registry.all(), circuit.startedAt());
+  const saved = circuitHistory.save(worked);
+  const history = circuitHistory.read();
+  const progress = savedProgress(worked, history);
   app.querySelector('.circuit-status')!.textContent = circuitStatus(progress);
   const next = app.querySelector<HTMLAnchorElement>('.circuit-next')!;
   next.hidden = !progress.next;
@@ -318,6 +336,28 @@ function renderCircuit() {
     total.className = 'circuit-total';
     total.textContent = `Total: ${progress.total}`;
     list.append(total);
+  }
+
+  const best = app.querySelector('.circuit-best')!;
+  const runs = app.querySelector('.circuit-runs')!;
+  if (!history) {
+    best.textContent = 'Past circuits could not be read in this browser.';
+  } else {
+    best.textContent =
+      history.best === undefined
+        ? 'Finish a circuit to set your best total.'
+        : `Best circuit total: ${history.best}`;
+    for (const run of history.runs) {
+      const item = document.createElement('li');
+      const when = document.createElement('time');
+      when.dateTime = new Date(run.completedAt).toISOString();
+      when.textContent = new Date(run.completedAt).toLocaleString();
+      item.append(when, `: ${runText(run, registry.all())}`);
+      runs.append(item);
+    }
+  }
+  if (saved === 'failed') {
+    best.textContent += ' This circuit could not be saved to your history.';
   }
 
   app.querySelector<HTMLElement>('h1')!.focus();
@@ -533,6 +573,9 @@ function renderGame(game: CarnivalGame) {
 function route() {
   stop?.();
   stop = undefined;
+  // Save a finished circuit on every route, so its scores are kept before
+  // later play can push them off the scoreboard.
+  circuitHistory.save(circuitProgress(registry.all(), circuit.startedAt()));
 
   const match = location.hash.match(/^#\/play\/([\w-]+)$/);
   const game = match ? registry.get(match[1]) : undefined;
@@ -545,5 +588,21 @@ function route() {
   else renderMidway();
 }
 
+// One subscription for the page's lifetime: a finished circuit is saved the
+// moment its last score is recorded, before more play can evict that score.
+const stopSavingCircuits = saveFinishedCircuits(
+  onScoreRecorded,
+  registry.all(),
+  circuit.startedAt,
+  circuitHistory,
+);
+
 window.addEventListener('hashchange', route);
 route();
+
+// Hot reloads run this module again: drop the old subscription and listener.
+import.meta.hot?.dispose(() => {
+  stopSavingCircuits();
+  window.removeEventListener('hashchange', route);
+  stop?.();
+});

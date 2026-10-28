@@ -755,6 +755,28 @@ kbd {
   color: var(--color-background);
 }
 
+.circuit-history {
+  margin-top: 24px;
+}
+
+.circuit-history h2 {
+  margin: 0 0 8px;
+}
+
+.circuit-best {
+  margin: 0 0 8px;
+  font-weight: bold;
+}
+
+.circuit-runs {
+  margin: 0 0 16px;
+  padding-left: 1.5em;
+}
+
+.circuit-runs time {
+  color: var(--color-muted);
+}
+
 .records h1:focus {
   outline: none;
 }
