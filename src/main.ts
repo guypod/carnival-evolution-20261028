@@ -51,6 +51,12 @@ import {
   trailComplete,
   type Landmark,
 } from './midway/discovery';
+import {
+  motionPreference,
+  motionToggleState,
+  nextMotionPreference,
+  type MotionPreference,
+} from './midway/motion';
 import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
 import type { BoothSlot } from './midway/world';
 
@@ -93,6 +99,8 @@ function renderMidway() {
             <a class="records-link" href="#/records">📜 Hall of Records</a>
           </nav>
           <button type="button" class="scene-toggle" aria-pressed="false"></button>
+          <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
+          <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
           <nav class="midway-guide" aria-label="Booths">
             <h2>Booths</h2>
             <ul></ul>
@@ -151,9 +159,11 @@ function renderMidway() {
     onReach: showBooth,
     scene: scenePreference.load(),
     onLandmark: (landmark) => discovery.found(landmark),
+    motion: motionPreference.load(),
   });
   const discovery = setUpDiscovery(midway.landmarks);
   setUpSceneToggle(midway.setScene);
+  setUpMotionToggle(midway.setMotion);
   const stopGuide = setUpGuide();
   stop = () => {
     discovery.stop();
@@ -218,6 +228,25 @@ function setUpSceneToggle(setScene: (scene: Scene) => void) {
     scene = nextScene(scene);
     scenePreference.save(scene);
     setScene(scene);
+    show();
+  });
+  show();
+}
+
+// Follow the system's motion setting, or stay quiet, from the guide. Like the
+// scene, the choice is remembered when the browser lets us.
+function setUpMotionToggle(setMotion: (preference: MotionPreference) => void) {
+  const button = app.querySelector<HTMLButtonElement>('.motion-toggle')!;
+  let preference = motionPreference.load();
+  const show = () => {
+    const { label, pressed } = motionToggleState(preference);
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(pressed));
+  };
+  button.addEventListener('click', () => {
+    preference = nextMotionPreference(preference);
+    motionPreference.save(preference);
+    setMotion(preference);
     show();
   });
   show();
