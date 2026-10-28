@@ -1,4 +1,5 @@
 import { isControl } from './controls';
+import { arriveRoute, cancelRoute, IDLE_ROUTE, startRoute, type RouteState } from './route';
 import {
   landmarkInReach,
   pathToLandmark,
@@ -71,6 +72,8 @@ export interface MidwayOptions {
   onLandmark?(landmark: Landmark): void;
   /** Follow the system's reduced-motion setting, or stay quiet. System when left out. */
   motion?: MotionPreference;
+  /** Called when a walk to a booth or landmark starts, arrives or is cancelled. */
+  onRoute?(route: RouteState): void;
 }
 
 export interface MidwayControls {
@@ -87,6 +90,8 @@ export interface MidwayControls {
   landmarks: Landmark[];
   /** Switches between following the system and staying quiet. */
   setMotion(preference: MotionPreference): void;
+  /** Stops a walk in progress and leaves the player where they are. */
+  cancelWalk(): void;
   stop(): void;
 }
 
@@ -161,6 +166,17 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   let nextFloater = 2;
   let inReach: BoothSlot | undefined;
   let destination: Point | undefined;
+  let route: RouteState = IDLE_ROUTE;
+  const setRoute = (next: RouteState) => {
+    if (next === route) return;
+    route = next;
+    options.onRoute?.(route);
+  };
+  const cancelWalk = () => {
+    player.path = [];
+    destination = undefined;
+    setRoute(cancelRoute(route));
+  };
 
   let dpr = 1;
   /** Drops below 1 on machines too slow to keep up, trading sharpness for speed. */
@@ -203,8 +219,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (isControl(event.target)) return;
     if (event.code in MOVE_KEYS) {
       keys.add(event.code);
-      player.path = [];
-      destination = undefined;
+      cancelWalk();
       event.preventDefault();
     } else if (PLAY_KEYS.has(event.code) && inReach?.gameId) {
       event.preventDefault();
@@ -239,6 +254,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const walkToBooth = (booth: BoothSlot) => {
     player.path = pathToBooth(map, player, booth) ?? [];
     destination = player.path.at(-1);
+    const name = booth.gameId ? names.get(booth.gameId) : undefined;
+    setRoute(player.path.length > 0 ? startRoute(name ?? 'the empty booth') : IDLE_ROUTE);
   };
 
   const walkToLandmark = (landmark: Landmark) => {
@@ -246,6 +263,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (!path) return false;
     player.path = path;
     destination = path.at(-1);
+    setRoute(path.length > 0 ? startRoute(landmark.name) : IDLE_ROUTE);
     return true;
   };
 
@@ -281,6 +299,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (path) {
       player.path = path;
       destination = path.at(-1);
+      setRoute(IDLE_ROUTE);
       return;
     }
     const landmark = landmarkAt(point);
@@ -514,8 +533,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     }
     const direction = inputDirection(Math.sign(right), Math.sign(down));
     if (direction.x !== 0 || direction.y !== 0) walk(map, player, direction, dt);
-    else if (player.path.length > 0) followPath(player, dt);
-    else player.walking = false;
+    else if (player.path.length > 0) {
+      followPath(player, dt);
+      if (player.path.length === 0) setRoute(arriveRoute(route));
+    } else player.walking = false;
 
     if (!quiet)
       for (const visitor of visitors) updateVisitor(map, visitor, dt, Math.random, strolls);
@@ -557,6 +578,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       motion = next;
       updateQuiet();
     },
+    cancelWalk,
     stop() {
       cancelAnimationFrame(frame);
       stopWatchingMotion();

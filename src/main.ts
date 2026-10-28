@@ -51,6 +51,7 @@ import {
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
+import { routeMessage, type RouteState } from './midway/route';
 import {
   POSTCARD_MESSAGES,
   POSTCARD_NAME_MAX,
@@ -155,6 +156,10 @@ function renderMidway() {
         </div>
       </div>
       <p class="discovery-toast" role="status" hidden></p>
+      <div class="midway-route" hidden>
+        <p class="message" role="status"></p>
+        <button type="button" class="cancel" hidden>Cancel walk</button>
+      </div>
       <div class="booth-card" aria-live="polite" hidden>
         <h2></h2>
         <p class="description"></p>
@@ -195,17 +200,47 @@ function renderMidway() {
     scene: scenePreference.load(),
     onLandmark: (landmark) => discovery.found(landmark),
     motion: motionPreference.load(),
+    onRoute: (route) => routeStatus.show(route),
   });
+  const routeStatus = setUpRoute(midway.cancelWalk);
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
   const stopGuide = setUpGuide();
   const stopHelp = setUpHelp();
   stop = () => {
+    routeStatus.stop();
     discovery.stop();
     stopHelp();
     stopGuide();
     midway.stop();
+  };
+}
+
+// The status line for a walk to a booth or landmark: where it is headed, then
+// arrival or cancel. The live region only changes at those moments. The button,
+// or walking with the keys, cancels; the arrived and cancelled lines clear after
+// a moment.
+function setUpRoute(cancelWalk: () => void) {
+  const box = app.querySelector<HTMLElement>('.midway-route')!;
+  const message = box.querySelector<HTMLElement>('.message')!;
+  const cancel = box.querySelector<HTMLButtonElement>('.cancel')!;
+  let timer: number | undefined;
+  cancel.addEventListener('click', () => {
+    // Keep focus on the map, not on a button about to hide.
+    app.querySelector<HTMLElement>('.midway-map')?.focus();
+    cancelWalk();
+  });
+  return {
+    show(route: RouteState) {
+      window.clearTimeout(timer);
+      message.textContent = routeMessage(route);
+      box.hidden = route.phase === 'idle';
+      cancel.hidden = route.phase !== 'walking';
+      if (route.phase === 'arrived' || route.phase === 'cancelled')
+        timer = window.setTimeout(() => (box.hidden = true), 4000);
+    },
+    stop: () => window.clearTimeout(timer),
   };
 }
 

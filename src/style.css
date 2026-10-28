@@ -105,6 +105,7 @@ body[data-view='midway'] main {
 .midway-guide,
 .midway-credit,
 .discovery-toast,
+.midway-route,
 .booth-card {
   position: absolute;
   margin: 0;
@@ -1273,6 +1274,26 @@ kbd {
   padding: 8px 14px;
   font-size: 14px;
   transform: translateX(-50%);
+}
+
+.midway-route {
+  top: 64px;
+  left: 50%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 6px 10px;
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+
+.midway-route[hidden] {
+  display: none;
+}
+
+.midway-route .message {
+  margin: 0;
 }
 
 .postcard h1:focus {
