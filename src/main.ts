@@ -23,7 +23,15 @@ import {
   type DirectoryStatus,
 } from './booth-directory';
 import { favorites } from './favorites';
-import { circuit, circuitProgress, circuitStatus, legText, restartCircuit } from './circuit';
+import {
+  circuit,
+  circuitHistory,
+  circuitProgress,
+  circuitStatus,
+  legText,
+  restartCircuit,
+  runText,
+} from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -274,7 +282,12 @@ function renderCircuit() {
       </div>
       <p class="circuit-error" role="alert" hidden>The circuit could not be saved in this browser.</p>
       <ol class="circuit-legs"></ol>
-      <p class="note">The circuit is kept in this browser only. Free play, scores and records are unchanged.</p>
+      <section class="circuit-history" aria-labelledby="circuit-history-title">
+        <h2 id="circuit-history-title">Past circuits</h2>
+        <p class="circuit-best"></p>
+        <ol class="circuit-runs"></ol>
+      </section>
+      <p class="note">The circuit and its history are kept in this browser only. Free play, scores and records are unchanged.</p>
     </section>`;
 
   const progress = circuitProgress(registry.all(), circuit.startedAt());
@@ -318,6 +331,30 @@ function renderCircuit() {
     total.className = 'circuit-total';
     total.textContent = `Total: ${progress.total}`;
     list.append(total);
+  }
+
+  const saved = circuitHistory.save(progress);
+  const history = circuitHistory.read();
+  const best = app.querySelector('.circuit-best')!;
+  const runs = app.querySelector('.circuit-runs')!;
+  if (!history) {
+    best.textContent = 'Past circuits could not be read in this browser.';
+  } else {
+    best.textContent =
+      history.best === undefined
+        ? 'Finish a circuit to set your best total.'
+        : `Best circuit total: ${history.best}`;
+    for (const run of history.runs) {
+      const item = document.createElement('li');
+      const when = document.createElement('time');
+      when.dateTime = new Date(run.completedAt).toISOString();
+      when.textContent = new Date(run.completedAt).toLocaleString();
+      item.append(when, `: ${runText(run, registry.all())}`);
+      runs.append(item);
+    }
+  }
+  if (saved === 'failed') {
+    best.textContent += ' This circuit could not be saved to your history.';
   }
 
   app.querySelector<HTMLElement>('h1')!.focus();
