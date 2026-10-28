@@ -114,4 +114,42 @@ describe('soundToggleState', () => {
     expect(soundToggleState(false)).toEqual({ label: '🔇 Midway sound: off', pressed: false });
     expect(soundToggleState(true).pressed).toBe(true);
   });
+
+  it('shows off again and can retry when the browser refuses to resume', async () => {
+    const fake = fakeContext();
+    fake.context.resume.mockImplementationOnce(async () => {
+      throw new Error('blocked');
+    });
+    const stopped = vi.fn();
+    const sound = createSoundscape(() => fake.context, stopped);
+    sound.start();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sound.isPlaying()).toBe(false);
+    expect(stopped).toHaveBeenCalledTimes(1);
+    expect(sound.start()).toBe(true);
+    expect(sound.isPlaying()).toBe(true);
+  });
+
+  it('suspends again when a resume finishes after a mute', async () => {
+    const fake = fakeContext();
+    let finishResume = () => {};
+    fake.context.resume.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finishResume = () => {
+            fake.context.state = 'running';
+            resolve(undefined);
+          };
+        }),
+    );
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.stop();
+    finishResume();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fake.context.state).toBe('suspended');
+    expect(sound.isPlaying()).toBe(false);
+  });
 });

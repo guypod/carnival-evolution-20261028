@@ -498,12 +498,15 @@ function setUpMotionToggle(setMotion: (preference: MotionPreference) => void) {
 function setUpSound(): () => void {
   const button = app.querySelector<HTMLButtonElement>('.sound-toggle')!;
   const slider = app.querySelector<HTMLInputElement>('.sound-volume input')!;
-  const sound = createSoundscape(() => {
-    const AudioContextClass =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    return AudioContextClass ? (new AudioContextClass() as unknown as SoundContext) : undefined;
-  });
+  const sound = createSoundscape(
+    () => {
+      const AudioContextClass =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      return AudioContextClass ? (new AudioContextClass() as unknown as SoundContext) : undefined;
+    },
+    () => show(),
+  );
   const show = () => {
     const { label, pressed } = soundToggleState(sound.isPlaying());
     button.textContent = label;

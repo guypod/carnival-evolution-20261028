@@ -65,9 +65,13 @@ export interface Soundscape {
 
 /**
  * Makes a soundscape. `createContext` is only called on the first `start`, so
- * nothing touches audio until someone asks for it.
+ * nothing touches audio until someone asks for it. `onStopped` is called when
+ * the hum stops on its own, such as when the browser refuses to resume audio.
  */
-export function createSoundscape(createContext: () => SoundContext | undefined): Soundscape {
+export function createSoundscape(
+  createContext: () => SoundContext | undefined,
+  onStopped: () => void = () => {},
+): Soundscape {
   let context: SoundContext | undefined;
   let master: SoundGain | undefined;
   let oscillators: SoundOscillator[] = [];
@@ -81,7 +85,9 @@ export function createSoundscape(createContext: () => SoundContext | undefined):
     oscillators = [];
     master?.disconnect();
     master = undefined;
-    if (context && context.state === 'running') void context.suspend().catch(() => {});
+    // Suspend even while a resume is still pending, so a late resume can't
+    // leave the context running after a mute.
+    if (context && context.state !== 'closed') void context.suspend().catch(() => {});
   };
 
   return {
@@ -95,7 +101,18 @@ export function createSoundscape(createContext: () => SoundContext | undefined):
         }
         if (!context) return false;
       }
-      void context.resume().catch(() => {});
+      const started = context;
+      started.resume().then(
+        () => {
+          // A mute or dispose while resuming wins over the late resume.
+          if (oscillators.length === 0 && context === started) stop();
+        },
+        () => {
+          if (context !== started || oscillators.length === 0) return;
+          stop();
+          onStopped();
+        },
+      );
       master = context.createGain();
       master.gain.value = soundscapeGain(volume);
       master.connect(context.destination);
