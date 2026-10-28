@@ -62,6 +62,11 @@ The carnival is a small browser game. It ships with one game, the **water
 cannon**, and a midway you walk around: a sunny fairground with tents, rides and
 a booth for every game. Empty booths say "coming soon" until a game fills them.
 
+If your system asks for reduced motion, the midway goes quiet: the clouds,
+rides, flags, balloons and strolling visitors hold still. You still walk, click
+to travel and open booths at full speed, and the games themselves don't change.
+The midway follows the setting if you change it while it's open.
+
 You grow your carnival by adding games through your factory. Each game lives in
 its own folder, and the only shared file it touches is the game list in
 `src/games/index.ts`. Several games can be built at once with little to clash
