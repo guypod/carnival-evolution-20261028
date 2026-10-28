@@ -6,6 +6,7 @@ import {
   POSTCARD_SCALE,
   cleanVisitorName,
   drawPostcard,
+  limitNameInput,
   postcardColors,
   postcardContent,
   postcardExporter,
@@ -44,6 +45,15 @@ describe('cleanVisitorName', () => {
     const name = '🎡'.repeat(POSTCARD_NAME_MAX);
     expect(name.length).toBeLessThanOrEqual(POSTCARD_NAME_INPUT_MAX);
     expect(cleanVisitorName(name)).toBe(name);
+  });
+
+  it('cuts the name field to what the card shows', () => {
+    const ascii = 'a'.repeat(30);
+    expect(limitNameInput(ascii)).toBe('a'.repeat(POSTCARD_NAME_MAX));
+    expect(cleanVisitorName(limitNameInput(ascii))).toBe(limitNameInput(ascii));
+    const emoji = '🎡'.repeat(POSTCARD_NAME_MAX);
+    expect(limitNameInput(emoji)).toBe(emoji);
+    expect(limitNameInput(emoji + '🎡')).toBe(emoji);
   });
 
   it('reads blank as no name', () => {

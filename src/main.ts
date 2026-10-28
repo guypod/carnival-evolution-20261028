@@ -47,6 +47,7 @@ import {
   POSTCARD_MESSAGES,
   POSTCARD_NAME_INPUT_MAX,
   POSTCARD_NAME_MAX,
+  limitNameInput,
   POSTCARD_SCALE,
   POSTCARD_SIZE,
   drawPostcard,
@@ -634,6 +635,8 @@ function renderPostcard() {
   let content = postcardContent(visit);
 
   function update() {
+    const limited = limitNameInput(name.value);
+    if (limited !== name.value) name.value = limited;
     content = postcardContent({ ...visit, name: name.value });
     app.querySelector('.postcard-heading')!.textContent = content.heading;
     app.querySelector('.postcard-greeting')!.textContent = content.greeting;

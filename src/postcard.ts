@@ -51,6 +51,15 @@ export function cleanVisitorName(raw: string): string {
   return Array.from(text).slice(0, POSTCARD_NAME_MAX).join('').trim();
 }
 
+/**
+ * The name field's value, cut to POSTCARD_NAME_MAX characters so the field
+ * never holds more than the card can show.
+ */
+export function limitNameInput(value: string): string {
+  const chars = Array.from(value);
+  return chars.length > POSTCARD_NAME_MAX ? chars.slice(0, POSTCARD_NAME_MAX).join('') : value;
+}
+
 function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
 }
