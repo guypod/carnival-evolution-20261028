@@ -21,13 +21,20 @@ Whack the moles as they pop out of six numbered holes. You have 30 seconds.
 ## Scoring
 
 - A hit is worth 10 points times your bonus.
+- Every fourth mole of a round (the 4th, 8th, 12th and so on) is a golden
+  visitor: it is gold, wears a crown and is labelled **GOLDEN 25**. A golden
+  hit is worth 25 points times your bonus. The count starts again with each
+  round, and moles that duck away unhit still count.
 - The bonus grows with hits in a row: the first hit is x1, the second x2, and
   every hit after that x3.
 - Whacking an empty hole is a miss: it resets your streak to 0 but never takes
   points away. A whacked mole can't be hit twice, and tapping it again doesn't
-  count as a miss.
+  count as a miss. That goes for golden moles too.
+- Reaching a streak of 3 and of 5 flashes a short message, such as
+  **3 in a row! x3**, below the holes for a second.
 
-The end screen shows your score, hits and misses. Your final score is saved to
+The end screen shows your score, hits, golden hits, misses and your best
+streak of the round. Your final score is saved to
 the carnival's score board once, when the round ends. If the browser refuses
 to save it, the error goes to the console and the end screen and **Play again**
 still work.
@@ -36,7 +43,7 @@ still work.
 
 - `game.ts`: the game logic (`createState`, `startRound`, `beginRound`, `whack`, `step`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isStartKey`, `seededRng`,
-  `holeForKey`, `holeAt`) and the `moleMayhem`
+  `isGoldenSpawn`, `milestoneText`, `holeForKey`, `holeAt`) and the `moleMayhem`
   entry the midway registers. `createState` takes an rng so tests can choose
   where moles pop.
 - `game.test.ts`: tests for the game logic.

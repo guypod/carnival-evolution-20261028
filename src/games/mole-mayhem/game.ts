@@ -13,6 +13,14 @@ export const SPAWN_GAP = 0.25;
 export const BONK_TIME = 0.3;
 export const POINTS_PER_HIT = 10;
 export const MAX_MULTIPLIER = 3;
+/** Every fourth mole of a round is a golden visitor. */
+export const GOLDEN_EVERY = 4;
+/** A golden mole's points before the streak bonus. */
+export const GOLDEN_POINTS = 25;
+/** Streaks that flash a short message when reached. */
+export const MILESTONES = [3, 5] as const;
+/** Seconds a streak milestone message stays on screen. */
+export const MILESTONE_TIME = 1;
 
 /** A random number in [0, 1). Injected so tests can choose where moles pop. */
 export type Rng = () => number;
@@ -22,6 +30,15 @@ export interface Hole {
   up: number;
   /** Seconds left showing a whacked mole; it cannot be hit again meanwhile. */
   bonk: number;
+  /** Whether the mole in this hole, up or whacked, is a golden visitor. */
+  golden: boolean;
+}
+
+export interface Milestone {
+  /** The streak that was reached. */
+  streak: number;
+  /** Seconds left showing the message. */
+  left: number;
 }
 
 export interface MoleState {
@@ -34,7 +51,15 @@ export interface MoleState {
   /** Hits in a row since the last miss. */
   streak: number;
   hits: number;
+  /** Golden moles whacked this round. */
+  goldenHits: number;
+  /** The longest streak this round. */
+  bestStreak: number;
   misses: number;
+  /** Moles popped this round, which decides when a golden one comes. */
+  spawns: number;
+  /** The streak milestone being shown, if any. */
+  milestone: Milestone | undefined;
   /** Set once the round's score has been handed to the score board. */
   scoreRecorded: boolean;
   rng: Rng;
@@ -54,14 +79,18 @@ export function seededRng(seed: number): Rng {
 
 export function createState(rng: Rng = Math.random): MoleState {
   return {
-    holes: Array.from({ length: HOLES }, () => ({ up: 0, bonk: 0 })),
+    holes: Array.from({ length: HOLES }, () => ({ up: 0, bonk: 0, golden: false })),
     phase: 'ready',
     timeLeft: ROUND_TIME,
     spawnIn: 0,
     score: 0,
     streak: 0,
     hits: 0,
+    goldenHits: 0,
+    bestStreak: 0,
     misses: 0,
+    spawns: 0,
+    milestone: undefined,
     scoreRecorded: false,
     rng,
   };
@@ -80,17 +109,29 @@ export function multiplier(streak: number): number {
   return Math.min(streak + 1, MAX_MULTIPLIER);
 }
 
+/** Whether the `spawn`th mole of a round (counting from 1) is golden. */
+export function isGoldenSpawn(spawn: number): boolean {
+  return spawn > 0 && spawn % GOLDEN_EVERY === 0;
+}
+
 /**
  * Whacks hole `index` (0 to HOLES - 1). A mole that is up scores and ducks at
- * once, so it can't be hit twice. An empty hole breaks the streak.
+ * once, so it can't be hit twice. A golden mole is worth GOLDEN_POINTS before
+ * the bonus instead of POINTS_PER_HIT. An empty hole breaks the streak.
  */
 export function whack(state: MoleState, index: number): 'hit' | 'miss' | 'ignored' {
   const hole = state.holes[index];
   if (state.phase !== 'playing' || !hole) return 'ignored';
   if (hole.up > 0) {
-    state.score += POINTS_PER_HIT * multiplier(state.streak);
+    const base = hole.golden ? GOLDEN_POINTS : POINTS_PER_HIT;
+    state.score += base * multiplier(state.streak);
     state.streak += 1;
     state.hits += 1;
+    if (hole.golden) state.goldenHits += 1;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
+    if ((MILESTONES as readonly number[]).includes(state.streak)) {
+      state.milestone = { streak: state.streak, left: MILESTONE_TIME };
+    }
     hole.up = 0;
     hole.bonk = BONK_TIME;
     return 'hit';
@@ -106,7 +147,9 @@ function popMole(state: MoleState): void {
   const empty = state.holes.filter((h) => h.up === 0 && h.bonk === 0);
   if (empty.length === 0) return;
   const pick = Math.min(Math.floor(state.rng() * empty.length), empty.length - 1);
+  state.spawns += 1;
   empty[pick].up = MOLE_UP_TIME;
+  empty[pick].golden = isGoldenSpawn(state.spawns);
 }
 
 /** Advances the round by `dt` seconds. */
@@ -119,8 +162,15 @@ export function step(state: MoleState, dt: number): void {
     for (const hole of state.holes) {
       hole.up = 0;
       hole.bonk = 0;
+      hole.golden = false;
     }
+    state.milestone = undefined;
     return;
+  }
+
+  if (state.milestone) {
+    state.milestone.left -= dt;
+    if (state.milestone.left <= 0) state.milestone = undefined;
   }
 
   // Exactly one mole is up at a time, with a short gap between moles. A long
@@ -250,6 +300,30 @@ function onButton(x: number, y: number) {
   return x >= BUTTON.x && x <= BUTTON.x + BUTTON.w && y >= BUTTON.y && y <= BUTTON.y + BUTTON.h;
 }
 
+/** The message shown when a streak milestone is reached. */
+export function milestoneText(streak: number): string {
+  return `${streak} in a row! x${multiplier(streak)}`;
+}
+
+/** A small crown sitting on a golden mole's head, its base at (x, y). */
+function drawCrown(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.fillStyle = theme.colors.text;
+  ctx.beginPath();
+  ctx.moveTo(x - 16, y);
+  ctx.lineTo(x - 16, y - 14);
+  ctx.lineTo(x - 8, y - 6);
+  ctx.lineTo(x, y - 18);
+  ctx.lineTo(x + 8, y - 6);
+  ctx.lineTo(x + 16, y - 14);
+  ctx.lineTo(x + 16, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = theme.colors.danger;
+  ctx.beginPath();
+  ctx.arc(x, y - 6, 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
   const { colors } = theme;
 
@@ -280,7 +354,8 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
     ctx.fill();
 
     if (hole.up > 0 || hole.bonk > 0) {
-      ctx.fillStyle = hole.bonk > 0 ? colors.muted : colors.surface;
+      if (hole.bonk > 0) ctx.fillStyle = colors.muted;
+      else ctx.fillStyle = hole.golden ? colors.accent : colors.surface;
       ctx.beginPath();
       ctx.arc(x, y, 38, Math.PI, 0);
       ctx.fillRect(x - 38, y, 76, 24);
@@ -294,11 +369,13 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
       ctx.beginPath();
       ctx.arc(x, y + 2, 6, 0, Math.PI * 2);
       ctx.fill();
-      if (hole.bonk > 0) {
+      if (hole.golden) drawCrown(ctx, x, y - 36);
+      if (hole.bonk > 0 || hole.golden) {
         ctx.fillStyle = colors.accent;
         ctx.font = canvasFont('body', 'bold');
         ctx.textAlign = 'center';
-        ctx.fillText('BONK!', x, y - 48);
+        const label = hole.bonk > 0 ? 'BONK!' : `GOLDEN ${GOLDEN_POINTS}`;
+        ctx.fillText(label, x, y - (hole.golden ? 62 : 48));
       }
     }
 
@@ -306,6 +383,16 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
     ctx.font = canvasFont('body', 'bold');
     ctx.textAlign = 'center';
     ctx.fillText(String(i + 1), x, y + 70);
+  }
+
+  // Below the holes, so it never covers a mole.
+  if (state.phase === 'playing' && state.milestone) {
+    ctx.globalAlpha = Math.min(state.milestone.left / 0.3, 1);
+    ctx.fillStyle = colors.accent;
+    ctx.font = canvasFont('title', 'bold');
+    ctx.textAlign = 'center';
+    ctx.fillText(milestoneText(state.milestone.streak), WIDTH / 2, 438);
+    ctx.globalAlpha = 1;
   }
 
   ctx.fillStyle = colors.muted;
@@ -330,11 +417,16 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
     ctx.fillText(
       state.phase === 'ready'
         ? `Whack moles for ${ROUND_TIME} seconds: click or tap them, or press keys 1 to 6.`
-        : `${state.hits} hits, ${state.misses} misses.`,
+        : `${state.hits} hits (${state.goldenHits} golden), ${state.misses} misses. Best streak ${state.bestStreak}.`,
       WIDTH / 2,
       250,
     );
     ctx.fillText('Hits in a row score x2, then x3. Missing resets it.', WIDTH / 2, 284);
+    ctx.fillText(
+      `Every ${GOLDEN_EVERY}th mole is golden and worth ${GOLDEN_POINTS} before the bonus.`,
+      WIDTH / 2,
+      318,
+    );
 
     ctx.fillStyle = colors.stripeA;
     ctx.fillRect(BUTTON.x, BUTTON.y, BUTTON.w, BUTTON.h);

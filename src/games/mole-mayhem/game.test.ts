@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   BONK_TIME,
+  GOLDEN_EVERY,
+  GOLDEN_POINTS,
   HOLES,
   MAX_MULTIPLIER,
+  MILESTONE_TIME,
   MOLE_UP_TIME,
   POINTS_PER_HIT,
   ROUND_TIME,
@@ -13,7 +16,9 @@ import {
   holeAt,
   holeCentre,
   holeForKey,
+  isGoldenSpawn,
   isStartKey,
+  milestoneText,
   multiplier,
   saveFinalScore,
   seededRng,
@@ -97,16 +102,167 @@ describe('mole mayhem', () => {
   it('scores 10 for a hit and raises the bonus up to 3x', () => {
     const state = playing();
     const gained: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const before = state.score;
+      expect(whack(state, upHole(state))).toBe('hit');
+      gained.push(state.score - before);
+      step(state, SPAWN_GAP + 0.01);
+    }
+    expect(gained).toEqual([10, 20, 30]);
+    expect(multiplier(10)).toBe(MAX_MULTIPLIER);
+    expect(state.streak).toBe(3);
+    expect(state.hits).toBe(3);
+  });
+
+  it('makes every fourth mole golden, counting from the start of the round', () => {
+    expect(GOLDEN_EVERY).toBe(4);
+    expect([1, 2, 3, 4, 5, 8, 12].map(isGoldenSpawn)).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+    ]);
+    const state = playing();
+    const golden: boolean[] = [];
+    for (let i = 0; i < 8; i++) {
+      golden.push(state.holes[upHole(state)].golden);
+      // Let each mole duck away unhit: the schedule counts spawns, not hits.
+      step(state, MOLE_UP_TIME + SPAWN_GAP);
+    }
+    expect(golden).toEqual([false, false, false, true, false, false, false, true]);
+  });
+
+  it('scores a golden mole 25 before the streak bonus', () => {
+    // Five hits in a row: the fourth mole is golden at x3, the fifth is normal at x3.
+    const state = playing();
+    const gained: number[] = [];
     for (let i = 0; i < 5; i++) {
       const before = state.score;
       expect(whack(state, upHole(state))).toBe('hit');
       gained.push(state.score - before);
       step(state, SPAWN_GAP + 0.01);
     }
-    expect(gained).toEqual([10, 20, 30, 30, 30]);
-    expect(multiplier(10)).toBe(MAX_MULTIPLIER);
-    expect(state.streak).toBe(5);
-    expect(state.hits).toBe(5);
+    expect(gained).toEqual([10, 20, 30, GOLDEN_POINTS * 3, 30]);
+    expect(state.goldenHits).toBe(1);
+  });
+
+  it('scores a golden mole at x1 and x2 when the streak is short', () => {
+    // Miss the first moles so the golden fourth one is hit with no streak.
+    const atX1 = playing();
+    for (let i = 0; i < 3; i++) step(atX1, MOLE_UP_TIME + SPAWN_GAP);
+    expect(atX1.holes[upHole(atX1)].golden).toBe(true);
+    whack(atX1, upHole(atX1));
+    expect(atX1.score).toBe(GOLDEN_POINTS);
+
+    // One hit before it: the golden mole is the second in a row.
+    const atX2 = playing();
+    for (let i = 0; i < 2; i++) step(atX2, MOLE_UP_TIME + SPAWN_GAP);
+    whack(atX2, upHole(atX2));
+    step(atX2, SPAWN_GAP + 0.01);
+    expect(atX2.holes[upHole(atX2)].golden).toBe(true);
+    whack(atX2, upHole(atX2));
+    expect(atX2.score).toBe(POINTS_PER_HIT + GOLDEN_POINTS * 2);
+  });
+
+  it('cannot hit a golden mole twice', () => {
+    const state = playing();
+    for (let i = 0; i < 3; i++) step(state, MOLE_UP_TIME + SPAWN_GAP);
+    const hole = upHole(state);
+    expect(state.holes[hole].golden).toBe(true);
+    expect(whack(state, hole)).toBe('hit');
+    expect(whack(state, hole)).toBe('ignored');
+    expect(state.score).toBe(GOLDEN_POINTS);
+    expect(state.goldenHits).toBe(1);
+    expect(state.misses).toBe(0);
+  });
+
+  it('lets a golden mole that ducked away be missed, breaking the streak', () => {
+    const state = playing();
+    whack(state, upHole(state));
+    step(state, SPAWN_GAP + 0.01);
+    for (let i = 0; i < 2; i++) step(state, MOLE_UP_TIME + SPAWN_GAP);
+    const hole = upHole(state);
+    expect(state.holes[hole].golden).toBe(true);
+    step(state, MOLE_UP_TIME);
+    expect(whack(state, hole)).toBe('miss');
+    expect(state.streak).toBe(0);
+    expect(state.goldenHits).toBe(0);
+    expect(state.bestStreak).toBe(1);
+  });
+
+  it('keeps the best streak after a miss', () => {
+    const state = playing();
+    for (let i = 0; i < 2; i++) {
+      whack(state, upHole(state));
+      step(state, SPAWN_GAP + 0.01);
+    }
+    const empty = state.holes.findIndex((h) => h.up === 0 && h.bonk === 0);
+    whack(state, empty);
+    whack(state, upHole(state));
+    expect(state.streak).toBe(1);
+    expect(state.bestStreak).toBe(2);
+  });
+
+  it('flashes a milestone at streaks of 3 and 5, and clears it after a moment', () => {
+    const state = playing();
+    const shown: (number | undefined)[] = [];
+    for (let i = 0; i < 6; i++) {
+      whack(state, upHole(state));
+      shown.push(state.milestone?.streak);
+      step(state, SPAWN_GAP + 0.01);
+    }
+    expect(shown).toEqual([undefined, undefined, 3, 3, 5, 5]);
+    expect(milestoneText(3)).toBe('3 in a row! x3');
+    expect(milestoneText(5)).toBe('5 in a row! x3');
+    step(state, MILESTONE_TIME);
+    expect(state.milestone).toBeUndefined();
+  });
+
+  it('clears the milestone when the round ends', () => {
+    const state = playing();
+    for (let i = 0; i < 3; i++) {
+      whack(state, upHole(state));
+      step(state, SPAWN_GAP + 0.01);
+    }
+    expect(state.milestone?.streak).toBe(3);
+    step(state, ROUND_TIME);
+    expect(state.phase).toBe('over');
+    expect(state.milestone).toBeUndefined();
+    expect(state.holes.every((h) => !h.golden)).toBe(true);
+  });
+
+  it('restarts the golden schedule and round stats on Play again', () => {
+    const clock = frameClock(0);
+    const state = beginRound(createState(seededRng(1)), clock, 0);
+    step(state, 0.01);
+    for (let i = 0; i < 4; i++) {
+      whack(state, upHole(state));
+      step(state, SPAWN_GAP + 0.01);
+    }
+    // One more spawn than a multiple of four, so a carried count would show.
+    expect(state.spawns).toBe(5);
+    expect(state.goldenHits).toBe(1);
+    step(state, ROUND_TIME);
+    const saved: number[] = [];
+    saveFinalScore(state, (score) => saved.push(score));
+    saveFinalScore(state, (score) => saved.push(score));
+    expect(saved).toEqual([10 + 20 + 30 + GOLDEN_POINTS * 3]);
+
+    const replay = beginRound(state, clock, 40_000, () => createState(seededRng(1)));
+    expect(replay).not.toBe(state);
+    expect(replay.goldenHits).toBe(0);
+    expect(replay.bestStreak).toBe(0);
+    expect(replay.milestone).toBeUndefined();
+    step(replay, 0.01);
+    const golden: boolean[] = [];
+    for (let i = 0; i < 4; i++) {
+      golden.push(replay.holes[upHole(replay)].golden);
+      step(replay, MOLE_UP_TIME + SPAWN_GAP);
+    }
+    expect(golden).toEqual([false, false, false, true]);
   });
 
   it('breaks the streak on an empty hole without taking points', () => {
