@@ -7,10 +7,14 @@ export interface ScoreEntry {
 
 type ScoreStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
+export type ScoreListener = (entry: ScoreEntry) => void;
+
 const STORAGE_KEY = 'tessl-carnival:scores';
 const MAX_ENTRIES_PER_GAME = 50;
 
 export function createScoreBoard(storage: ScoreStorage, now: () => number = Date.now) {
+  const listeners = new Set<ScoreListener>();
+
   function load(): ScoreEntry[] {
     try {
       const parsed: unknown = JSON.parse(storage.getItem(STORAGE_KEY) ?? '[]');
@@ -35,14 +39,37 @@ export function createScoreBoard(storage: ScoreStorage, now: () => number = Date
     const others = load().filter((e) => e.gameId !== gameId);
     const kept = [...top(gameId, MAX_ENTRIES_PER_GAME - 1), entry];
     storage.setItem(STORAGE_KEY, JSON.stringify([...others, ...kept]));
+    notify(entry);
     return entry;
+  }
+
+  function notify(entry: ScoreEntry): void {
+    // Copy first so a listener that unsubscribes mid-loop can't skip another.
+    for (const listener of [...listeners]) {
+      try {
+        listener(entry);
+      } catch (error) {
+        // One broken listener must not undo the record or silence the others.
+        console.error('Score listener failed', error);
+      }
+    }
+  }
+
+  /**
+   * Calls `listener` after each score is saved; a failed save calls nothing.
+   * Returns an unsubscribe function that is safe to call more than once.
+   */
+  function subscribe(listener: ScoreListener): () => void {
+    const wrapped: ScoreListener = (entry) => listener(entry);
+    listeners.add(wrapped);
+    return () => void listeners.delete(wrapped);
   }
 
   function best(gameId: string): number | undefined {
     return top(gameId, 1)[0]?.score;
   }
 
-  return { record, best, top };
+  return { record, best, top, subscribe };
 }
 
 function browserStorage(): ScoreStorage {
@@ -64,3 +91,5 @@ const board = createScoreBoard(browserStorage());
 export const recordScore = board.record;
 export const bestScore = board.best;
 export const topScores = board.top;
+/** Hears about every score saved through `recordScore`. */
+export const onScoreRecorded = board.subscribe;

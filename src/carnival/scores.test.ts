@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createScoreBoard } from './scores';
 
 function memoryStorage() {
@@ -52,5 +52,70 @@ describe('score board', () => {
     const board = createScoreBoard(memoryStorage());
     expect(() => board.record('water-cannon', -1)).toThrow();
     expect(() => board.record('water-cannon', Number.NaN)).toThrow();
+  });
+});
+
+describe('score subscriptions', () => {
+  it('tells a listener about each saved score', () => {
+    const board = createScoreBoard(memoryStorage(), () => 7);
+    const heard: unknown[] = [];
+    board.subscribe((entry) => heard.push(entry));
+    const entry = board.record('circuit', 41.6);
+    expect(heard).toEqual([{ gameId: 'circuit', score: 42, at: 7 }]);
+    expect(heard[0]).toEqual(entry);
+    expect(board.best('circuit')).toBe(42);
+  });
+
+  it('tells nobody when the score is rejected or cannot be saved', () => {
+    const failing = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota exceeded');
+      },
+    };
+    const board = createScoreBoard(failing);
+    const listener = vi.fn();
+    board.subscribe(listener);
+    expect(() => board.record('circuit', 10)).toThrow('quota exceeded');
+    expect(() => board.record('circuit', -1)).toThrow();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('stops telling a listener once it unsubscribes, however many times', () => {
+    const board = createScoreBoard(memoryStorage());
+    const kept = vi.fn();
+    const dropped = vi.fn();
+    board.subscribe(kept);
+    const unsubscribe = board.subscribe(dropped);
+    board.record('circuit', 1);
+    unsubscribe();
+    unsubscribe();
+    board.record('circuit', 2);
+    expect(dropped).toHaveBeenCalledTimes(1);
+    expect(kept).toHaveBeenCalledTimes(2);
+  });
+
+  it('tells every listener, in the order they subscribed', () => {
+    const board = createScoreBoard(memoryStorage());
+    const order: string[] = [];
+    board.subscribe(() => order.push('first'));
+    board.subscribe(() => order.push('second'));
+    board.record('circuit', 5);
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  it('keeps scoring and the other listeners going when one listener throws', () => {
+    const board = createScoreBoard(memoryStorage());
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const after = vi.fn();
+    board.subscribe(() => {
+      throw new Error('broken listener');
+    });
+    board.subscribe(after);
+    expect(() => board.record('circuit', 30)).not.toThrow();
+    expect(after).toHaveBeenCalledTimes(1);
+    expect(board.best('circuit')).toBe(30);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 });
