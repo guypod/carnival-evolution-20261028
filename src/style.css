@@ -1068,3 +1068,19 @@ kbd {
   font-weight: bold;
   text-decoration: none;
 }
+
+.scene-toggle {
+  font: inherit;
+  margin: 0.5rem 0;
+  padding: 0.35rem 0.7rem;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-background);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.scene-toggle[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}

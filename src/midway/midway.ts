@@ -1,6 +1,7 @@
 import { isControl } from './controls';
 import { advanceSceneClock, watchReducedMotion, type MotionHost } from './motion';
-import { palette } from './palette';
+import { evening, palette } from './palette';
+import { lanternGlow, type Scene } from './scene';
 import {
   archBounds,
   BOOTH_SIGN_HEIGHT,
@@ -51,11 +52,15 @@ export interface MidwayOptions {
   onPlay(gameId: string): void;
   /** Called whenever the booth in reach changes. */
   onReach(booth: BoothSlot | undefined): void;
+  /** Day or lantern evening. Day when left out. */
+  scene?: Scene;
 }
 
 export interface MidwayControls {
   /** Walks the player to a game's booth. */
   walkTo(gameId: string): void;
+  /** Switches between day and lantern evening. */
+  setScene(scene: Scene): void;
   stop(): void;
 }
 
@@ -110,6 +115,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const floaters: Floater[] = [];
   /** Quiet mode: decoration holds still, the player doesn't. See motion.ts. */
   let quiet = false;
+  let scene: Scene = options.scene ?? 'day';
   /** The clock the scenery animates by; it stops in quiet mode. */
   let sceneTime = 0;
   const stopWatchingMotion = watchReducedMotion(window as MotionHost, (reduce) => {
@@ -276,8 +282,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const horizon = (HORIZON - camera.y) * zoom;
     const sky = ctx.createLinearGradient(0, horizon - 260 * zoom, 0, horizon);
-    sky.addColorStop(0, palette.skyHigh);
-    sky.addColorStop(1, palette.sky);
+    const skyColors = scene === 'evening' ? evening : palette;
+    sky.addColorStop(0, skyColors.skyHigh);
+    sky.addColorStop(1, skyColors.sky);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, canvas.clientWidth, Math.max(0, horizon + 2));
 
@@ -317,6 +324,26 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
           ground.canvas.height / ground.scale,
         );
       }
+    }
+
+    if (scene === 'evening') {
+      // Dusk dims the ground, then lanterns by each booth light it warmly.
+      // Booths, people and labels are drawn after, so they stay clear.
+      ctx.fillStyle = evening.wash;
+      ctx.fillRect(visible.left, visible.top, view.w, view.h);
+      ctx.globalCompositeOperation = 'lighter';
+      map.booths.forEach((booth, i) => {
+        const c = toScreen(booth.x + 1, booth.y + 1);
+        const r = 46 * lanternGlow(t, i, quiet);
+        const glow = ctx.createRadialGradient(c.x, c.y + 6, 0, c.x, c.y + 6, r);
+        glow.addColorStop(0, evening.glow);
+        glow.addColorStop(1, evening.glowEdge);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y + 6, r, r / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalCompositeOperation = 'source-over';
     }
 
     if (destination && player.path.length > 0) {
@@ -450,6 +477,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     walkTo(gameId) {
       const booth = map.booths.find((b) => b.gameId === gameId);
       if (booth) walkToBooth(booth);
+    },
+    setScene(next) {
+      scene = next;
     },
     stop() {
       cancelAnimationFrame(frame);
