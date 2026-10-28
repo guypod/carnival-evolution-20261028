@@ -94,6 +94,7 @@ import {
 } from './midway/motion';
 import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
 import { layoutMidway, type BoothSlot } from './midway/world';
+import { boothPrompt } from './booth-prompt';
 
 applyTheme();
 
@@ -188,6 +189,7 @@ function renderMidway() {
         <button type="button" class="cancel" hidden>Cancel walk</button>
       </div>
       <div class="booth-card" aria-live="polite" hidden>
+        <p class="prompt" hidden></p>
         <h2></h2>
         <p class="description"></p>
         <p class="best"></p>
@@ -215,6 +217,10 @@ function renderMidway() {
     card.querySelector('.description')!.textContent =
       game?.description ?? 'This booth is waiting for a game. Build one and it opens here.';
     card.querySelector('.best')!.textContent = game ? boothScoresText(game.id) : '';
+    const prompt = card.querySelector<HTMLElement>('.prompt')!;
+    const promptText = boothPrompt(booth, (id) => registry.get(id)?.name);
+    prompt.hidden = promptText === undefined;
+    prompt.textContent = promptText ?? '';
     const link = card.querySelector<HTMLAnchorElement>('.play')!;
     link.hidden = !game;
     if (game) link.href = `#/play/${game.id}`;
