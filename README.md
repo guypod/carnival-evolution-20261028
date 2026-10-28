@@ -62,7 +62,12 @@ The carnival is a small browser game. It ships with one game, the **water
 cannon**, and a midway you walk around: a sunny fairground with tents, rides and
 a booth for every game. Empty booths say "coming soon" until a game fills them.
 
-The **Guide** button in the corner opens the visitor guide: the destinations,
+The **Help** button in the corner lists the midway's controls: walking,
+clicking to travel, playing a booth, Escape, and getting back to the map.
+Escape closes it, and puts focus back on the button when focus was inside it.
+**Back to the map** closes it and focuses the map so the keys walk again.
+
+The **Guide** button next to it opens the visitor guide: the destinations,
 the booth list with your bests, and your Passport. Escape closes it and puts
 focus back on the button. The midway's keys never fire while a link, button or
 field has focus, so to walk again with the keyboard, Tab (or Shift+Tab) to the
