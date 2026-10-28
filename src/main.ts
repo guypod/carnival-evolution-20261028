@@ -11,6 +11,7 @@ import {
   pavilionCollection,
   shelfText,
 } from './prize-pavilion';
+import { progressText, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
 
@@ -42,6 +43,7 @@ function renderMidway() {
       </p>
       <div class="midway-panels">
         <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
+        <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
         <nav class="midway-guide" aria-label="Booths">
           <h2>Booths</h2>
           <ul></ul>
@@ -184,6 +186,61 @@ function renderPrizes() {
   stop = onEscapeKey(window, () => (location.hash = '#/'));
 }
 
+function renderTrail() {
+  document.body.dataset.view = 'trail';
+  const missions = trailMissions(registry.all());
+  app.innerHTML = `
+    <section class="trail" aria-labelledby="trail-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="trail-title" tabindex="-1">Carnival Trail</h1>
+      </div>
+      <p class="trail-intro">Three missions across every booth on the midway.</p>
+      <p class="trail-next" role="status"></p>
+      <ol class="trail-missions"></ol>
+      <p class="note">Progress comes from your best scores in this browser only. Nothing to buy, and nothing is spent.</p>
+    </section>`;
+
+  const recommended = trailRecommendation(missions);
+  app.querySelector('.trail-next')!.textContent = recommended
+    ? `Next up: ${recommended.nextAction}`
+    : missions.every((mission) => mission.complete)
+      ? 'Every mission complete!'
+      : 'No booths are open yet.';
+
+  const list = app.querySelector('.trail-missions')!;
+  for (const mission of missions) {
+    const item = document.createElement('li');
+    item.classList.toggle('complete', mission.complete);
+    item.innerHTML = `
+      <span class="badge" aria-hidden="true">${mission.complete ? '✓' : ''}</span>
+      <div class="details">
+        <h2></h2>
+        <p class="goal"></p>
+        <p class="progress"></p>
+        <p class="action"></p>
+      </div>`;
+    item.querySelector('h2')!.textContent = mission.complete
+      ? `${mission.name} (earned)`
+      : mission.name;
+    item.querySelector('.goal')!.textContent = mission.goal;
+    item.querySelector('.progress')!.textContent = progressText(mission);
+    item.querySelector('.action')!.textContent = mission.nextAction;
+    if (mission.next) {
+      const link = document.createElement('a');
+      link.className = 'play-link';
+      link.href = mission.next.playHref;
+      link.textContent = 'Play';
+      link.setAttribute('aria-label', `Play ${mission.next.name} for ${mission.name}`);
+      item.querySelector('.details')!.append(link);
+    }
+    list.append(item);
+  }
+
+  app.querySelector<HTMLElement>('h1')!.focus();
+  stop = onEscapeKey(window, () => (location.hash = '#/'));
+}
+
 function renderGame(game: CarnivalGame) {
   document.body.dataset.view = 'game';
   app.innerHTML = `
@@ -211,6 +268,7 @@ function route() {
   const game = match ? registry.get(match[1]) : undefined;
   if (game) renderGame(game);
   else if (location.hash === '#/prizes') renderPrizes();
+  else if (location.hash === '#/trail') renderTrail();
   else renderMidway();
 }
 
