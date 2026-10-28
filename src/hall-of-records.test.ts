@@ -111,7 +111,6 @@ describe('hallOfRecords', () => {
         { gameId: 'water-cannon', score: Infinity, at: 1 },
         { gameId: 'water-cannon', score: -5, at: 1 },
         { gameId: 'water-cannon', score: '99', at: 1 },
-        null,
         { gameId: 'water-cannon', score: 12, at: 1 },
       ]),
       iso,
@@ -157,6 +156,15 @@ describe('hallOfRecords', () => {
       },
       iso,
     );
+    expect(hall.booths[0].rows).toEqual([]);
+  });
+
+  it('shows no rounds when the shared reader fails on a null stored entry', () => {
+    const storage = {
+      getItem: () => JSON.stringify([null, { gameId: 'water-cannon', score: 12, at: 1 }]),
+      setItem: () => {},
+    };
+    const hall = hallOfRecords([cannon], createScoreBoard(storage).top, iso);
     expect(hall.booths[0].rows).toEqual([]);
   });
 
