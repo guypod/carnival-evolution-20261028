@@ -512,4 +512,19 @@ describe('forecast', () => {
     const next = beginRound(state);
     expect(lastTryText(next)).toBeUndefined();
   });
+
+  it('names no forecast loss for a miss once the forecast is already 0', () => {
+    const state = playing();
+    const miss = () => {
+      flip(state, 0);
+      flip(state, otherThan(state, 0));
+      step(state, MISMATCH_TIME);
+    };
+    while (forecastScore(state.moves, state.matches, state.peekUsed) > 0) miss();
+    const name = SYMBOLS[state.cards[0].symbol];
+    expect(lastTryText(state)).toBe(`Miss: no pair for ${name} (-10 forecast)`);
+    miss();
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(0);
+    expect(lastTryText(state)).toBe(`Miss: no pair for ${name}`);
+  });
 });

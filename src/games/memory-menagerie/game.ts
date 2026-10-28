@@ -47,7 +47,7 @@ export interface MemoryState {
   /** Seconds left in the peek showing every card; 0 when no peek is showing. */
   peekIn: number;
   /** The last try's outcome and the symbol it found or the first card's symbol, for feedback. */
-  lastTry?: { result: 'match' | 'miss'; symbol: number };
+  lastTry?: { result: 'match' | 'miss'; symbol: number; forecastDrop: number };
   rng: Rng;
 }
 
@@ -123,6 +123,7 @@ export function flip(
   state.open.push(index);
   if (state.open.length === 1) return 'flipped';
 
+  const before = forecastScore(state.moves, state.matches, state.peekUsed);
   state.moves += 1;
   const [a, b] = state.open;
   if (state.cards[a].symbol === state.cards[b].symbol) {
@@ -130,12 +131,16 @@ export function flip(
     state.cards[b].matched = true;
     state.open = [];
     state.matches += 1;
-    state.lastTry = { result: 'match', symbol: state.cards[a].symbol };
+    state.lastTry = { result: 'match', symbol: state.cards[a].symbol, forecastDrop: 0 };
     if (state.matches === PAIRS) state.phase = 'over';
     return 'match';
   }
   state.resolveIn = MISMATCH_TIME;
-  state.lastTry = { result: 'miss', symbol: state.cards[a].symbol };
+  state.lastTry = {
+    result: 'miss',
+    symbol: state.cards[a].symbol,
+    forecastDrop: before - forecastScore(state.moves, state.matches, state.peekUsed),
+  };
   return 'mismatch';
 }
 
@@ -181,7 +186,7 @@ export function scoreWithPeek(moves: number, peekUsed: boolean): number {
 /**
  * The forecast final score: what the round would score if every pair still
  * hidden were matched with one move each from here, less the peek if used.
- * Not yet earned: every further miss lowers it by MOVE_PENALTY.
+ * Not yet earned: every further miss lowers it by MOVE_PENALTY, until it is 0.
  */
 export function forecastScore(moves: number, matches: number, peekUsed: boolean): number {
   return scoreWithPeek(moves + Math.max(PAIRS - matches, 0), peekUsed);
@@ -192,14 +197,18 @@ export function pairsLeft(state: MemoryState): number {
   return PAIRS - state.matches;
 }
 
-/** One short line on the last try, or undefined before the first try. */
+/**
+ * One short line on the last try, or undefined before the first try. A miss
+ * names how far it lowered the forecast, and no number once the forecast was 0.
+ */
 export function lastTryText(state: MemoryState): string | undefined {
   const last = state.lastTry;
   if (!last) return undefined;
   const name = SYMBOLS[last.symbol];
-  return last.result === 'match'
-    ? `Match: ${name} pair found`
-    : `Miss: no pair for ${name} (-${MOVE_PENALTY} forecast)`;
+  if (last.result === 'match') return `Match: ${name} pair found`;
+  return last.forecastDrop > 0
+    ? `Miss: no pair for ${name} (-${last.forecastDrop} forecast)`
+    : `Miss: no pair for ${name}`;
 }
 
 /** The round's score once it is over, else 0. */
