@@ -23,6 +23,7 @@ import {
   type DirectoryStatus,
 } from './booth-directory';
 import { favorites } from './favorites';
+import { circuit, circuitProgress, circuitStatus, legText } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -57,6 +58,7 @@ function renderMidway() {
         <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
         <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
         <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
+        <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
         <a class="records-link" href="#/records">📜 Hall of Records</a>
         <nav class="midway-guide" aria-label="Booths">
           <h2>Booths</h2>
@@ -250,6 +252,70 @@ function renderTrail() {
       item.querySelector('.details')!.append(link);
     }
     list.append(item);
+  }
+
+  app.querySelector<HTMLElement>('h1')!.focus();
+  stop = onEscapeKey(window, () => (location.hash = '#/'));
+}
+
+function renderCircuit() {
+  document.body.dataset.view = 'circuit';
+  app.innerHTML = `
+    <section class="circuit" aria-labelledby="circuit-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="circuit-title" tabindex="-1">Carnival Circuit</h1>
+      </div>
+      <p class="circuit-intro">Three booths in order: Ring Toss, Balloon Darts, then Skee Ball. A leg counts once you finish a new round at its booth after the circuit starts. Scores from before the circuit never count.</p>
+      <p class="circuit-status" role="status"></p>
+      <div class="circuit-actions">
+        <a class="circuit-next play-link" hidden>Play next booth</a>
+        <button type="button" class="circuit-start"></button>
+      </div>
+      <p class="circuit-error" role="alert" hidden>The circuit could not be saved in this browser.</p>
+      <ol class="circuit-legs"></ol>
+      <p class="note">The circuit is kept in this browser only. Free play, scores and records are unchanged.</p>
+    </section>`;
+
+  const progress = circuitProgress(registry.all(), circuit.startedAt());
+  app.querySelector('.circuit-status')!.textContent = circuitStatus(progress);
+  const next = app.querySelector<HTMLAnchorElement>('.circuit-next')!;
+  next.hidden = !progress.next;
+  if (progress.next) {
+    next.href = progress.next.playHref;
+    next.textContent = `Play ${progress.next.name}`;
+  }
+  const startButton = app.querySelector<HTMLButtonElement>('.circuit-start')!;
+  startButton.hidden = progress.legs.length === 0;
+  startButton.textContent = progress.startedAt === undefined ? 'Start circuit' : 'Restart circuit';
+  startButton.addEventListener('click', () => {
+    if (circuit.start() === undefined) {
+      app.querySelector<HTMLElement>('.circuit-error')!.hidden = false;
+      return;
+    }
+    renderCircuit();
+  });
+
+  const list = app.querySelector('.circuit-legs')!;
+  for (const leg of progress.legs) {
+    const item = document.createElement('li');
+    item.classList.toggle('complete', leg.complete);
+    item.classList.toggle('current', leg === progress.next);
+    item.innerHTML = `
+      <span class="badge" aria-hidden="true">${leg.complete ? '✓' : ''}</span>
+      <div class="details">
+        <h2></h2>
+        <p class="score"></p>
+      </div>`;
+    item.querySelector('h2')!.textContent = leg.name;
+    item.querySelector('.score')!.textContent = legText(leg);
+    list.append(item);
+  }
+  if (progress.finished) {
+    const total = document.createElement('li');
+    total.className = 'circuit-total';
+    total.textContent = `Total: ${progress.total}`;
+    list.append(total);
   }
 
   app.querySelector<HTMLElement>('h1')!.focus();
@@ -471,6 +537,7 @@ function route() {
   if (game) renderGame(game);
   else if (location.hash === '#/prizes') renderPrizes();
   else if (location.hash === '#/trail') renderTrail();
+  else if (location.hash === '#/circuit') renderCircuit();
   else if (location.hash === '#/records') renderRecords();
   else if (location.hash === '#/booths') renderBooths();
   else renderMidway();
