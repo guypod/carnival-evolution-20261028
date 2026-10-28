@@ -64,8 +64,8 @@ a booth for every game. Empty booths say "coming soon" until a game fills them.
 
 The **Help** button in the corner lists the midway's controls: walking,
 clicking to travel, playing a booth, Escape, and getting back to the map.
-Escape closes it and puts focus back on the button, and **Back to the map**
-closes it and focuses the map so the keys walk again.
+Escape closes it, and puts focus back on the button when focus was inside it.
+**Back to the map** closes it and focuses the map so the keys walk again.
 
 The **Guide** button next to it opens the visitor guide: the destinations,
 the booth list with your bests, and your Passport. Escape closes it and puts

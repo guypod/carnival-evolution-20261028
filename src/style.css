@@ -222,12 +222,13 @@ kbd {
 }
 
 /* The controls help: a short list of keys, bounded and scrollable like the
-   guide so it fits small screens. */
+   guide so it fits small screens. It shrinks with the guide inside the panels'
+   max-height, and never takes more than half the screen. */
 .midway-help-panel {
-  flex-shrink: 0;
   box-sizing: border-box;
   width: min(280px, 100%);
-  max-height: 50%;
+  min-height: 0;
+  max-height: 50vh;
   padding: 10px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;

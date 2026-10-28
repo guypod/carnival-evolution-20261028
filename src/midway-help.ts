@@ -19,7 +19,10 @@ export const HELP_CONTROLS: HelpControl[] = [
     keys: ['E', 'Enter', 'Space'],
     action: 'Play the booth you are standing at. Clicking the booth again plays it too.',
   },
-  { keys: ['Esc'], action: 'Close the Guide or this Help, and go back to its button.' },
+  {
+    keys: ['Esc'],
+    action: 'Close the Guide or this Help. Focus goes back to its button when it was inside.',
+  },
   {
     keys: ['Tab', 'Shift+Tab'],
     action: 'Return to the map from a button or link, or click the map. Keys only walk there.',
