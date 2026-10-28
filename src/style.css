@@ -1296,6 +1296,19 @@ kbd {
   margin: 0;
 }
 
+@media (max-width: 720px) {
+  /* The panels fill the top on narrow screens, so the walk line sits at the bottom. */
+  .midway-route {
+    top: auto;
+    bottom: 8px;
+  }
+
+  /* A finished walk's line gives way to the booth card that opens on arrival. */
+  .midway:has(.booth-card:not([hidden])) .midway-route:has(.cancel[hidden]) {
+    display: none;
+  }
+}
+
 .postcard h1:focus {
   outline: none;
 }
