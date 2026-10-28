@@ -5,6 +5,7 @@ import { highStriker } from './high-striker/game';
 import { memoryMenagerie } from './memory-menagerie/game';
 import { moleMayhem } from './mole-mayhem/game';
 import { ringToss } from './ring-toss/game';
+import { skeeBall } from './skee-ball/game';
 import { waterCannon } from './water-cannon/game';
 
 /** Every game on the midway. A new game is added to this list. */
@@ -16,4 +17,5 @@ export const registry = createRegistry([
   balloonDarts,
   memoryMenagerie,
   duckDash,
+  skeeBall,
 ]);
