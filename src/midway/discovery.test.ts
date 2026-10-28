@@ -6,12 +6,14 @@ import {
   discoveryProgress,
   DISCOVERY_KEY,
   landmarkInReach,
+  mergeDiscoveries,
   nextLandmark,
   parseDiscoveries,
   trailComplete,
   trailLandmarks,
 } from './discovery';
-import { layoutMidway } from './world';
+import { registry } from '../games';
+import { canStand, findPath, layoutMidway } from './world';
 
 const map = layoutMidway(['a', 'b', 'c']);
 const landmarks = trailLandmarks(map);
@@ -31,6 +33,33 @@ describe('trailLandmarks', () => {
     const wheel = map.props.find((p) => p.kind === 'ferris-wheel')!;
     expect(landmarks[2].area).toEqual({ x: wheel.x, y: wheel.y, w: wheel.w, h: wheel.h });
   });
+});
+
+describe('the real nine-booth midway', () => {
+  const ids = registry.all().map((g) => g.id);
+  const real = layoutMidway(ids);
+  const realLandmarks = trailLandmarks(real);
+
+  it('lays out every registered booth and all three landmarks', () => {
+    expect(ids).toHaveLength(9);
+    expect(realLandmarks.map((l) => l.id)).toEqual(['entrance', 'carousel', 'ferris-wheel']);
+  });
+
+  it.each(realLandmarks.map((l) => [l.id, l] as const))(
+    'has a walkable spot, reached from the spawn, within reach of the %s',
+    (_id, landmark) => {
+      const spots: { x: number; y: number }[] = [];
+      for (let ty = 0; ty < real.height; ty++) {
+        for (let tx = 0; tx < real.width; tx++) {
+          const spot = { x: tx + 0.5, y: ty + 0.5 };
+          if (!canStand(real, spot.x, spot.y)) continue;
+          if (landmarkInReach(realLandmarks, spot)?.id !== landmark.id) continue;
+          if (findPath(real, real.spawn, spot)) spots.push(spot);
+        }
+      }
+      expect(spots.length).toBeGreaterThan(0);
+    },
+  );
 });
 
 describe('landmarkInReach', () => {
@@ -86,6 +115,16 @@ describe('storage', () => {
     expect(createDiscoveryStore(storage).load()).toEqual(['entrance']);
     store.reset();
     expect(store.load()).toEqual([]);
+  });
+
+  it('keeps finds another tab saved when recording a new one', () => {
+    const storage = memoryStorage();
+    const tabA = createDiscoveryStore(storage);
+    const tabB = createDiscoveryStore(storage);
+    const staleB = tabB.load();
+    tabA.save(discover(tabA.load(), 'entrance'));
+    tabB.save(discover(mergeDiscoveries(staleB, tabB.load()), 'carousel'));
+    expect(createDiscoveryStore(storage).load()).toEqual(['entrance', 'carousel']);
   });
 
   it('survives storage that throws', () => {

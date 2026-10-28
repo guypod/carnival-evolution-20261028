@@ -71,6 +71,14 @@ export function discover(found: readonly LandmarkId[], id: LandmarkId): Landmark
   return found.includes(id) ? [...found] : [...found, id];
 }
 
+/** Finds from both lists, in order, so another tab's saved finds are kept. */
+export function mergeDiscoveries(
+  found: readonly LandmarkId[],
+  saved: readonly LandmarkId[],
+): LandmarkId[] {
+  return saved.reduce(discover, [...found]);
+}
+
 /** The first landmark still to find, in trail order. */
 export function nextLandmark(
   landmarks: readonly Landmark[],

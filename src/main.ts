@@ -48,6 +48,7 @@ import {
   discoveryClue,
   discoveryProgress,
   discoveryStore,
+  mergeDiscoveries,
   trailComplete,
   type Landmark,
 } from './midway/discovery';
@@ -198,7 +199,8 @@ function setUpDiscovery(landmarks: Landmark[]) {
   return {
     found(landmark: Landmark) {
       if (found.includes(landmark.id)) return;
-      found = discover(found, landmark.id);
+      // Read the saved finds again first, so a find made in another tab is kept.
+      found = discover(mergeDiscoveries(found, discoveryStore.load()), landmark.id);
       discoveryStore.save(found);
       render();
       toast.textContent = trailComplete(landmarks, found)
