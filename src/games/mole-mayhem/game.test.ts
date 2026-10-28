@@ -8,10 +8,13 @@ import {
   ROUND_TIME,
   SPAWN_GAP,
   createState,
+  frameClock,
   holeAt,
   holeCentre,
   holeForKey,
+  isStartKey,
   multiplier,
+  saveFinalScore,
   seededRng,
   startRound,
   step,
@@ -192,5 +195,108 @@ describe('mole mayhem', () => {
       expect(holeAt(x, y)).toBe(i);
     }
     expect(holeAt(0, 0)).toBeUndefined();
+  });
+
+  it('counts the whole of a long frame, so a slow frame rate keeps the round at 30 seconds', () => {
+    const state = createState(seededRng(1));
+    startRound(state);
+    // 10 frames a second, timed by the game's frame clock, for 29.9 seconds.
+    const clock = frameClock(0);
+    for (let i = 1; i <= 299; i++) step(state, clock.tick(i * 100));
+    expect(state.phase).toBe('playing');
+    expect(state.timeLeft).toBeCloseTo(0.1, 5);
+    step(state, clock.tick(30_000));
+    expect(state.phase).toBe('over');
+  });
+
+  it('pauses the frame clock while the tab is hidden', () => {
+    const clock = frameClock(0);
+    expect(clock.tick(100)).toBeCloseTo(0.1, 9);
+    clock.resume(60_000);
+    expect(clock.tick(60_050)).toBeCloseTo(0.05, 9);
+    expect(clock.tick(60_040)).toBe(0);
+  });
+
+  it('keeps a mole up for its full time and no longer at a slow frame rate', () => {
+    const state = createState(() => 0);
+    startRound(state);
+    step(state, 0.1);
+    // The mole popped at the start of that frame, so 0.1s of its time is gone.
+    expect(state.holes[0].up).toBeCloseTo(MOLE_UP_TIME - 0.1, 5);
+    for (let i = 0; i < 10; i++) step(state, 0.1);
+    expect(state.holes[0].up).toBeGreaterThan(0.05);
+    step(state, 0.1);
+    expect(state.holes[0].up).toBeCloseTo(0, 9);
+  });
+
+  it('leaves the full gap after a mole when one step spans its leaving', () => {
+    const state = createState(() => 0);
+    startRound(state);
+    step(state, 0.01);
+    expect(upHole(state)).toBe(0);
+    step(state, MOLE_UP_TIME);
+    expect(upHole(state)).toBe(-1);
+    step(state, SPAWN_GAP - 0.02);
+    expect(upHole(state)).toBe(-1);
+    step(state, 0.02);
+    expect(upHole(state)).toBe(0);
+  });
+
+  it('counts the rest of a long step toward the next mole after a gap', () => {
+    const state = createState(() => 0);
+    startRound(state);
+    step(state, 0.01);
+    const left = state.holes[0].up;
+    step(state, left + SPAWN_GAP + 0.5);
+    expect(state.holes[0].up).toBeCloseTo(MOLE_UP_TIME - 0.5, 5);
+  });
+
+  it('starts on Space or Enter, but leaves Enter to a focused link or control', () => {
+    expect(isStartKey('Space', ' ')).toBe(true);
+    expect(isStartKey('Enter', 'Enter', 'BODY')).toBe(true);
+    expect(isStartKey('Enter', 'Enter', 'CANVAS')).toBe(true);
+    expect(isStartKey('Enter', 'Enter', 'A')).toBe(false);
+    expect(isStartKey('Space', ' ', 'BUTTON')).toBe(false);
+    expect(isStartKey('KeyA', 'a')).toBe(false);
+  });
+
+  it('keeps the round over and replayable when saving the score throws', () => {
+    const state = playing();
+    whack(state, upHole(state));
+    step(state, ROUND_TIME);
+    const failure = new Error('QuotaExceededError');
+    const saved: number[] = [];
+    const errors: unknown[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    try {
+      expect(
+        saveFinalScore(state, () => {
+          throw failure;
+        }),
+      ).toBe(failure);
+    } finally {
+      console.error = original;
+    }
+    expect(errors).toHaveLength(1);
+    expect(state.phase).toBe('over');
+    expect(saveFinalScore(state, (score) => saved.push(score))).toBeUndefined();
+    expect(saved).toEqual([]);
+
+    const replay = createState(seededRng(2));
+    expect(startRound(replay)).toBe(true);
+    step(replay, 0.01);
+    expect(upHole(replay)).not.toBe(-1);
+  });
+
+  it('saves the final score once through saveFinalScore', () => {
+    const state = playing();
+    whack(state, upHole(state));
+    const saved: number[] = [];
+    expect(saveFinalScore(state, (score) => saved.push(score))).toBeUndefined();
+    step(state, ROUND_TIME);
+    saveFinalScore(state, (score) => saved.push(score));
+    saveFinalScore(state, (score) => saved.push(score));
+    expect(saved).toEqual([POINTS_PER_HIT]);
   });
 });

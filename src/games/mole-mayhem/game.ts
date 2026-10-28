@@ -102,7 +102,7 @@ export function whack(state: MoleState, index: number): 'hit' | 'miss' | 'ignore
   return 'miss';
 }
 
-function popMole(state: MoleState) {
+function popMole(state: MoleState): void {
   const empty = state.holes.filter((h) => h.up === 0 && h.bonk === 0);
   if (empty.length === 0) return;
   const pick = Math.min(Math.floor(state.rng() * empty.length), empty.length - 1);
@@ -123,20 +123,28 @@ export function step(state: MoleState, dt: number): void {
     return;
   }
 
-  for (const hole of state.holes) {
-    hole.up = Math.max(hole.up - dt, 0);
-    hole.bonk = Math.max(hole.bonk - dt, 0);
-  }
-
-  // Exactly one mole is up at a time, with a short gap between moles.
-  if (state.holes.some((h) => h.up > 0)) {
-    state.spawnIn = SPAWN_GAP;
-    return;
-  }
-  state.spawnIn -= dt;
-  if (state.spawnIn <= 0) {
-    popMole(state);
-    state.spawnIn = SPAWN_GAP;
+  // Exactly one mole is up at a time, with a short gap between moles. A long
+  // step is split where a mole leaves or pops, so time before a mole leaves
+  // never counts toward the gap after it, and time after a pop counts toward
+  // the new mole's time up.
+  let left = dt;
+  while (left > 0) {
+    const upNow = Math.max(0, ...state.holes.map((h) => h.up));
+    const slice = Math.min(left, upNow > 0 ? upNow : Math.max(state.spawnIn, 0));
+    for (const hole of state.holes) {
+      hole.up = Math.max(hole.up - slice, 0);
+      hole.bonk = Math.max(hole.bonk - slice, 0);
+    }
+    left -= slice;
+    if (upNow > 0) {
+      state.spawnIn = SPAWN_GAP;
+      continue;
+    }
+    state.spawnIn -= slice;
+    if (state.spawnIn <= 0) {
+      popMole(state);
+      state.spawnIn = SPAWN_GAP;
+    }
   }
 }
 
@@ -148,6 +156,53 @@ export function takeFinalScore(state: MoleState): number | undefined {
   if (state.phase !== 'over' || state.scoreRecorded) return undefined;
   state.scoreRecorded = true;
   return state.score;
+}
+
+/**
+ * Times the animation frames. `tick` gives the whole time since the last frame,
+ * so a slow frame rate never stretches the round. `resume` restarts timing
+ * when a hidden tab comes back, so the round pauses instead of skipping ahead.
+ */
+export function frameClock(now: number) {
+  let last = now;
+  return {
+    tick(time: number): number {
+      const seconds = Math.max((time - last) / 1000, 0);
+      last = time;
+      return seconds;
+    },
+    resume(time: number): void {
+      last = time;
+    },
+  };
+}
+
+/**
+ * Hands the final score to `record` once, when the round ends. A failed save is
+ * reported and returned instead of thrown, so the result still shows and the
+ * game can be played again.
+ */
+export function saveFinalScore(state: MoleState, record: (score: number) => void): unknown {
+  const score = takeFinalScore(state);
+  if (score === undefined) return undefined;
+  try {
+    record(score);
+  } catch (error) {
+    console.error('Mole Mayhem could not save the score', error);
+    return error;
+  }
+  return undefined;
+}
+
+const PAGE_CONTROLS = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
+
+/**
+ * Whether a key press starts the round: Space or Enter, unless a link or
+ * control on the page has focus, so the key still activates that control.
+ */
+export function isStartKey(code: string, key: string, focusedTag?: string): boolean {
+  if (focusedTag !== undefined && PAGE_CONTROLS.includes(focusedTag.toUpperCase())) return false;
+  return code === 'Space' || key === 'Enter';
 }
 
 /** The hole a key press whacks: keys 1 to 6 are holes 0 to 5. */
@@ -307,7 +362,9 @@ export const moleMayhem: CarnivalGame = {
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return;
-      if (event.code === 'Space' || event.key === 'Enter') {
+      const target = event.target instanceof HTMLElement ? event.target : undefined;
+      if (target?.isContentEditable) return;
+      if (isStartKey(event.code, event.key, target?.tagName)) {
         event.preventDefault();
         if (state.phase !== 'playing') begin();
         return;
@@ -322,16 +379,16 @@ export const moleMayhem: CarnivalGame = {
     window.addEventListener('keydown', onKeyDown);
 
     let frame = 0;
-    let last = performance.now();
+    const clock = frameClock(performance.now());
+    const onVisibility = () => {
+      if (!document.hidden) clock.resume(performance.now());
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     const loop = (time: number) => {
-      // Cap the step so a background tab doesn't skip the round.
-      const dt = Math.min((time - last) / 1000, 0.05);
-      last = time;
-      step(state, dt);
-      const finalScore = takeFinalScore(state);
-      if (finalScore !== undefined) recordScore(moleMayhem.id, finalScore);
-      draw(ctx, state);
       frame = requestAnimationFrame(loop);
+      step(state, clock.tick(time));
+      saveFinalScore(state, (score) => recordScore(moleMayhem.id, score));
+      draw(ctx, state);
     };
     frame = requestAnimationFrame(loop);
 
@@ -339,6 +396,7 @@ export const moleMayhem: CarnivalGame = {
       cancelAnimationFrame(frame);
       canvas.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   },
 };
