@@ -11,6 +11,7 @@ import {
   legText,
   restartCircuit,
   runText,
+  saveFinishedCircuits,
   savedProgress,
 } from './circuit';
 import { onEscapeKey } from './escape';
@@ -441,5 +442,70 @@ describe('createCircuitHistory', () => {
     expect(shown).toEqual(progress);
     expect(shown.finished).toBe(false);
     expect(shown.next?.gameId).toBe('balloon-darts');
+  });
+});
+
+describe('saveFinishedCircuits', () => {
+  it('saves the finished run when the last score is recorded, before replays can evict it', () => {
+    const s = setup();
+    for (let i = 0; i < 49; i++) s.board.record('skee-ball', 500);
+    const stopSaving = saveFinishedCircuits(
+      s.board.subscribe,
+      games,
+      s.circuit.startedAt,
+      s.history,
+      s.board.top,
+    );
+    const done = playCircuit(s, [1, 2, 3]);
+    // Keep replaying the last booth, with no route change, until the
+    // circuit's own Skee Ball score is pushed off the scoreboard.
+    for (let i = 0; i < 5; i++) {
+      s.tick();
+      s.board.record('skee-ball', 400);
+    }
+    expect(s.board.top('skee-ball', 1000).some((entry) => entry.score === 3)).toBe(false);
+    const history = s.history.read()!;
+    expect(history.runs).toEqual([
+      {
+        startedAt: done.startedAt,
+        completedAt: done.completedAt,
+        legs: [
+          { gameId: 'ring-toss', score: 1 },
+          { gameId: 'balloon-darts', score: 2 },
+          { gameId: 'skee-ball', score: 3 },
+        ],
+        total: 6,
+      },
+    ]);
+    expect(history.best).toBe(6);
+    stopSaving();
+  });
+
+  it('ignores other booths and stops saving once unsubscribed', () => {
+    const s = setup();
+    const saves: number[] = [];
+    const history = {
+      save: (progress: Parameters<typeof s.history.save>[0]) => {
+        saves.push(progress.total);
+        return s.history.save(progress);
+      },
+    };
+    const stopSaving = saveFinishedCircuits(
+      s.board.subscribe,
+      games,
+      s.circuit.startedAt,
+      history,
+      s.board.top,
+    );
+    s.board.record('water-cannon', 9);
+    expect(saves).toEqual([]);
+    playCircuit(s, [1, 2, 3]);
+    expect(saves).toHaveLength(3);
+    expect(s.history.read()!.runs).toHaveLength(1);
+    stopSaving();
+    stopSaving();
+    playCircuit(s, [4, 5, 6]);
+    expect(saves).toHaveLength(3);
+    expect(s.history.read()!.runs).toHaveLength(1);
   });
 });

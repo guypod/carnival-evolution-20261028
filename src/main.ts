@@ -1,5 +1,5 @@
 import './style.css';
-import { applyTheme, bestScore, type CarnivalGame } from './carnival';
+import { applyTheme, bestScore, onScoreRecorded, type CarnivalGame } from './carnival';
 import { registry } from './games';
 import { onEscapeKey } from './escape';
 import { boothScoresText } from './booth-scores';
@@ -30,6 +30,7 @@ import {
   circuitStatus,
   legText,
   restartCircuit,
+  saveFinishedCircuits,
   savedProgress,
   runText,
 } from './circuit';
@@ -587,5 +588,21 @@ function route() {
   else renderMidway();
 }
 
+// One subscription for the page's lifetime: a finished circuit is saved the
+// moment its last score is recorded, before more play can evict that score.
+const stopSavingCircuits = saveFinishedCircuits(
+  onScoreRecorded,
+  registry.all(),
+  circuit.startedAt,
+  circuitHistory,
+);
+
 window.addEventListener('hashchange', route);
 route();
+
+// Hot reloads run this module again: drop the old subscription and listener.
+import.meta.hot?.dispose(() => {
+  stopSavingCircuits();
+  window.removeEventListener('hashchange', route);
+  stop?.();
+});

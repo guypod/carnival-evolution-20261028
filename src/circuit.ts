@@ -1,4 +1,4 @@
-import { topScores, type CarnivalGame, type ScoreEntry } from './carnival';
+import { topScores, type CarnivalGame, type ScoreEntry, type ScoreListener } from './carnival';
 
 /**
  * Carnival Circuit: a guided run through three booths in order. Only the
@@ -258,6 +258,24 @@ export function createCircuitHistory(storage: CircuitStorage | undefined) {
   }
 
   return { read, save };
+}
+
+/**
+ * Saves a finished circuit as soon as a circuit booth's score is recorded, so
+ * the run is in history before later play can push its scores off the
+ * scoreboard. Returns the unsubscribe function.
+ */
+export function saveFinishedCircuits(
+  subscribe: (listener: ScoreListener) => () => void,
+  games: readonly CarnivalGame[],
+  startedAt: () => number | undefined,
+  history: { save(progress: CircuitProgress): SaveResult },
+  top: Top = topScores,
+): () => void {
+  const ids: readonly string[] = CIRCUIT_GAME_IDS;
+  return subscribe((entry) => {
+    if (ids.includes(entry.gameId)) history.save(circuitProgress(games, startedAt(), top));
+  });
 }
 
 /**
