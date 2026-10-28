@@ -12,6 +12,15 @@ import {
   shelfText,
 } from './prize-pavilion';
 import { emptyText, hallOfRecords, overviewText } from './hall-of-records';
+import {
+  DIRECTORY_STATUSES,
+  bestLine,
+  countText,
+  directoryEntries,
+  emptyText as directoryEmptyText,
+  filterDirectory,
+  type DirectoryStatus,
+} from './booth-directory';
 import { progressText, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -43,6 +52,7 @@ function renderMidway() {
         <a href="https://tessl.io/devcon?utm_source=carnival&amp;utm_medium=midway-credit&amp;utm_campaign=tessl-carnival" target="_blank" rel="noopener">AI DevCon NYC</a>
       </p>
       <div class="midway-panels">
+        <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
         <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
         <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
         <a class="records-link" href="#/records">📜 Hall of Records</a>
@@ -300,6 +310,99 @@ function renderRecords() {
   stop = onEscapeKey(window, () => (location.hash = '#/'));
 }
 
+function renderBooths() {
+  document.body.dataset.view = 'booths';
+  const entries = directoryEntries(registry.all());
+  app.innerHTML = `
+    <section class="directory" aria-labelledby="directory-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="directory-title" tabindex="-1">Booth Directory</h1>
+      </div>
+      <p class="directory-intro">Every booth on the midway. Search by name or description, or show only the booths you have or have not played.</p>
+      <div class="directory-controls">
+        <label for="directory-search">Search booths</label>
+        <input id="directory-search" type="search" autocomplete="off" />
+        <div class="directory-filters" role="group" aria-label="Show booths"></div>
+      </div>
+      <p class="directory-count" role="status" aria-live="polite"></p>
+      <div class="directory-empty" hidden>
+        <p></p>
+        <button type="button" class="directory-reset">Show all booths</button>
+      </div>
+      <ul class="directory-booths"></ul>
+      <p class="note">Personal bests come from your scores in this browser only.</p>
+    </section>`;
+
+  const search = app.querySelector<HTMLInputElement>('#directory-search')!;
+  const filters = app.querySelector<HTMLElement>('.directory-filters')!;
+  const count = app.querySelector<HTMLElement>('.directory-count')!;
+  const empty = app.querySelector<HTMLElement>('.directory-empty')!;
+  const reset = app.querySelector<HTMLButtonElement>('.directory-reset')!;
+  const list = app.querySelector<HTMLElement>('.directory-booths')!;
+  let status: DirectoryStatus = 'all';
+
+  const buttons = DIRECTORY_STATUSES.map(({ id, label }) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      status = id;
+      update();
+    });
+    filters.append(button);
+    return { id, button };
+  });
+
+  function update() {
+    for (const { id, button } of buttons)
+      button.setAttribute('aria-pressed', String(id === status));
+    const shown = filterDirectory(entries, search.value, status);
+    count.textContent = countText(shown.length, entries.length);
+    const message = directoryEmptyText(shown.length, entries.length, search.value, status);
+    empty.hidden = message === undefined;
+    empty.querySelector('p')!.textContent = message ?? '';
+    reset.hidden = entries.length === 0;
+    list.replaceChildren();
+    for (const entry of shown) {
+      const item = document.createElement('li');
+      item.classList.toggle('played', entry.played);
+      item.innerHTML = `
+        <h2></h2>
+        <p class="description"></p>
+        <p class="best"></p>
+        <a class="play-link">Play</a>`;
+      item.querySelector('h2')!.textContent = entry.name;
+      item.querySelector('.description')!.textContent = entry.description;
+      item.querySelector('.best')!.textContent = bestLine(entry);
+      const link = item.querySelector<HTMLAnchorElement>('.play-link')!;
+      link.href = entry.playHref;
+      link.setAttribute('aria-label', `Play ${entry.name}`);
+      list.append(item);
+    }
+  }
+
+  search.addEventListener('input', update);
+  reset.addEventListener('click', () => {
+    search.value = '';
+    status = 'all';
+    update();
+    search.focus();
+  });
+  update();
+
+  app.querySelector<HTMLElement>('h1')!.focus();
+  // Escape in a search with text clears it first; otherwise it goes back.
+  stop = onEscapeKey(window, () => {
+    if (document.activeElement === search && search.value !== '') {
+      search.value = '';
+      update();
+    } else {
+      location.hash = '#/';
+    }
+  });
+}
+
 function renderGame(game: CarnivalGame) {
   document.body.dataset.view = 'game';
   app.innerHTML = `
@@ -329,6 +432,7 @@ function route() {
   else if (location.hash === '#/prizes') renderPrizes();
   else if (location.hash === '#/trail') renderTrail();
   else if (location.hash === '#/records') renderRecords();
+  else if (location.hash === '#/booths') renderBooths();
   else renderMidway();
 }
 
