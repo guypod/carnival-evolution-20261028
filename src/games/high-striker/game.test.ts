@@ -1,12 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
+import { theme } from '../../carnival/theme';
 import {
+  BUTTON,
+  METER,
+  TOWER,
   FLIGHT_TIME,
+  TIMING_LABELS,
   MARKER_PERIOD,
   SWINGS,
+  bestSwing,
+  breakdown,
+  breakdownRow,
   buttonLabel,
   createState,
+  feedback,
   frameClock,
   isActionKey,
+  lastStrike,
   listen,
   markerPosition,
   nextSwing,
@@ -14,9 +24,11 @@ import {
   puckHeight,
   saveFinalScore,
   scoreFor,
+  signedOffset,
   step,
   strike,
   takeFinalScore,
+  timingFor,
   total,
   type StrikerState,
 } from './game';
@@ -182,5 +194,128 @@ describe('high striker', () => {
     expect(handlers.pointerdown).toHaveBeenCalledTimes(1);
     expect(handlers.keydown).toHaveBeenCalledTimes(1);
     expect(handlers.visibilitychange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('high striker timing feedback', () => {
+  // The marker crosses the centre heading right at a quarter period.
+  const centre = MARKER_PERIOD / 4;
+
+  it('calls a strike at the centre perfect', () => {
+    const state = aiming();
+    swingAt(state, centre);
+    expect(lastStrike(state)).toMatchObject({ points: 100, timing: 'perfect' });
+    expect(feedback(lastStrike(state)!)).toBe(
+      `DING! Bell rung: 100 points. ${TIMING_LABELS.perfect}`,
+    );
+  });
+
+  it('calls a strike before the marker reaches the centre early, in either direction', () => {
+    const rightward = aiming();
+    swingAt(rightward, centre - MARKER_PERIOD * 0.04);
+    expect(lastStrike(rightward)).toMatchObject({ timing: 'early' });
+    expect(lastStrike(rightward)!.offset).toBeLessThan(0);
+
+    const leftward = aiming();
+    swingAt(leftward, centre * 3 - MARKER_PERIOD * 0.04);
+    expect(lastStrike(leftward)).toMatchObject({ timing: 'early' });
+    expect(lastStrike(leftward)!.position).toBeGreaterThan(0);
+  });
+
+  it('calls a strike after the marker passes the centre late, in either direction', () => {
+    const rightward = aiming();
+    swingAt(rightward, centre + MARKER_PERIOD * 0.04);
+    expect(lastStrike(rightward)).toMatchObject({ points: 75, timing: 'late' });
+    expect(feedback(lastStrike(rightward)!)).toContain('Late');
+
+    const leftward = aiming();
+    swingAt(leftward, centre * 3 + MARKER_PERIOD * 0.04);
+    expect(lastStrike(leftward)).toMatchObject({ timing: 'late' });
+    expect(lastStrike(leftward)!.position).toBeLessThan(0);
+  });
+
+  it('keeps the perfect boundary on the bell zone', () => {
+    expect(timingFor(0)).toBe('perfect');
+    expect(timingFor(0.05)).toBe('perfect');
+    expect(timingFor(-0.05)).toBe('perfect');
+    expect(timingFor(0.0501)).toBe('late');
+    expect(timingFor(-0.0501)).toBe('early');
+    expect(timingFor(1)).toBe('late');
+    expect(timingFor(-1)).toBe('early');
+  });
+
+  it('measures the offset along the marker travel', () => {
+    expect(signedOffset(0)).toBeCloseTo(-1);
+    expect(signedOffset(centre)).toBeCloseTo(0);
+    expect(signedOffset(MARKER_PERIOD * 0.49)).toBeCloseTo(0.96);
+  });
+
+  it('keeps the last strike on the meter while the puck flies and after it lands', () => {
+    const state = aiming();
+    state.markerTime = centre + MARKER_PERIOD * 0.04;
+    strike(state);
+    const struck = lastStrike(state);
+    expect(state.phase).toBe('flying');
+    expect(struck?.position).toBeCloseTo(0.16);
+    step(state, FLIGHT_TIME);
+    expect(lastStrike(state)).toBe(struck);
+  });
+
+  it('lists every swing with points, timing and the best swing', () => {
+    const state = aiming();
+    swingAt(state, centre - MARKER_PERIOD * 0.04);
+    nextSwing(state);
+    swingAt(state, centre);
+    nextSwing(state);
+    swingAt(state, 0);
+    expect(state.phase).toBe('over');
+    expect(bestSwing(state)?.index).toBe(1);
+    expect(breakdown(state)).toEqual([
+      'Swing 1: 75 points, Early',
+      'Swing 2: 100 points, Perfect (best)',
+      'Swing 3: 10 points, Early',
+    ]);
+    expect(total(state)).toBe(185);
+  });
+
+  it('keeps every breakdown line clear of the replay button and inside the canvas', () => {
+    const size = theme.font.small;
+    const legendBaseline = METER.y + METER.h + 26;
+    let previous = legendBaseline;
+    for (let i = 0; i < SWINGS; i++) {
+      const row = breakdownRow(i);
+      // Right-aligned at row.x, so the whole line ends left of the button.
+      expect(row.x).toBeLessThan(BUTTON.x);
+      // Each line starts a full line below the one above it, the legend first.
+      expect(row.y - size).toBeGreaterThanOrEqual(previous);
+      // Descenders stay above the tower's base and the bottom of the canvas.
+      expect(row.y + size * 0.3).toBeLessThan(TOWER.bottom);
+      expect(row.y).toBeLessThan(theme.canvas.height);
+      previous = row.y;
+    }
+  });
+
+  it('marks the first of tied swings as best', () => {
+    const state = aiming();
+    swingAt(state, 0);
+    nextSwing(state);
+    swingAt(state, 0);
+    expect(bestSwing(state)?.index).toBe(0);
+  });
+
+  it('clears the swings and markers on replay', () => {
+    const clock = frameClock(0);
+    let state = aiming();
+    for (let i = 0; i < SWINGS; i++) {
+      swingAt(state, centre);
+      nextSwing(state);
+    }
+    expect(state.phase).toBe('over');
+    state = press(state, clock, 0);
+    expect(state.phase).toBe('aiming');
+    expect(state.strikes).toEqual([]);
+    expect(lastStrike(state)).toBeUndefined();
+    expect(bestSwing(state)).toBeUndefined();
+    expect(breakdown(state)).toEqual([]);
   });
 });
