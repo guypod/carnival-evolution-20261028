@@ -15,6 +15,39 @@ const TARGETS_PER_RAIL = 3;
 export const MAX_MULTIPLIER = 3;
 const POPUP_LIFE = 0.8;
 
+export type ModeId = 'calm' | 'classic' | 'rapid';
+
+export interface Mode {
+  id: ModeId;
+  name: string;
+  /** Multiplies how fast the targets move. Points per hit stay the same. */
+  speedFactor: number;
+}
+
+/** The challenge modes, in the order the selector shows them. */
+export const MODES: readonly Mode[] = [
+  { id: 'calm', name: 'Calm', speedFactor: 0.5 },
+  { id: 'classic', name: 'Classic', speedFactor: 1 },
+  { id: 'rapid', name: 'Rapid', speedFactor: 1.5 },
+];
+
+export function modeById(id: ModeId): Mode {
+  return MODES.find((mode) => mode.id === id) ?? MODES[1];
+}
+
+/** The mode `delta` places along the selector from `id`, wrapping at either end. */
+export function cycleMode(id: ModeId, delta: number): ModeId {
+  const index = MODES.findIndex((mode) => mode.id === id);
+  const count = MODES.length;
+  return MODES[(((index + delta) % count) + count) % count].id;
+}
+
+/** The selector's label for a mode, e.g. 'Rapid x1.5'. */
+export function modeLabel(id: ModeId): string {
+  const mode = modeById(id);
+  return `${mode.name} x${mode.speedFactor}`;
+}
+
 export interface Target {
   x: number;
   y: number;
@@ -47,12 +80,16 @@ export interface WaterCannonState {
   score: number;
   /** Consecutive hits since the last miss. */
   streak: number;
-  phase: 'playing' | 'over';
+  /** 'ready' shows the mode selector; nothing moves or fires until the round begins. */
+  phase: 'ready' | 'playing' | 'over';
+  /** The challenge mode, which sets how fast the targets move. */
+  mode: ModeId;
   /** True once the final score has been handed out by takeFinalScore. */
   scoreTaken: boolean;
 }
 
-export function createState(): WaterCannonState {
+/** A round in progress in `mode`, with a full tank, no score and no streak. */
+export function createState(mode: ModeId = 'classic'): WaterCannonState {
   const spacing = WIDTH / TARGETS_PER_RAIL;
   const targets = RAILS.flatMap((rail) =>
     Array.from({ length: TARGETS_PER_RAIL }, (_, i) => ({
@@ -70,8 +107,33 @@ export function createState(): WaterCannonState {
     score: 0,
     streak: 0,
     phase: 'playing',
+    mode,
     scoreTaken: false,
   };
+}
+
+/** The mode selector before a round, with `mode` picked to start with. */
+export function createReadyState(mode: ModeId = 'classic'): WaterCannonState {
+  return { ...createState(mode), phase: 'ready' };
+}
+
+/** Picks the mode on the selector. Returns false, changing nothing, outside the selector. */
+export function selectMode(state: WaterCannonState, mode: ModeId): boolean {
+  if (state.phase !== 'ready') return false;
+  state.mode = mode;
+  return true;
+}
+
+/** Starts the round from the selector in the picked mode. Returns the state unchanged otherwise. */
+export function beginRound(state: WaterCannonState): WaterCannonState {
+  if (state.phase !== 'ready') return state;
+  return createState(state.mode);
+}
+
+/** After a round, goes back to the selector with the same mode picked. */
+export function replay(state: WaterCannonState): WaterCannonState {
+  if (state.phase !== 'over') return state;
+  return createReadyState(state.mode);
 }
 
 /** Faster targets are worth more: 10 points per 60 px/s, rounded up. */
@@ -131,8 +193,10 @@ export function fire(state: WaterCannonState, aimX: number, aimY: number): boole
 
 /** Advances the game by `dt` seconds. */
 export function step(state: WaterCannonState, dt: number): void {
+  if (state.phase === 'ready') return;
+  const { speedFactor } = modeById(state.mode);
   for (const target of state.targets) {
-    target.x += target.speed * dt;
+    target.x += target.speed * speedFactor * dt;
     if (target.x > WIDTH + target.radius) target.x = -target.radius;
     if (target.x < -target.radius) target.x = WIDTH + target.radius;
   }
@@ -158,6 +222,126 @@ export function step(state: WaterCannonState, dt: number): void {
   state.splashes = state.splashes.filter((s) => s.age < POPUP_LIFE);
 
   if (state.tank === 0 && state.shots.length === 0) state.phase = 'over';
+}
+
+const PAGE_CONTROLS = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
+
+export type KeyAction = { type: 'select'; mode: ModeId } | { type: 'start' } | { type: 'replay' };
+
+/**
+ * What a key press does on the selector or the results screen, if anything.
+ * Keys 1 to 3 or the arrow keys pick a mode, Space or Enter starts the round
+ * or plays again. Nothing happens while a link or control on the page has
+ * focus, so the key still activates that control, or during a round.
+ */
+export function keyAction(
+  state: WaterCannonState,
+  code: string,
+  key: string,
+  focusedTag?: string,
+): KeyAction | undefined {
+  if (focusedTag !== undefined && PAGE_CONTROLS.includes(focusedTag.toUpperCase()))
+    return undefined;
+  const confirm = code === 'Space' || key === 'Enter';
+  if (state.phase === 'over') return confirm ? { type: 'replay' } : undefined;
+  if (state.phase !== 'ready') return undefined;
+  if (confirm) return { type: 'start' };
+  const n = Number(key);
+  if (Number.isInteger(n) && n >= 1 && n <= MODES.length) {
+    return { type: 'select', mode: MODES[n - 1].id };
+  }
+  if (key === 'ArrowLeft' || key === 'ArrowUp') {
+    return { type: 'select', mode: cycleMode(state.mode, -1) };
+  }
+  if (key === 'ArrowRight' || key === 'ArrowDown') {
+    return { type: 'select', mode: cycleMode(state.mode, 1) };
+  }
+  return undefined;
+}
+
+/** Applies a key or pointer action. Returns the state to carry on with. */
+export function applyAction(state: WaterCannonState, action: KeyAction): WaterCannonState {
+  if (action.type === 'select') {
+    selectMode(state, action.mode);
+    return state;
+  }
+  return action.type === 'start' ? beginRound(state) : replay(state);
+}
+
+const MODE_BUTTON = { w: 200, h: 56, gap: 24, y: 210 } as const;
+const START_BUTTON = { x: WIDTH / 2 - 110, y: 320, w: 220, h: 52 } as const;
+
+/** The top-left corner of the selector button for the mode at `index`. */
+function modeButtonX(index: number): number {
+  const total = MODES.length * MODE_BUTTON.w + (MODES.length - 1) * MODE_BUTTON.gap;
+  return WIDTH / 2 - total / 2 + index * (MODE_BUTTON.w + MODE_BUTTON.gap);
+}
+
+/** The selector action under canvas point (x, y), if any. */
+export function selectorActionAt(x: number, y: number): KeyAction | undefined {
+  if (y >= MODE_BUTTON.y && y <= MODE_BUTTON.y + MODE_BUTTON.h) {
+    const index = MODES.findIndex(
+      (_, i) => x >= modeButtonX(i) && x <= modeButtonX(i) + MODE_BUTTON.w,
+    );
+    if (index !== -1) return { type: 'select', mode: MODES[index].id };
+  }
+  const inStart =
+    x >= START_BUTTON.x &&
+    x <= START_BUTTON.x + START_BUTTON.w &&
+    y >= START_BUTTON.y &&
+    y <= START_BUTTON.y + START_BUTTON.h;
+  return inStart ? { type: 'start' } : undefined;
+}
+
+/**
+ * What a pointer press does: on the selector only its buttons act, so a stray
+ * click never starts a round; on the results screen any click plays again;
+ * during a round it fires.
+ */
+export function pointerAction(
+  state: WaterCannonState,
+  x: number,
+  y: number,
+): KeyAction | { type: 'fire' } | undefined {
+  if (state.phase === 'ready') return selectorActionAt(x, y);
+  if (state.phase === 'over') return { type: 'replay' };
+  return { type: 'fire' };
+}
+
+function drawSelector(ctx: CanvasRenderingContext2D, state: WaterCannonState) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = colors.accent;
+  ctx.font = canvasFont('title', 'bold');
+  ctx.fillText('Pick a challenge', WIDTH / 2, 150);
+  ctx.fillStyle = colors.muted;
+  ctx.font = canvasFont('small');
+  ctx.fillText('Target speed changes, points stay the same. Keys 1-3 or arrows', WIDTH / 2, 185);
+
+  MODES.forEach((mode, i) => {
+    const x = modeButtonX(i);
+    const picked = mode.id === state.mode;
+    ctx.fillStyle = picked ? colors.accent : colors.surface;
+    ctx.fillRect(x, MODE_BUTTON.y, MODE_BUTTON.w, MODE_BUTTON.h);
+    if (picked) {
+      ctx.strokeStyle = colors.text;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, MODE_BUTTON.y, MODE_BUTTON.w, MODE_BUTTON.h);
+    }
+    ctx.fillStyle = picked ? colors.background : colors.text;
+    ctx.font = canvasFont('body', 'bold');
+    ctx.fillText(`${i + 1}. ${modeLabel(mode.id)}`, x + MODE_BUTTON.w / 2, MODE_BUTTON.y + 35);
+  });
+
+  ctx.fillStyle = colors.stripeA;
+  ctx.fillRect(START_BUTTON.x, START_BUTTON.y, START_BUTTON.w, START_BUTTON.h);
+  ctx.fillStyle = colors.text;
+  ctx.font = canvasFont('body', 'bold');
+  ctx.fillText('Start (Space)', WIDTH / 2, START_BUTTON.y + 33);
 }
 
 function draw(
@@ -256,6 +440,15 @@ function draw(
   ctx.textAlign = 'center';
   ctx.fillText(`Streak ${state.streak}  x${multiplier}`, WIDTH - 106, 71);
 
+  // The round's mode, top left.
+  ctx.fillStyle = colors.surface;
+  ctx.fillRect(16, 48, 180, 34);
+  ctx.fillStyle = colors.text;
+  ctx.font = canvasFont('small', 'bold');
+  ctx.fillText(`Mode ${modeLabel(state.mode)}`, 106, 71);
+
+  if (state.phase === 'ready') drawSelector(ctx, state);
+
   if (state.phase === 'over') {
     ctx.fillStyle = colors.background;
     ctx.globalAlpha = 0.8;
@@ -265,9 +458,11 @@ function draw(
     ctx.fillStyle = colors.accent;
     ctx.font = canvasFont('title', 'bold');
     ctx.fillText(`Tank empty! You scored ${state.score}`, WIDTH / 2, HEIGHT / 2);
-    ctx.fillStyle = colors.text;
+    ctx.fillStyle = colors.muted;
     ctx.font = canvasFont('body');
-    ctx.fillText('Click to play again', WIDTH / 2, HEIGHT / 2 + 40);
+    ctx.fillText(`Mode: ${modeLabel(state.mode)}`, WIDTH / 2, HEIGHT / 2 + 36);
+    ctx.fillStyle = colors.text;
+    ctx.fillText('Click or press Space to play again', WIDTH / 2, HEIGHT / 2 + 72);
   }
 }
 
@@ -282,7 +477,7 @@ export const waterCannon: CarnivalGame = {
     canvas.width = WIDTH;
     canvas.height = HEIGHT;
 
-    let state = createState();
+    let state = createReadyState();
     const aim = { x: WIDTH / 2, y: 0 };
 
     const toCanvas = (event: PointerEvent) => {
@@ -295,14 +490,22 @@ export const waterCannon: CarnivalGame = {
     const onMove = (event: PointerEvent) => Object.assign(aim, toCanvas(event));
     const onDown = (event: PointerEvent) => {
       Object.assign(aim, toCanvas(event));
-      if (state.phase === 'over') {
-        state = createState();
-      } else {
-        fire(state, aim.x, aim.y);
-      }
+      const action = pointerAction(state, aim.x, aim.y);
+      if (action?.type === 'fire') fire(state, aim.x, aim.y);
+      else if (action) state = applyAction(state, action);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const target = event.target instanceof HTMLElement ? event.target : undefined;
+      if (target?.isContentEditable) return;
+      const action = keyAction(state, event.code, event.key, target?.tagName);
+      if (!action) return;
+      event.preventDefault();
+      state = applyAction(state, action);
     };
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKeyDown);
 
     let frame = 0;
     let last = performance.now();
@@ -322,6 +525,7 @@ export const waterCannon: CarnivalGame = {
       cancelAnimationFrame(frame);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKeyDown);
     };
   },
 };
