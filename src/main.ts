@@ -426,6 +426,8 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
   const onKeyDown = (event: KeyboardEvent) => {
     // A card left open in a closed guide waits: Escape goes to what is showing.
     if (event.key !== 'Escape' || section.closest<HTMLElement>('.visitor-guide')?.hidden) return;
+    // Help sits above the guide, so it keeps the first Escape.
+    if (app.querySelector<HTMLElement>('.midway-help-panel')?.hidden === false) return;
     const result = escapeStory(story, card.contains(document.activeElement));
     if (!result.handled) return;
     // One Escape closes one panel: the guide waits for the next press.
