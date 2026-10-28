@@ -60,3 +60,69 @@ export function watchReducedMotion(
 export function advanceSceneClock(clock: number, dt: number, quiet: boolean): number {
   return quiet ? clock : clock + dt;
 }
+
+/**
+ * The visitor's own choice from the guide. "system" follows the reduced-motion
+ * setting above; "quiet" holds the decoration still whatever the system says.
+ */
+export type MotionPreference = 'system' | 'quiet';
+
+export const MOTION_KEY = 'tessl-carnival:motion';
+
+type MotionStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+export function createMotionPreference(storage: MotionStorage | undefined) {
+  /** The saved choice. Missing, unreadable or unknown values follow the system. */
+  function load(): MotionPreference {
+    try {
+      return storage?.getItem(MOTION_KEY) === 'quiet' ? 'quiet' : 'system';
+    } catch {
+      return 'system';
+    }
+  }
+
+  /** Saves the choice, and returns whether the write worked. */
+  function save(preference: MotionPreference): boolean {
+    try {
+      if (!storage) return false;
+      storage.setItem(MOTION_KEY, preference);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return { load, save };
+}
+
+/** Whether the midway is quiet, given the visitor's choice and the system's. */
+export function isQuiet(preference: MotionPreference, systemReduces: boolean): boolean {
+  return preference === 'quiet' || systemReduces;
+}
+
+export function nextMotionPreference(preference: MotionPreference): MotionPreference {
+  return preference === 'system' ? 'quiet' : 'system';
+}
+
+/**
+ * The quiet toggle's state. The name stays "Quiet midway" either way, and
+ * `pressed` says whether Quiet is chosen; unpressed means follow the system.
+ */
+export function motionToggleState(preference: MotionPreference): {
+  label: string;
+  pressed: boolean;
+} {
+  return { label: '🤫 Quiet midway', pressed: preference === 'quiet' };
+}
+
+function browserStorage(): MotionStorage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+export const motionPreference = createMotionPreference(
+  typeof window === 'undefined' ? undefined : browserStorage(),
+);
