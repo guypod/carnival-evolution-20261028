@@ -10,6 +10,17 @@ import {
   type GuideState,
 } from './visitor-guide';
 import {
+  VISIT_MOODS,
+  advanceVisit,
+  chooseVisit,
+  currentStop,
+  exitVisit,
+  findMood,
+  restartVisit,
+  visitProgress,
+  type VisitPlan,
+} from './visit-plan';
+import {
   CLOSED_HELP,
   HELP_CONTROLS,
   escapeHelp,
@@ -137,6 +148,22 @@ function renderMidway() {
           <button type="button" class="scene-toggle" aria-pressed="false"></button>
           <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
           <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
+          <section class="midway-visit" aria-label="Choose my visit">
+            <h2>Choose my visit</h2>
+            <div class="visit-moods"></div>
+            <div class="visit-plan" hidden>
+              <p class="visit-progress" role="status"></p>
+              <ol></ol>
+              <p class="visit-why"></p>
+              <div class="visit-actions">
+                <button type="button" class="visit-walk">Walk to next stop</button>
+                <button type="button" class="visit-done">Stop done</button>
+                <button type="button" class="visit-restart">Restart</button>
+                <button type="button" class="visit-exit">Exit visit</button>
+              </div>
+            </div>
+            <p class="note">Optional, with no timer. Separate from scores and stamps, and forgotten when you close the tab.</p>
+          </section>
           <nav class="midway-guide" aria-label="Booths">
             <h2>Booths</h2>
             <ul></ul>
@@ -204,6 +231,7 @@ function renderMidway() {
   });
   const routeStatus = setUpRoute(midway.cancelWalk);
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
+  setUpVisit(midway.walkTo, midway.walkToLandmark);
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
   const stopGuide = setUpGuide();
@@ -323,6 +351,83 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
       hint.removeEventListener('click', onHint);
     },
   };
+}
+
+// Choose my visit: pick a mood, then follow its three stops. The plan is kept
+// in memory for this tab only, so it survives playing a booth and coming back,
+// and it never touches scores, stamps or discovery finds.
+let visitPlan: VisitPlan | undefined;
+
+function setUpVisit(walkTo: (gameId: string) => void, walkToLandmark: (id: LandmarkId) => boolean) {
+  const section = app.querySelector<HTMLElement>('.midway-visit')!;
+  const moods = section.querySelector<HTMLElement>('.visit-moods')!;
+  const panel = section.querySelector<HTMLElement>('.visit-plan')!;
+  const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
+  const walk = section.querySelector<HTMLButtonElement>('.visit-walk')!;
+  const done = section.querySelector<HTMLButtonElement>('.visit-done')!;
+
+  const render = () => {
+    moods.hidden = visitPlan !== undefined;
+    panel.hidden = visitPlan === undefined;
+    if (!visitPlan) return;
+    const mood = findMood(visitPlan.moodId)!;
+    const stop = currentStop(visitPlan);
+    section.querySelector('.visit-progress')!.textContent = visitProgress(visitPlan);
+    section.querySelector('.visit-why')!.textContent = stop
+      ? `Why: ${stop.why}`
+      : 'Pick another mood, or restart this one.';
+    const list = section.querySelector('ol')!;
+    list.replaceChildren();
+    mood.stops.forEach((item, i) => {
+      const li = document.createElement('li');
+      const state = i < visitPlan!.index ? 'done' : i === visitPlan!.index ? 'next' : 'later';
+      li.className = state;
+      li.textContent = `${item.name}${state === 'done' ? ', done' : state === 'next' ? ', next' : ''}`;
+      list.append(li);
+    });
+    walk.hidden = done.hidden = stop === undefined;
+    if (stop) walk.textContent = `Walk to ${stop.name}`;
+  };
+
+  for (const mood of VISIT_MOODS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'visit-mood';
+    button.textContent = `${mood.name}: ${mood.summary}`;
+    button.addEventListener('click', () => {
+      visitPlan = chooseVisit(mood.id);
+      render();
+      walk.focus();
+    });
+    moods.append(button);
+  }
+
+  // Like the discovery trail, focus moves to the map once the walk starts, so
+  // a movement key can still cancel it.
+  walk.addEventListener('click', () => {
+    const stop = visitPlan && currentStop(visitPlan);
+    if (!stop) return;
+    if (stop.kind === 'booth') walkTo(stop.gameId);
+    else if (!walkToLandmark(stop.landmarkId)) return;
+    map.focus();
+  });
+  done.addEventListener('click', () => {
+    if (visitPlan) visitPlan = advanceVisit(visitPlan);
+    render();
+    if (!walk.hidden) walk.focus();
+    else section.querySelector<HTMLButtonElement>('.visit-restart')!.focus();
+  });
+  section.querySelector('.visit-restart')!.addEventListener('click', () => {
+    if (visitPlan) visitPlan = restartVisit(visitPlan);
+    render();
+    walk.focus();
+  });
+  section.querySelector('.visit-exit')!.addEventListener('click', () => {
+    visitPlan = exitVisit();
+    render();
+    moods.querySelector<HTMLButtonElement>('button')?.focus();
+  });
+  render();
 }
 
 // Day or lantern evening, from the guide. The choice is remembered when the
