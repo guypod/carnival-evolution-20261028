@@ -55,3 +55,16 @@ export const palette = {
   bunting: [colors.stripeA, colors.accent, '#2b8ccc', colors.stripeB],
   balloons: [colors.stripeA, colors.accent, '#2b8ccc', colors.water, '#f59ac0'],
 } as const;
+
+/**
+ * The lantern evening scene: a dusk sky, a wash that dims the ground, and the
+ * warm glow of the lanterns along the paths. Booths, people and labels are
+ * drawn over the wash, so they stay as clear as by day.
+ */
+export const evening = {
+  sky: '#c2566b',
+  skyHigh: '#1f1a45',
+  wash: 'rgba(28, 22, 70, 0.42)',
+  glow: 'rgba(255, 196, 92, 0.55)',
+  glowEdge: 'rgba(255, 196, 92, 0)',
+} as const;

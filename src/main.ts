@@ -43,6 +43,7 @@ import {
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
+import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
 import type { BoothSlot } from './midway/world';
 
 applyTheme();
@@ -83,6 +84,7 @@ function renderMidway() {
             <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
             <a class="records-link" href="#/records">📜 Hall of Records</a>
           </nav>
+          <button type="button" class="scene-toggle" aria-pressed="false"></button>
           <nav class="midway-guide" aria-label="Booths">
             <h2>Booths</h2>
             <ul></ul>
@@ -131,12 +133,33 @@ function renderMidway() {
     games: registry.all(),
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
     onReach: showBooth,
+    scene: scenePreference.load(),
   });
+  setUpSceneToggle(midway.setScene);
   const stopGuide = setUpGuide();
   stop = () => {
     stopGuide();
     midway.stop();
   };
+}
+
+// Day or lantern evening, from the guide. The choice is remembered when the
+// browser lets us; when it doesn't, the scene still changes for this visit.
+function setUpSceneToggle(setScene: (scene: Scene) => void) {
+  const button = app.querySelector<HTMLButtonElement>('.scene-toggle')!;
+  let scene = scenePreference.load();
+  const show = () => {
+    const { label, pressed } = sceneToggleState(scene);
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(pressed));
+  };
+  button.addEventListener('click', () => {
+    scene = nextScene(scene);
+    scenePreference.save(scene);
+    setScene(scene);
+    show();
+  });
+  show();
 }
 
 // The visitor guide starts closed so the map has the room. Escape closes it,
