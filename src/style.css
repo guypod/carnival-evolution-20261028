@@ -1438,3 +1438,16 @@ kbd {
   margin: 4px 0;
   font-weight: bold;
 }
+
+.booth-card .prompt {
+  margin: 0 0 8px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: 700;
+}
+
+.booth-card .prompt[hidden] {
+  display: none;
+}
