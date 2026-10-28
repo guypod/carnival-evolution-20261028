@@ -96,6 +96,11 @@ body[data-view='midway'] main {
   touch-action: none;
 }
 
+.midway-map:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: -3px;
+}
+
 .midway-help,
 .midway-guide,
 .midway-credit,
@@ -151,9 +156,54 @@ kbd {
   right: 16px;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 10px;
-  width: min(280px, calc(100% - 32px));
+  max-width: calc(100% - 32px);
   max-height: calc(100% - 32px);
+}
+
+.guide-toggle {
+  padding: 8px 16px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.guide-toggle[aria-expanded='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.guide-toggle:hover,
+.guide-toggle:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.visitor-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(280px, 100%);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.visitor-guide[hidden] {
+  display: none;
+}
+
+.guide-destinations {
+  display: grid;
+  gap: 6px;
+}
+
+.guide-destinations a {
+  padding: 6px 12px;
 }
 
 .midway-guide,
@@ -356,8 +406,8 @@ kbd {
   .midway-panels {
     top: 8px;
     right: 8px;
-    width: min(260px, calc(100% - 16px));
-    max-height: 55%;
+    max-width: calc(100% - 16px);
+    max-height: calc(100% - 16px);
   }
 }
 

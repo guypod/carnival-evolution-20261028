@@ -1,3 +1,4 @@
+import { isControl } from './controls';
 import { advanceSceneClock, watchReducedMotion, type MotionHost } from './motion';
 import { palette } from './palette';
 import {
@@ -157,16 +158,15 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   };
 
   const keys = new Set<string>();
-  const isControl = (target: EventTarget | null) =>
-    target instanceof HTMLElement && target.closest('a, button, input, textarea, select') !== null;
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (isControl(event.target)) return;
     if (event.code in MOVE_KEYS) {
       keys.add(event.code);
       player.path = [];
       destination = undefined;
       event.preventDefault();
-    } else if (PLAY_KEYS.has(event.code) && !isControl(event.target) && inReach?.gameId) {
+    } else if (PLAY_KEYS.has(event.code) && inReach?.gameId) {
       event.preventDefault();
       play(inReach);
     }
