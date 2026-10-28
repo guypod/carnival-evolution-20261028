@@ -34,7 +34,7 @@ still work.
 
 ## Files
 
-- `game.ts`: the game logic (`createState`, `startRound`, `whack`, `step`,
+- `game.ts`: the game logic (`createState`, `startRound`, `beginRound`, `whack`, `step`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isStartKey`, `seededRng`,
   `holeForKey`, `holeAt`) and the `moleMayhem`
   entry the midway registers. `createState` takes an rng so tests can choose

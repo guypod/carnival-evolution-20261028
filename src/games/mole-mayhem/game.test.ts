@@ -8,6 +8,7 @@ import {
   ROUND_TIME,
   SPAWN_GAP,
   createState,
+  beginRound,
   frameClock,
   holeAt,
   holeCentre,
@@ -207,6 +208,32 @@ describe('mole mayhem', () => {
     expect(state.timeLeft).toBeCloseTo(0.1, 5);
     step(state, clock.tick(30_000));
     expect(state.phase).toBe('over');
+  });
+
+  it('starts timing a round when Start is pressed, not at the last idle frame', () => {
+    const clock = frameClock(0);
+    let state = createState(seededRng(1));
+    step(state, clock.tick(16));
+    state = beginRound(state, clock, 990);
+    step(state, clock.tick(1000));
+    expect(state.phase).toBe('playing');
+    expect(state.timeLeft).toBeCloseTo(ROUND_TIME - 0.01, 9);
+    step(state, clock.tick(1100));
+    expect(state.timeLeft).toBeCloseTo(ROUND_TIME - 0.11, 9);
+  });
+
+  it('starts timing a replay when Play again is pressed', () => {
+    const clock = frameClock(0);
+    let state = createState(seededRng(1));
+    state = beginRound(state, clock, 0);
+    step(state, clock.tick(ROUND_TIME * 1000));
+    expect(state.phase).toBe('over');
+    step(state, clock.tick(31_000));
+    const replay = beginRound(state, clock, 31_990, () => createState(seededRng(2)));
+    expect(replay).not.toBe(state);
+    step(replay, clock.tick(32_000));
+    expect(replay.phase).toBe('playing');
+    expect(replay.timeLeft).toBeCloseTo(ROUND_TIME - 0.01, 9);
   });
 
   it('pauses the frame clock while the tab is hidden', () => {

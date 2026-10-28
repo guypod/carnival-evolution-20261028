@@ -178,6 +178,22 @@ export function frameClock(now: number) {
 }
 
 /**
+ * Starts a round from the ready or end screen, and restarts the clock at that
+ * moment so time spent on the screen before it never counts against the round.
+ * Returns the state that is now playing: a fresh one after a finished round.
+ */
+export function beginRound(
+  state: MoleState,
+  clock: ReturnType<typeof frameClock>,
+  now: number,
+  fresh: () => MoleState = createState,
+): MoleState {
+  const next = state.phase === 'over' ? fresh() : state;
+  if (startRound(next)) clock.resume(now);
+  return next;
+}
+
+/**
  * Hands the final score to `record` once, when the round ends. A failed save is
  * reported and returned instead of thrown, so the result still shows and the
  * game can be played again.
@@ -344,10 +360,10 @@ export const moleMayhem: CarnivalGame = {
     canvas.height = HEIGHT;
 
     let state = createState();
+    const clock = frameClock(performance.now());
 
     const begin = () => {
-      if (state.phase === 'over') state = createState();
-      startRound(state);
+      state = beginRound(state, clock, performance.now());
     };
     const onDown = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -379,7 +395,6 @@ export const moleMayhem: CarnivalGame = {
     window.addEventListener('keydown', onKeyDown);
 
     let frame = 0;
-    const clock = frameClock(performance.now());
     const onVisibility = () => {
       if (!document.hidden) clock.resume(performance.now());
     };
