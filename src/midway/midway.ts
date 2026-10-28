@@ -1,5 +1,11 @@
 import { isControl } from './controls';
-import { advanceSceneClock, watchReducedMotion, type MotionHost } from './motion';
+import {
+  advanceSceneClock,
+  isQuiet,
+  watchReducedMotion,
+  type MotionHost,
+  type MotionPreference,
+} from './motion';
 import { evening, palette } from './palette';
 import { lanternGlow, type Scene } from './scene';
 import {
@@ -54,6 +60,8 @@ export interface MidwayOptions {
   onReach(booth: BoothSlot | undefined): void;
   /** Day or lantern evening. Day when left out. */
   scene?: Scene;
+  /** Follow the system's reduced-motion setting, or stay quiet. System when left out. */
+  motion?: MotionPreference;
 }
 
 export interface MidwayControls {
@@ -61,6 +69,8 @@ export interface MidwayControls {
   walkTo(gameId: string): void;
   /** Switches between day and lantern evening. */
   setScene(scene: Scene): void;
+  /** Switches between following the system and staying quiet. */
+  setMotion(preference: MotionPreference): void;
   stop(): void;
 }
 
@@ -115,14 +125,20 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const floaters: Floater[] = [];
   /** Quiet mode: decoration holds still, the player doesn't. See motion.ts. */
   let quiet = false;
+  let motion: MotionPreference = options.motion ?? 'system';
+  let systemReduces = false;
   let scene: Scene = options.scene ?? 'day';
   /** The clock the scenery animates by; it stops in quiet mode. */
   let sceneTime = 0;
-  const stopWatchingMotion = watchReducedMotion(window as MotionHost, (reduce) => {
-    quiet = reduce;
+  const updateQuiet = () => {
+    quiet = isQuiet(motion, systemReduces);
     if (!quiet) return;
     floaters.length = 0;
     for (const visitor of visitors) visitor.walking = false;
+  };
+  const stopWatchingMotion = watchReducedMotion(window as MotionHost, (reduce) => {
+    systemReduces = reduce;
+    updateQuiet();
   });
   let nextFloater = 2;
   let inReach: BoothSlot | undefined;
@@ -480,6 +496,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     },
     setScene(next) {
       scene = next;
+    },
+    setMotion(next) {
+      motion = next;
+      updateQuiet();
     },
     stop() {
       cancelAnimationFrame(frame);
