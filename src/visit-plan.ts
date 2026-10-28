@@ -150,3 +150,15 @@ export function visitProgress(plan: VisitPlan, moods: readonly VisitMood[] = VIS
     return `${mood.name} visit complete: all ${mood.stops.length} stops done.`;
   return `${mood.name} visit: stop ${plan.index + 1} of ${mood.stops.length}.`;
 }
+
+/**
+ * The quiet celebration once every stop is marked done: the mood and its stops
+ * in order. Undefined until the plan is finished. It awards nothing.
+ */
+export function visitSummary(plan: VisitPlan, moods: readonly VisitMood[] = VISIT_MOODS) {
+  const mood = findMood(plan.moodId, moods);
+  if (!mood || !visitFinished(plan, moods)) return undefined;
+  const names = mood.stops.map((stop) => stop.name);
+  const stops = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `Well done! You finished the ${mood.name} visit: ${stops}.`;
+}

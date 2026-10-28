@@ -18,6 +18,7 @@ import {
   findMood,
   restartVisit,
   visitProgress,
+  visitSummary,
   type VisitPlan,
 } from './visit-plan';
 import {
@@ -171,10 +172,15 @@ function renderMidway() {
               <p class="visit-progress" role="status"></p>
               <ol></ol>
               <p class="visit-why"></p>
+              <div class="visit-summary" hidden>
+                <p class="visit-summary-text"></p>
+                <a class="visit-postcard" href="#/postcard">💌 Make a Souvenir Postcard</a>
+              </div>
               <div class="visit-actions">
                 <button type="button" class="visit-walk">Walk to next stop</button>
                 <button type="button" class="visit-done">Stop done</button>
                 <button type="button" class="visit-restart">Restart</button>
+                <button type="button" class="visit-another" hidden>Choose another visit</button>
                 <button type="button" class="visit-exit">Exit visit</button>
               </div>
             </div>
@@ -389,6 +395,8 @@ function setUpVisit(walkTo: (gameId: string) => void, walkToLandmark: (id: Landm
   const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
   const walk = section.querySelector<HTMLButtonElement>('.visit-walk')!;
   const done = section.querySelector<HTMLButtonElement>('.visit-done')!;
+  const another = section.querySelector<HTMLButtonElement>('.visit-another')!;
+  const summary = section.querySelector<HTMLElement>('.visit-summary')!;
 
   const render = () => {
     moods.hidden = visitPlan !== undefined;
@@ -410,6 +418,10 @@ function setUpVisit(walkTo: (gameId: string) => void, walkToLandmark: (id: Landm
       list.append(li);
     });
     walk.hidden = done.hidden = stop === undefined;
+    const celebration = visitSummary(visitPlan);
+    summary.hidden = another.hidden = celebration === undefined;
+    section.querySelector<HTMLElement>('.visit-why')!.hidden = celebration !== undefined;
+    section.querySelector('.visit-summary-text')!.textContent = celebration ?? '';
     if (stop) walk.textContent = `Walk to ${stop.name}`;
   };
 
@@ -446,11 +458,13 @@ function setUpVisit(walkTo: (gameId: string) => void, walkToLandmark: (id: Landm
     render();
     walk.focus();
   });
-  section.querySelector('.visit-exit')!.addEventListener('click', () => {
+  const leave = () => {
     visitPlan = exitVisit();
     render();
     moods.querySelector<HTMLButtonElement>('button')?.focus();
-  });
+  };
+  section.querySelector('.visit-exit')!.addEventListener('click', leave);
+  another.addEventListener('click', leave);
   render();
 }
 

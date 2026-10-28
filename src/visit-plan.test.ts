@@ -9,6 +9,7 @@ import {
   restartVisit,
   visitFinished,
   visitProgress,
+  visitSummary,
 } from './visit-plan';
 
 describe('visit plan', () => {
@@ -69,5 +70,40 @@ describe('visit plan', () => {
     visitProgress(plan);
     exitVisit();
     for (const method of Object.values(storage)) expect(method).not.toHaveBeenCalled();
+  });
+});
+
+describe('visit summary', () => {
+  const finish = (moodId: string) => {
+    let plan = chooseVisit(moodId)!;
+    for (let i = 0; i < 3; i++) plan = advanceVisit(plan);
+    return plan;
+  };
+
+  it('names the visit and its stops once every stop is done', () => {
+    expect(visitSummary(finish('relaxed'))).toBe(
+      'Well done! You finished the Relaxed visit: Carousel, Ring Toss and Memory Menagerie.',
+    );
+  });
+
+  it('stays silent until the last stop is marked done', () => {
+    let plan = chooseVisit('reflex')!;
+    for (let i = 0; i < 3; i++) {
+      expect(visitSummary(plan)).toBeUndefined();
+      plan = advanceVisit(plan);
+    }
+    expect(visitSummary(plan)).toContain('Reflex');
+  });
+
+  it('is the same summary when done is pressed again', () => {
+    const plan = finish('explorer');
+    expect(advanceVisit(plan)).toEqual(plan);
+    expect(visitSummary(advanceVisit(plan))).toBe(visitSummary(plan));
+  });
+
+  it('goes away on restart or exit, and an unknown mood has none', () => {
+    expect(visitSummary(restartVisit(finish('relaxed')))).toBeUndefined();
+    expect(exitVisit()).toBeUndefined();
+    expect(visitSummary({ moodId: 'nope', index: 3 })).toBeUndefined();
   });
 });
