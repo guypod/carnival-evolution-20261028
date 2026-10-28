@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { theme, topScores } from '../../carnival';
 import {
   COLS,
   MISMATCH_TIME,
@@ -279,5 +280,47 @@ describe('memory menagerie', () => {
     stop();
     expect(cancel).toHaveBeenCalledWith(7);
     expect(removed.sort()).toEqual(added.sort());
+  });
+
+  it('saves a finished round when it ends, before any frame, even if replayed at once', () => {
+    const listeners: Record<string, (event: unknown) => void> = {};
+    const target = {
+      addEventListener: (type: string, fn: (event: unknown) => void) => (listeners[type] = fn),
+      removeEventListener: () => {},
+    };
+    vi.stubGlobal('window', target);
+    vi.stubGlobal('HTMLElement', class {});
+    vi.stubGlobal('performance', { now: () => 0 });
+    vi.stubGlobal('requestAnimationFrame', () => 7);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    vi.spyOn(Math, 'random').mockReturnValue(0.3);
+    const { width, height } = theme.canvas;
+    const canvas = {
+      ...target,
+      getContext: () => ({}),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),
+      width: 0,
+      height: 0,
+    } as unknown as HTMLCanvasElement;
+    const before = topScores('memory-menagerie', 50).length;
+
+    const stop = memoryMenagerie.start(canvas);
+    const click = (x: number, y: number) =>
+      listeners.pointerdown({ clientX: x, clientY: y } as PointerEvent);
+    const space = () =>
+      listeners.keydown({ code: 'Space', key: ' ', repeat: false, preventDefault: () => {} });
+    space();
+    for (const pair of pairsOf({ cards: deal(() => 0.3) } as MemoryState)) {
+      for (const i of pair) {
+        const r = cardRect(i);
+        click(r.x + r.w / 2, r.y + r.h / 2);
+      }
+    }
+    space();
+    stop();
+
+    const saved = topScores('memory-menagerie', 50);
+    expect(saved.length).toBe(before + 1);
+    expect(saved.some((e) => e.score === scoreFor(PAIRS))).toBe(true);
   });
 });

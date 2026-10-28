@@ -421,6 +421,9 @@ export const memoryMenagerie: CarnivalGame = {
 
     let state = createState();
     let last = performance.now();
+    // Saved as soon as the last pair is found, so a quick replay or leaving the
+    // booth before the next frame cannot drop the score.
+    const save = () => saveFinalScore(state, (score) => recordScore(memoryMenagerie.id, score));
 
     const onDown = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -434,6 +437,7 @@ export const memoryMenagerie: CarnivalGame = {
       if (card !== undefined) {
         state.cursor = card;
         flip(state, card);
+        save();
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -442,8 +446,10 @@ export const memoryMenagerie: CarnivalGame = {
       if (target?.isContentEditable || isPageControl(target?.tagName)) return;
       if (isActionKey(event.code, event.key)) {
         event.preventDefault();
-        if (state.phase === 'playing') flip(state, state.cursor);
-        else state = beginRound(state);
+        if (state.phase === 'playing') {
+          flip(state, state.cursor);
+          save();
+        } else state = beginRound(state);
         return;
       }
       const arrow = arrowFor(event.key);
@@ -460,12 +466,12 @@ export const memoryMenagerie: CarnivalGame = {
       frame = requestAnimationFrame(loop);
       step(state, Math.max((time - last) / 1000, 0));
       last = time;
-      saveFinalScore(state, (score) => recordScore(memoryMenagerie.id, score));
       draw(ctx, state);
     };
     frame = requestAnimationFrame(loop);
 
     return () => {
+      save();
       cancelAnimationFrame(frame);
       canvas.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKeyDown);
