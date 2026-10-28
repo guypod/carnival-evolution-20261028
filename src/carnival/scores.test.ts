@@ -118,4 +118,22 @@ describe('score subscriptions', () => {
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });
+
+  it('keeps a listener that changes its entry from reaching anyone else', () => {
+    const board = createScoreBoard(memoryStorage(), () => 7);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const heard: unknown[] = [];
+    board.subscribe((entry) => {
+      entry.score = 100;
+      entry.gameId = 'other';
+      throw new Error('mutating listener');
+    });
+    board.subscribe((entry) => heard.push({ ...entry }));
+    const entry = board.record('circuit', 42);
+    expect(heard).toEqual([{ gameId: 'circuit', score: 42, at: 7 }]);
+    expect(entry).toEqual({ gameId: 'circuit', score: 42, at: 7 });
+    expect(board.best('circuit')).toBe(42);
+    expect(board.top('circuit', 5)).toEqual([{ gameId: 'circuit', score: 42, at: 7 }]);
+    error.mockRestore();
+  });
 });

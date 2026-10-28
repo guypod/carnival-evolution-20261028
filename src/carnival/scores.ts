@@ -47,7 +47,9 @@ export function createScoreBoard(storage: ScoreStorage, now: () => number = Date
     // Copy first so a listener that unsubscribes mid-loop can't skip another.
     for (const listener of [...listeners]) {
       try {
-        listener(entry);
+        // Each listener gets its own copy, so changing it can't reach the
+        // caller's entry or what the next listener hears.
+        listener({ ...entry });
       } catch (error) {
         // One broken listener must not undo the record or silence the others.
         console.error('Score listener failed', error);
