@@ -178,19 +178,32 @@ kbd {
   color: var(--color-background);
 }
 
+/* A visible close mark while the guide is open; the button's label says it too. */
+.guide-toggle[aria-expanded='true']::after {
+  content: ' ✕';
+}
+
 .guide-toggle:hover,
 .guide-toggle:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
 
+/* The open guide is one bounded panel with one scroll area, so everything in
+   it, the Passport included, stays reachable on short screens. */
 .visitor-guide {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-sizing: border-box;
   width: min(280px, 100%);
   min-height: 0;
+  padding: 10px 12px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
 }
 
 .visitor-guide[hidden] {
@@ -206,10 +219,18 @@ kbd {
   padding: 6px 12px;
 }
 
+.visitor-guide .scene-toggle {
+  margin: 0;
+}
+
 .midway-guide,
 .midway-passport {
   position: static;
-  padding: 10px 14px;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+  border-radius: 0;
+  background: none;
   font-size: 14px;
 }
 
@@ -246,14 +267,6 @@ kbd {
 .midway-guide .best {
   color: var(--color-muted);
   font-weight: normal;
-}
-
-.midway-passport {
-  min-height: 0;
-  overflow-y: auto;
-  border: 2px solid var(--color-accent);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--color-background) 88%, transparent);
 }
 
 .midway-passport summary {
@@ -408,6 +421,34 @@ kbd {
     right: 8px;
     max-width: calc(100% - 16px);
     max-height: calc(100% - 16px);
+  }
+}
+
+/* Short screens: compact the guide so more of it fits above the fold. */
+@media (max-height: 560px) {
+  .midway-help {
+    display: none;
+  }
+
+  .midway-panels {
+    gap: 6px;
+  }
+
+  .guide-toggle {
+    padding: 4px 12px;
+  }
+
+  .visitor-guide {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+
+  .guide-destinations {
+    gap: 4px;
+  }
+
+  .guide-destinations a {
+    padding: 4px 10px;
   }
 }
 
