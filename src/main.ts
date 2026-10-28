@@ -44,11 +44,14 @@ import {
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import {
+  POSTCARD_MESSAGES,
+  POSTCARD_NAME_INPUT_MAX,
   POSTCARD_NAME_MAX,
   POSTCARD_SCALE,
   POSTCARD_SIZE,
   drawPostcard,
   postcardContent,
+  postcardExporter,
 } from './postcard';
 import {
   discover,
@@ -596,7 +599,7 @@ function renderPostcard() {
       <p class="postcard-intro">A card from your visit: the landmarks you found on the discovery trail and the booths stamped in your passport, in the midway's current scene. Add your name if you like, then save it as a picture.</p>
       <div class="postcard-controls">
         <label for="postcard-name">Your name (optional, up to ${POSTCARD_NAME_MAX} characters)</label>
-        <input id="postcard-name" type="text" autocomplete="off" maxlength="${POSTCARD_NAME_MAX}" />
+        <input id="postcard-name" type="text" autocomplete="off" maxlength="${POSTCARD_NAME_INPUT_MAX}" />
         <button type="button" class="postcard-download">Download postcard (PNG)</button>
       </div>
       <p class="postcard-status" role="status"></p>
@@ -645,27 +648,25 @@ function renderPostcard() {
   }
 
   const fail = () => {
-    status.textContent =
-      'The postcard picture could not be made in this browser. The card text above is still yours to copy.';
+    status.textContent = POSTCARD_MESSAGES.failed;
   };
-  let url: string | undefined;
+  const exporter = postcardExporter<Blob>({
+    encode: (done) => canvas.toBlob(done, 'image/png'),
+    createUrl: (blob) => URL.createObjectURL(blob),
+    revokeUrl: (url) => URL.revokeObjectURL(url),
+    download: (url, filename) => {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+    },
+    report: (message) => {
+      status.textContent = message;
+    },
+  });
   download.addEventListener('click', () => {
     if (!ctx) return fail();
-    status.textContent = 'Making your postcard…';
-    try {
-      canvas.toBlob((blob) => {
-        if (!blob) return fail();
-        if (url) URL.revokeObjectURL(url);
-        url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = content.filename;
-        link.click();
-        status.textContent = `Postcard saved as ${content.filename}.`;
-      }, 'image/png');
-    } catch {
-      fail();
-    }
+    exporter.export(content.filename);
   });
 
   name.addEventListener('input', update);
@@ -679,7 +680,7 @@ function renderPostcard() {
   const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
   stop = () => {
     stopEscape();
-    if (url) URL.revokeObjectURL(url);
+    exporter.dispose();
   };
 }
 

@@ -70,7 +70,7 @@ map, or click it. The map shows an outline while it has focus.
 
 The guide's **Souvenir Postcard** makes a card from your visit: the landmarks
 you found, your stamped booths, the current day or evening scene and an
-optional name. Download it as a PNG made in your browser. Nothing is uploaded,
+optional name. Download it as a PNG made in your browser; the page says when the download starts. Nothing is uploaded,
 and the name is not kept.
 
 If your system asks for reduced motion, the midway goes quiet: the clouds,

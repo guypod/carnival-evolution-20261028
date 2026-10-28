@@ -1,11 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  POSTCARD_MESSAGES,
+  POSTCARD_NAME_INPUT_MAX,
   POSTCARD_NAME_MAX,
   POSTCARD_SCALE,
   cleanVisitorName,
   drawPostcard,
   postcardColors,
   postcardContent,
+  postcardExporter,
   type PostcardVisit,
 } from './postcard';
 
@@ -35,6 +38,12 @@ describe('cleanVisitorName', () => {
     const name = cleanVisitorName(long);
     expect(Array.from(name)).toHaveLength(POSTCARD_NAME_MAX);
     expect(name).toBe('🎡'.repeat(POSTCARD_NAME_MAX));
+  });
+
+  it('has a name field long enough for the limit in emoji', () => {
+    const name = '🎡'.repeat(POSTCARD_NAME_MAX);
+    expect(name.length).toBeLessThanOrEqual(POSTCARD_NAME_INPUT_MAX);
+    expect(cleanVisitorName(name)).toBe(name);
   });
 
   it('reads blank as no name', () => {
@@ -118,5 +127,79 @@ describe('drawPostcard', () => {
       expect.arrayContaining([content.heading, content.greeting, ...content.lines]),
     );
     expect(transforms[0]).toEqual([POSTCARD_SCALE, 0, 0, POSTCARD_SCALE, 0, 0]);
+  });
+});
+
+function fakeExport() {
+  const pending: ((blob: string | null) => void)[] = [];
+  let urls = 0;
+  const io = {
+    encode: vi.fn((done: (blob: string | null) => void) => {
+      pending.push(done);
+    }),
+    createUrl: vi.fn(() => `blob:${++urls}`),
+    revokeUrl: vi.fn(),
+    download: vi.fn(),
+    report: vi.fn(),
+  };
+  return { io, pending, exporter: postcardExporter(io) };
+}
+
+describe('postcardExporter', () => {
+  it('downloads under the file name asked for and says the download started', () => {
+    const { io, pending, exporter } = fakeExport();
+    exporter.export('day.png');
+    expect(io.report).toHaveBeenLastCalledWith(POSTCARD_MESSAGES.making);
+    pending[0]('png');
+    expect(io.download).toHaveBeenCalledWith('blob:1', 'day.png');
+    expect(io.report).toHaveBeenLastCalledWith(POSTCARD_MESSAGES.started('day.png'));
+  });
+
+  it('does nothing when the encoding finishes after dispose', () => {
+    const { io, pending, exporter } = fakeExport();
+    exporter.export('day.png');
+    io.report.mockClear();
+    exporter.dispose();
+    pending[0]('png');
+    expect(io.createUrl).not.toHaveBeenCalled();
+    expect(io.download).not.toHaveBeenCalled();
+    expect(io.report).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older encoding once a newer export started', () => {
+    const { io, pending, exporter } = fakeExport();
+    exporter.export('day.png');
+    exporter.export('evening.png');
+    pending[0]('old');
+    expect(io.createUrl).not.toHaveBeenCalled();
+    pending[1]('new');
+    expect(io.download).toHaveBeenCalledTimes(1);
+    expect(io.download).toHaveBeenCalledWith('blob:1', 'evening.png');
+  });
+
+  it('revokes the previous URL on the next download and on dispose', () => {
+    const { io, pending, exporter } = fakeExport();
+    exporter.export('a.png');
+    pending[0]('a');
+    exporter.export('b.png');
+    pending[1]('b');
+    expect(io.revokeUrl).toHaveBeenCalledWith('blob:1');
+    exporter.dispose();
+    expect(io.revokeUrl).toHaveBeenLastCalledWith('blob:2');
+    exporter.export('c.png');
+    expect(io.encode).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a failure when the picture cannot be made', () => {
+    const { io, pending, exporter } = fakeExport();
+    exporter.export('day.png');
+    pending[0](null);
+    expect(io.report).toHaveBeenLastCalledWith(POSTCARD_MESSAGES.failed);
+    io.encode.mockImplementationOnce(() => {
+      throw new Error('tainted');
+    });
+    exporter.export('day.png');
+    expect(io.report).toHaveBeenLastCalledWith(POSTCARD_MESSAGES.failed);
+    expect(io.download).not.toHaveBeenCalled();
   });
 });

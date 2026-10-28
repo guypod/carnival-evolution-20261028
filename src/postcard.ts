@@ -10,6 +10,12 @@ import type { Scene } from './midway/scene';
  * locally on a canvas of a fixed size.
  */
 export const POSTCARD_NAME_MAX = 24;
+/**
+ * The name field's maxlength. The browser counts UTF-16 code units, so this
+ * leaves room for POSTCARD_NAME_MAX characters outside the basic plane, such
+ * as emoji. cleanVisitorName then keeps the first POSTCARD_NAME_MAX characters.
+ */
+export const POSTCARD_NAME_INPUT_MAX = POSTCARD_NAME_MAX * 2;
 /** The card's size in layout pixels. The picture is drawn at POSTCARD_SCALE times this. */
 export const POSTCARD_SIZE = { width: 600, height: 400 } as const;
 export const POSTCARD_SCALE = 2;
@@ -151,4 +157,59 @@ export function drawPostcard(ctx: PostcardContext, content: PostcardContent) {
   ctx.fillStyle = colors.accent;
   ctx.font = canvasFont('small', 'bold');
   ctx.fillText('★ Tessl Carnival ★', width / 2, card.y + card.h - 28);
+}
+
+export const POSTCARD_MESSAGES = {
+  making: 'Making your postcard…',
+  failed:
+    'The postcard picture could not be made in this browser. The card text above is still yours to copy.',
+  started: (filename: string) => `Download of ${filename} started.`,
+};
+
+/** What a postcard export needs from the browser, so the export can be tested without one. */
+export interface PostcardExportIO<B> {
+  /** Encodes the picture and calls back once, with null when it cannot. May throw. */
+  encode(done: (blob: B | null) => void): void;
+  createUrl(blob: B): string;
+  revokeUrl(url: string): void;
+  /** Asks the browser to download the URL under the file name. */
+  download(url: string, filename: string): void;
+  report(message: string): void;
+}
+
+/**
+ * Exports the postcard picture. Each export keeps the file name it was asked
+ * for. An encoding that finishes after a newer export started, or after
+ * dispose, does nothing: no URL, no download, no status. Dispose revokes the
+ * last URL.
+ */
+export function postcardExporter<B>(io: PostcardExportIO<B>) {
+  let url: string | undefined;
+  let current = 0;
+  let disposed = false;
+  return {
+    export(filename: string) {
+      if (disposed) return;
+      const run = ++current;
+      const live = () => !disposed && run === current;
+      io.report(POSTCARD_MESSAGES.making);
+      try {
+        io.encode((blob) => {
+          if (!live()) return;
+          if (!blob) return io.report(POSTCARD_MESSAGES.failed);
+          if (url) io.revokeUrl(url);
+          url = io.createUrl(blob);
+          io.download(url, filename);
+          io.report(POSTCARD_MESSAGES.started(filename));
+        });
+      } catch {
+        if (live()) io.report(POSTCARD_MESSAGES.failed);
+      }
+    },
+    dispose() {
+      disposed = true;
+      if (url) io.revokeUrl(url);
+      url = undefined;
+    },
+  };
 }
