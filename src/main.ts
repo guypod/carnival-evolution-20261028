@@ -43,6 +43,14 @@ import {
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
+import {
+  discover,
+  discoveryClue,
+  discoveryProgress,
+  discoveryStore,
+  trailComplete,
+  type Landmark,
+} from './midway/discovery';
 import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
 import type { BoothSlot } from './midway/world';
 
@@ -89,6 +97,13 @@ function renderMidway() {
             <h2>Booths</h2>
             <ul></ul>
           </nav>
+          <section class="midway-discovery" aria-label="Discovery trail">
+            <h2>Discovery trail</h2>
+            <p class="discovery-progress" role="status"></p>
+            <ul></ul>
+            <p class="discovery-clue"></p>
+            <p class="note">Optional, and separate from scores and stamps. Kept in this browser only.</p>
+          </section>
           <details class="midway-passport">
             <summary><h2>Passport</h2> <span class="summary"></span></summary>
             <ul></ul>
@@ -96,6 +111,7 @@ function renderMidway() {
           </details>
         </div>
       </div>
+      <p class="discovery-toast" role="status" hidden></p>
       <div class="booth-card" aria-live="polite" hidden>
         <h2></h2>
         <p class="description"></p>
@@ -134,12 +150,57 @@ function renderMidway() {
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
     onReach: showBooth,
     scene: scenePreference.load(),
+    onLandmark: (landmark) => discovery.found(landmark),
   });
+  const discovery = setUpDiscovery(midway.landmarks);
   setUpSceneToggle(midway.setScene);
   const stopGuide = setUpGuide();
   stop = () => {
+    discovery.stop();
     stopGuide();
     midway.stop();
+  };
+}
+
+// The optional discovery trail: a checklist in the guide, and a short note on
+// the map when the player finds a landmark. Finds never touch scores or stamps.
+function setUpDiscovery(landmarks: Landmark[]) {
+  const section = app.querySelector<HTMLElement>('.midway-discovery')!;
+  const toast = app.querySelector<HTMLElement>('.discovery-toast')!;
+  let found = discoveryStore.load();
+  let hideToast: number | undefined;
+
+  const render = () => {
+    section.querySelector('.discovery-progress')!.textContent = discoveryProgress(landmarks, found);
+    section.querySelector('.discovery-clue')!.textContent = discoveryClue(landmarks, found);
+    const list = section.querySelector('ul')!;
+    list.replaceChildren();
+    for (const landmark of landmarks) {
+      const done = found.includes(landmark.id);
+      const item = document.createElement('li');
+      item.classList.toggle('found', done);
+      item.textContent = `${done ? '✓' : '○'} ${landmark.name}${done ? ', found' : ', not found yet'}`;
+      list.append(item);
+    }
+  };
+  render();
+
+  return {
+    found(landmark: Landmark) {
+      if (found.includes(landmark.id)) return;
+      found = discover(found, landmark.id);
+      discoveryStore.save(found);
+      render();
+      toast.textContent = trailComplete(landmarks, found)
+        ? `You found the ${landmark.name}! ${discoveryClue(landmarks, found)}`
+        : `You found the ${landmark.name}! ${discoveryProgress(landmarks, found)}.`;
+      toast.hidden = false;
+      window.clearTimeout(hideToast);
+      hideToast = window.setTimeout(() => (toast.hidden = true), 4000);
+    },
+    stop() {
+      window.clearTimeout(hideToast);
+    },
   };
 }
 

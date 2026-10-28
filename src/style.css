@@ -104,6 +104,7 @@ body[data-view='midway'] main {
 .midway-help,
 .midway-guide,
 .midway-credit,
+.discovery-toast,
 .booth-card {
   position: absolute;
   margin: 0;
@@ -207,6 +208,7 @@ kbd {
 }
 
 .midway-guide,
+.midway-discovery,
 .midway-passport {
   position: static;
   padding: 10px 14px;
@@ -214,6 +216,7 @@ kbd {
 }
 
 .midway-guide h2,
+.midway-discovery h2,
 .midway-passport h2 {
   margin: 0 0 6px;
   color: var(--color-muted);
@@ -1083,4 +1086,29 @@ kbd {
 .scene-toggle[aria-pressed='true'] {
   background: var(--color-accent);
   color: var(--color-background);
+}
+
+.midway-discovery p,
+.midway-discovery ul {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.midway-discovery .found {
+  color: var(--color-accent);
+}
+
+.midway-discovery .note {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.discovery-toast {
+  top: 16px;
+  left: 50%;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 8px 14px;
+  font-size: 14px;
+  transform: translateX(-50%);
 }

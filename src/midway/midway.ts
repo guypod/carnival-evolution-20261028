@@ -1,4 +1,5 @@
 import { isControl } from './controls';
+import { landmarkInReach, trailLandmarks, type Landmark } from './discovery';
 import { advanceSceneClock, watchReducedMotion, type MotionHost } from './motion';
 import { evening, palette } from './palette';
 import { lanternGlow, type Scene } from './scene';
@@ -54,6 +55,8 @@ export interface MidwayOptions {
   onReach(booth: BoothSlot | undefined): void;
   /** Day or lantern evening. Day when left out. */
   scene?: Scene;
+  /** Called when the player walks up to a discovery-trail landmark. */
+  onLandmark?(landmark: Landmark): void;
 }
 
 export interface MidwayControls {
@@ -61,6 +64,8 @@ export interface MidwayControls {
   walkTo(gameId: string): void;
   /** Switches between day and lantern evening. */
   setScene(scene: Scene): void;
+  /** The discovery trail's landmarks on this map. */
+  landmarks: Landmark[];
   stop(): void;
 }
 
@@ -88,6 +93,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
   const map = layoutMidway(options.games.map((g) => g.id));
   const names = new Map(options.games.map((g) => [g.id, g.name]));
+  const landmarks = trailLandmarks(map);
+  let nearLandmark: Landmark | undefined;
   const player = createWalker(returnTo ?? map.spawn);
   // Booths and scenery never move, so work out where each one sits once.
   const scenery: { depth: number; box: Box; booth?: BoothSlot; prop?: Prop; name: string }[] = [
@@ -465,6 +472,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       options.onReach(reach);
     }
 
+    const landmark = landmarkInReach(landmarks, player);
+    if (landmark !== nearLandmark) {
+      nearLandmark = landmark;
+      if (landmark) options.onLandmark?.(landmark);
+    }
+
     updateFloaters(dt);
     updateCamera(dt);
     sceneTime = advanceSceneClock(sceneTime, Math.max(0, elapsed), quiet);
@@ -481,6 +494,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     setScene(next) {
       scene = next;
     },
+    landmarks,
     stop() {
       cancelAnimationFrame(frame);
       stopWatchingMotion();
