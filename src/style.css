@@ -383,7 +383,8 @@ kbd {
 }
 
 .pavilion-link,
-.trail-link {
+.trail-link,
+.records-link {
   display: block;
   padding: 10px 14px;
   border-radius: var(--radius);
@@ -397,7 +398,9 @@ kbd {
 .pavilion-link:hover,
 .pavilion-link:focus-visible,
 .trail-link:hover,
-.trail-link:focus-visible {
+.trail-link:focus-visible,
+.records-link:hover,
+.records-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
@@ -643,6 +646,98 @@ kbd {
 }
 
 .trail .play-link:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.records h1:focus {
+  outline: none;
+}
+
+.records-intro,
+.records .note {
+  color: var(--color-muted);
+}
+
+.records-overview {
+  margin: 16px 0 24px;
+  padding: 14px 18px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-weight: bold;
+}
+
+.records-booths {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.records-booths > li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.records-booths h2,
+.records-booths p {
+  margin: 0;
+}
+
+.records-booths .empty {
+  color: var(--color-muted);
+}
+
+.records table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.records caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.records th,
+.records td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--color-muted);
+  text-align: left;
+}
+
+.records th {
+  color: var(--color-muted);
+  font-weight: normal;
+}
+
+.records td:nth-child(2) {
+  font-weight: bold;
+}
+
+.records .play-link {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 6px 16px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.records .play-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
