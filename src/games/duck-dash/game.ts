@@ -15,6 +15,10 @@ export const TRAVEL_TIME = 2.2;
 export const MAX_STEP = 1 / 30;
 /** The most time one frame may advance the round, so a stalled tab never skips ahead. */
 export const MAX_FRAME = 0.25;
+/** Extra points per star already in the streak when the next star is caught. */
+export const STREAK_BONUS = 2;
+/** The most bonus one caught star can earn. */
+export const MAX_STREAK_BONUS = 10;
 /** Seconds the duck flashes after collecting or hitting something. */
 export const FLASH_TIME = 0.4;
 
@@ -27,10 +31,11 @@ export interface RiverObject {
   kind: 'star' | 'reed';
   /** 0 at the top of the river, 1 when it reaches the duck. */
   progress: number;
-  /** Set once the object has met the duck's row, so it counts once. */
-  resolved: boolean;
-  /** Set when the object resolved in the duck's lane, so it stops drawing. */
-  caught: boolean;
+  /**
+   * Pending until the object meets the duck's row, then caught (in the duck's
+   * lane, so it stops drawing) or missed. It resolves once, so it counts once.
+   */
+  outcome: 'pending' | 'caught' | 'missed';
 }
 
 export interface DuckState {
@@ -43,8 +48,14 @@ export interface DuckState {
   score: number;
   collected: number;
   hits: number;
+  /** Stars caught in a row since the last reed hit or missed star. */
+  streak: number;
+  /** The longest streak this round. */
+  peakStreak: number;
+  /** Streak bonus points earned this round, already counted in `score`. */
+  bonus: number;
   /** Brief feedback after the last collision. */
-  flash: { kind: 'star' | 'reed'; left: number } | undefined;
+  flash: { kind: 'star' | 'reed'; bonus: number; left: number } | undefined;
   scoreRecorded: boolean;
   /** The last save threw. Only an explicit replay or exit tries again. */
   saveFailed: boolean;
@@ -74,6 +85,9 @@ export function createState(rng: Rng = Math.random): DuckState {
     score: 0,
     collected: 0,
     hits: 0,
+    streak: 0,
+    peakStreak: 0,
+    bonus: 0,
     flash: undefined,
     scoreRecorded: false,
     saveFailed: false,
@@ -123,18 +137,55 @@ export function spawnRow(rng: Rng): { lane: number; kind: 'star' | 'reed' }[] {
   return row;
 }
 
-function collide(state: DuckState, object: RiverObject): void {
-  object.resolved = true;
-  if (object.lane !== state.lane) return;
-  object.caught = true;
+/** The bonus for catching a star when `streak` stars were already caught in a row. */
+export function streakBonus(streak: number): number {
+  return Math.min(Math.max(streak, 0) * STREAK_BONUS, MAX_STREAK_BONUS);
+}
+
+/**
+ * Settles an object that has reached the duck's row. A pending object resolves
+ * once; calling this again on a caught or missed object does nothing.
+ */
+export function resolveObject(state: DuckState, object: RiverObject): void {
+  if (object.outcome !== 'pending') return;
+  if (object.lane !== state.lane) {
+    object.outcome = 'missed';
+    if (object.kind === 'star') state.streak = 0;
+    return;
+  }
+  object.outcome = 'caught';
+  let bonus = 0;
   if (object.kind === 'star') {
-    state.score += STAR_POINTS;
+    bonus = streakBonus(state.streak);
+    state.score += STAR_POINTS + bonus;
+    state.bonus += bonus;
     state.collected += 1;
+    state.streak += 1;
+    state.peakStreak = Math.max(state.peakStreak, state.streak);
   } else {
     state.score = Math.max(state.score - REED_PENALTY, 0);
     state.hits += 1;
+    state.streak = 0;
   }
-  state.flash = { kind: object.kind, left: FLASH_TIME };
+  state.flash = { kind: object.kind, bonus, left: FLASH_TIME };
+}
+
+/**
+ * Settles the objects that reach the duck's row together, which is always one
+ * row. The object in the duck's lane resolves first, whatever the array order.
+ * A star caught in the row keeps its streak: a star in another lane of the same
+ * row could not have been caught too, so its miss does not reset the streak.
+ */
+export function resolveArrivals(state: DuckState, arrivals: RiverObject[]): void {
+  const pending = arrivals.filter((o) => o.outcome === 'pending');
+  const inLane = pending.filter((o) => o.lane === state.lane);
+  for (const object of inLane) resolveObject(state, object);
+  const caughtStar = inLane.some((o) => o.kind === 'star');
+  for (const object of pending) {
+    if (object.outcome !== 'pending') continue;
+    if (caughtStar) object.outcome = 'missed';
+    else resolveObject(state, object);
+  }
 }
 
 function stepSlice(state: DuckState, dt: number): void {
@@ -143,10 +194,11 @@ function stepSlice(state: DuckState, dt: number): void {
     state.flash.left -= dt;
     if (state.flash.left <= 0) state.flash = undefined;
   }
-  for (const object of state.objects) {
-    object.progress += dt / TRAVEL_TIME;
-    if (!object.resolved && object.progress >= 1) collide(state, object);
-  }
+  for (const object of state.objects) object.progress += dt / TRAVEL_TIME;
+  resolveArrivals(
+    state,
+    state.objects.filter((o) => o.progress >= 1),
+  );
   state.objects = state.objects.filter((o) => o.progress < 1.15);
   state.spawnIn -= dt;
   if (state.spawnIn <= 0 && state.timeLeft > 0) {
@@ -156,8 +208,7 @@ function stepSlice(state: DuckState, dt: number): void {
         lane,
         kind,
         progress: 0,
-        resolved: false,
-        caught: false,
+        outcome: 'pending',
       });
     }
     state.spawnIn += SPAWN_GAP;
@@ -338,6 +389,8 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
   ctx.textAlign = 'left';
   ctx.fillText(`Time ${Math.ceil(state.timeLeft)}s`, 16, 60);
   ctx.fillText(`Score ${state.score}`, 16, 90);
+  ctx.fillText(`Streak ${state.streak}`, 16, 120);
+  ctx.fillText(`Best ${state.peakStreak}`, 16, 150);
   ctx.textAlign = 'right';
   ctx.fillText(`Stars ${state.collected}`, WIDTH - 16, 60);
   ctx.fillText(`Reeds hit ${state.hits}`, WIDTH - 16, 90);
@@ -360,7 +413,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
   for (const object of state.objects) {
     const x = laneCentre(object.lane);
     const y = TOP_Y + (DUCK_Y - TOP_Y) * object.progress;
-    if (object.caught) continue;
+    if (object.outcome === 'caught') continue;
     if (object.kind === 'star') drawStar(ctx, x, y, 20);
     else drawReed(ctx, x, y);
   }
@@ -372,7 +425,13 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
       ctx.fillStyle = state.flash.kind === 'star' ? colors.accent : colors.danger;
       ctx.font = canvasFont('title', 'bold');
       ctx.textAlign = 'center';
-      const text = state.flash.kind === 'star' ? `+${STAR_POINTS}` : `Ouch! -${REED_PENALTY}`;
+      const { kind, bonus } = state.flash;
+      const text =
+        kind === 'reed'
+          ? `Ouch! -${REED_PENALTY}`
+          : bonus > 0
+            ? `+${STAR_POINTS} +${bonus} streak`
+            : `+${STAR_POINTS}`;
       ctx.fillText(text, laneCentre(state.lane), DUCK_Y - 60);
       ctx.globalAlpha = 1;
     }
@@ -407,14 +466,28 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
       ctx.fillText(
         `Stars score ${STAR_POINTS}. Reeds take ${REED_PENALTY} away (never below 0).`,
         WIDTH / 2,
-        250,
+        245,
       );
-      ctx.fillText('Left/Right or A/D, or tap a lane button.', WIDTH / 2, 290);
+      ctx.fillText(
+        `Each star in a row adds +${STREAK_BONUS} more, up to +${MAX_STREAK_BONUS}.`,
+        WIDTH / 2,
+        280,
+      );
+      ctx.fillText('Left/Right or A/D, or tap a lane button.', WIDTH / 2, 315);
     } else {
-      ctx.fillText(`${state.collected} stars collected, ${state.hits} reeds hit.`, WIDTH / 2, 230);
+      ctx.fillText(
+        `${state.collected} stars (${state.collected * STAR_POINTS} points), ${state.hits} reeds hit.`,
+        WIDTH / 2,
+        205,
+      );
+      ctx.fillText(
+        `Streak bonus +${state.bonus}, best streak ${state.peakStreak}.`,
+        WIDTH / 2,
+        240,
+      );
       if (state.saveFailed) {
         ctx.fillStyle = colors.danger;
-        ctx.fillText('Your score could not be saved.', WIDTH / 2, 270);
+        ctx.fillText('Your score could not be saved.', WIDTH / 2, 280);
       }
     }
     ctx.fillStyle = colors.stripeA;
