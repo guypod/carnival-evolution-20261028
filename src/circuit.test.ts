@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createRegistry, createScoreBoard, type CarnivalGame } from './carnival';
-import { CIRCUIT_KEY, circuitProgress, circuitStatus, createCircuit, legText } from './circuit';
+import {
+  CIRCUIT_KEY,
+  circuitProgress,
+  circuitStatus,
+  createCircuit,
+  legText,
+  restartCircuit,
+} from './circuit';
+import { onEscapeKey } from './escape';
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -64,6 +72,7 @@ describe('circuitProgress', () => {
     let progress = circuitProgress(games, startedAt, board.top);
     expect(progress.legs.map((leg) => leg.complete)).toEqual([false, true, false]);
     expect(progress.next?.gameId).toBe('ring-toss');
+    expect(circuitStatus(progress)).toBe('Leg 1 of 3: play Ring Toss.');
 
     board.record('ring-toss', 30);
     tick();
@@ -72,6 +81,28 @@ describe('circuitProgress', () => {
     expect(progress.legs[0].latest).toBe(10);
     expect(legText(progress.legs[0])).toBe('Latest score: 10');
     expect(progress.next?.gameId).toBe('skee-ball');
+  });
+
+  it('names the next booth by its place in the itinerary when booths are played out of order', () => {
+    const { board, circuit, tick } = setup();
+    const startedAt = circuit.start();
+    tick();
+    board.record('balloon-darts', 40);
+    board.record('skee-ball', 150);
+    let progress = circuitProgress(games, startedAt, board.top);
+    expect(circuitStatus(progress)).toBe('Leg 1 of 3: play Ring Toss.');
+
+    board.record('ring-toss', 12);
+    progress = circuitProgress(games, startedAt, board.top);
+    expect(progress.finished).toBe(true);
+
+    tick();
+    const restarted = circuit.start();
+    tick();
+    board.record('ring-toss', 20);
+    board.record('skee-ball', 90);
+    progress = circuitProgress(games, restarted, board.top);
+    expect(circuitStatus(progress)).toBe('Leg 2 of 3: play Balloon Darts.');
   });
 
   it('finishes with the total of each leg', () => {
@@ -146,5 +177,52 @@ describe('createCircuit', () => {
     expect(createCircuit(broken).startedAt()).toBeUndefined();
     expect(createCircuit(broken).start()).toBeUndefined();
     expect(createCircuit(undefined).start()).toBeUndefined();
+  });
+});
+
+describe('restartCircuit', () => {
+  /** Mirrors the circuit page: each render adds an Escape listener and owns its cleanup. */
+  function page(start: () => number | undefined) {
+    const target = new EventTarget();
+    let escapes = 0;
+    let renders = 0;
+    let stop: (() => void) | undefined;
+    const cleanup = () => {
+      stop?.();
+      stop = undefined;
+    };
+    const render = () => {
+      renders++;
+      stop = onEscapeKey(target, () => escapes++);
+    };
+    const escape = () =>
+      target.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }));
+    render();
+    return {
+      restart: () => restartCircuit(start, cleanup, render),
+      leave: cleanup,
+      escape,
+      escapes: () => escapes,
+      renders: () => renders,
+    };
+  }
+
+  it('leaves no Escape listener behind after repeated starts and leaving the page', () => {
+    const view = page(() => 1);
+    for (let i = 0; i < 3; i++) expect(view.restart()).toBe(true);
+    expect(view.renders()).toBe(4);
+    view.escape();
+    expect(view.escapes()).toBe(1);
+    view.leave();
+    view.escape();
+    expect(view.escapes()).toBe(1);
+  });
+
+  it('keeps the current page when the start cannot be saved', () => {
+    const view = page(() => undefined);
+    expect(view.restart()).toBe(false);
+    expect(view.renders()).toBe(1);
+    view.escape();
+    expect(view.escapes()).toBe(1);
   });
 });

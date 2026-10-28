@@ -23,7 +23,7 @@ import {
   type DirectoryStatus,
 } from './booth-directory';
 import { favorites } from './favorites';
-import { circuit, circuitProgress, circuitStatus, legText } from './circuit';
+import { circuit, circuitProgress, circuitStatus, legText, restartCircuit } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -289,11 +289,13 @@ function renderCircuit() {
   startButton.hidden = progress.legs.length === 0;
   startButton.textContent = progress.startedAt === undefined ? 'Start circuit' : 'Restart circuit';
   startButton.addEventListener('click', () => {
-    if (circuit.start() === undefined) {
+    const cleanup = () => {
+      stop?.();
+      stop = undefined;
+    };
+    if (!restartCircuit(circuit.start, cleanup, renderCircuit)) {
       app.querySelector<HTMLElement>('.circuit-error')!.hidden = false;
-      return;
     }
-    renderCircuit();
   });
 
   const list = app.querySelector('.circuit-legs')!;

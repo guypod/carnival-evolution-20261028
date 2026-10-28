@@ -110,8 +110,24 @@ export function circuitStatus(progress: CircuitProgress): string {
   if (progress.legs.length === 0) return 'The circuit booths are not open yet.';
   if (progress.startedAt === undefined) return 'Start a circuit to begin at the first booth.';
   if (progress.finished) return `Circuit complete! Total: ${progress.total}.`;
-  const done = progress.legs.filter((leg) => leg.complete).length;
-  return `Leg ${done + 1} of ${progress.legs.length}: play ${progress.next!.name}.`;
+  const leg = progress.legs.indexOf(progress.next!) + 1;
+  return `Leg ${leg} of ${progress.legs.length}: play ${progress.next!.name}.`;
+}
+
+/**
+ * Starts or restarts the circuit and redraws the page. The current page's
+ * cleanup runs before the redraw, so its listeners never outlive it. Returns
+ * false, without redrawing, when the start could not be saved.
+ */
+export function restartCircuit(
+  start: () => number | undefined,
+  cleanup: () => void,
+  render: () => void,
+): boolean {
+  if (start() === undefined) return false;
+  cleanup();
+  render();
+  return true;
 }
 
 /** One leg's line: its latest score this circuit, or what is left to do. */
