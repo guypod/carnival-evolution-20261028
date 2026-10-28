@@ -3,6 +3,7 @@ import { applyTheme, bestScore, type CarnivalGame } from './carnival';
 import { registry } from './games';
 import { onEscapeKey } from './escape';
 import { boothScoresText } from './booth-scores';
+import { passportStamps, passportSummary, stampText } from './passport';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
 
@@ -32,10 +33,17 @@ function renderMidway() {
         at
         <a href="https://tessl.io/devcon?utm_source=carnival&amp;utm_medium=midway-credit&amp;utm_campaign=tessl-carnival" target="_blank" rel="noopener">AI DevCon NYC</a>
       </p>
-      <nav class="midway-guide" aria-label="Booths">
-        <h2>Booths</h2>
-        <ul></ul>
-      </nav>
+      <div class="midway-panels">
+        <nav class="midway-guide" aria-label="Booths">
+          <h2>Booths</h2>
+          <ul></ul>
+        </nav>
+        <details class="midway-passport">
+          <summary><h2>Passport</h2> <span class="summary"></span></summary>
+          <ul></ul>
+          <p class="note">Stamps are kept in this browser only.</p>
+        </details>
+      </div>
       <div class="booth-card" aria-live="polite" hidden>
         <h2></h2>
         <p class="description"></p>
@@ -52,6 +60,8 @@ function renderMidway() {
     item.querySelector('.best')!.textContent = bestText(game);
     guide.append(item);
   }
+
+  renderPassport(app.querySelector<HTMLDetailsElement>('.midway-passport')!);
 
   const card = app.querySelector<HTMLElement>('.booth-card')!;
   const showBooth = (booth: BoothSlot | undefined) => {
@@ -73,6 +83,33 @@ function renderMidway() {
     onReach: showBooth,
   });
   stop = midway.stop;
+}
+
+function renderPassport(passport: HTMLDetailsElement) {
+  const stamps = passportStamps(registry.all());
+  passport.open = window.matchMedia('(min-width: 721px)').matches;
+  passport.querySelector('.summary')!.textContent = passportSummary(stamps);
+  const list = passport.querySelector('ul')!;
+  for (const stamp of stamps) {
+    const text = stampText(stamp);
+    const item = document.createElement('li');
+    item.classList.toggle('stamped', stamp.played);
+    item.innerHTML = `
+      <span class="stamp" aria-hidden="true">${stamp.played ? '★' : ''}</span>
+      <span class="details">
+        <span class="name"></span>
+        <span class="status"></span>
+        <span class="best"></span>
+      </span>
+      <a class="play-link">Play</a>`;
+    item.querySelector('.name')!.textContent = stamp.name;
+    item.querySelector('.status')!.textContent = text.status;
+    item.querySelector('.best')!.textContent = text.best;
+    const link = item.querySelector<HTMLAnchorElement>('.play-link')!;
+    link.href = stamp.playHref;
+    link.setAttribute('aria-label', `Play ${stamp.name}`);
+    list.append(item);
+  }
 }
 
 function renderGame(game: CarnivalGame) {
