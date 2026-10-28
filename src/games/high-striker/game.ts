@@ -142,7 +142,7 @@ export function frameClock(now: number) {
 /**
  * The one action button: Start, Strike, Next swing or Play again, depending on
  * the phase. Returns the state that is now in play: a fresh one when a round
- * starts. The clock restarts whenever the marker starts moving.
+ * starts. The clock restarts whenever the marker or the puck starts moving.
  */
 export function press(
   state: StrikerState,
@@ -155,8 +155,7 @@ export function press(
     clock.resume(now);
     return next;
   }
-  if (state.phase === 'aiming') strike(state);
-  else if (nextSwing(state)) clock.resume(now);
+  if (strike(state) || nextSwing(state)) clock.resume(now);
   return state;
 }
 

@@ -65,6 +65,16 @@ describe('high striker', () => {
     expect(state.markerTime).toBeCloseTo(0.016);
   });
 
+  it('does not charge aiming time to the puck flight', () => {
+    const clock = frameClock(0);
+    const state = press(createState(), clock, 0);
+    step(state, clock.tick(100));
+    press(state, clock, 900);
+    expect(state.phase).toBe('flying');
+    step(state, clock.tick(916));
+    expect(state.flyTime).toBeCloseTo(0.016);
+  });
+
   it('plays exactly three swings, showing each result until Next swing', () => {
     const state = aiming();
     swingAt(state, MARKER_PERIOD / 4);
@@ -113,12 +123,16 @@ describe('high striker', () => {
       swingAt(state, MARKER_PERIOD / 4);
       nextSwing(state);
     }
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const error = new Error('quota');
     const record = vi.fn(() => {
       throw error;
     });
-    expect(saveFinalScore(state, record)).toBe(error);
+    try {
+      expect(saveFinalScore(state, record)).toBe(error);
+    } finally {
+      consoleError.mockRestore();
+    }
     expect(saveFinalScore(state, record)).toBeUndefined();
     expect(takeFinalScore(state)).toBeUndefined();
     expect(record).toHaveBeenCalledTimes(1);

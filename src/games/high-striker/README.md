@@ -5,8 +5,9 @@ Swing the mallet three times and try to ring the bell at the top of the tower.
 ## How to play
 
 - Press the **Start** button (or Space or Enter). Nothing moves until then.
-  When a link such as **Back to the midway** has keyboard focus, Enter and
-  Space work that link instead.
+  When a link such as **Back to the midway** has keyboard focus, the game
+  leaves Enter and Space to the browser: Enter follows the link, and Space
+  does not strike.
 - A marker sweeps back and forth across the power meter, one full sweep there
   and back every 1.6 seconds. Press **Strike!** (click or tap it, or press Space
   or Enter) to lock it.
