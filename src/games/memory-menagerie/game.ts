@@ -11,6 +11,10 @@ export const MISMATCH_TIME = 1;
 export const MAX_SCORE = 300;
 /** Points lost for each move beyond the perfect six. */
 export const MOVE_PENALTY = 10;
+/** Seconds a peek shows every unmatched card. */
+export const PEEK_TIME = 1.5;
+/** Points taken off the final score when the round's one peek was used. */
+export const PEEK_PENALTY = 20;
 
 /** The six carnival symbols. Each card shows the symbol's shape, name and number. */
 export const SYMBOLS = ['Balloon', 'Star', 'Tent', 'Ticket', 'Heart', 'Lollipop'] as const;
@@ -38,6 +42,10 @@ export interface MemoryState {
   cursor: number;
   /** Set once the round's score has been handed to the score board. */
   scoreRecorded: boolean;
+  /** The round's one peek: still available, used, or not. */
+  peekUsed: boolean;
+  /** Seconds left in the peek showing every card; 0 when no peek is showing. */
+  peekIn: number;
   rng: Rng;
 }
 
@@ -73,6 +81,8 @@ export function createState(rng: Rng = Math.random): MemoryState {
     matches: 0,
     cursor: 0,
     scoreRecorded: false,
+    peekUsed: false,
+    peekIn: 0,
     rng,
   };
 }
@@ -104,7 +114,9 @@ export function flip(
   index: number,
 ): 'flipped' | 'match' | 'mismatch' | 'ignored' {
   const card = state.cards[index];
-  if (state.phase !== 'playing' || !card || state.resolveIn > 0) return 'ignored';
+  if (state.phase !== 'playing' || !card || state.resolveIn > 0 || state.peekIn > 0) {
+    return 'ignored';
+  }
   if (isFaceUp(state, index)) return 'ignored';
   state.open.push(index);
   if (state.open.length === 1) return 'flipped';
@@ -123,16 +135,48 @@ export function flip(
   return 'mismatch';
 }
 
-/** Advances the round by `dt` seconds, closing a mismatched pair when its time is up. */
+/** Whether card `index` is drawn face up: face up, or shown by a peek. */
+export function isShown(state: MemoryState, index: number): boolean {
+  return state.peekIn > 0 || isFaceUp(state, index);
+}
+
+/**
+ * Uses the round's one peek: every card shows for PEEK_TIME, then the board is
+ * exactly as before. Returns false, and changes nothing, unless the round is
+ * playing, the peek is unused and no mismatched pair is waiting to close.
+ */
+export function peek(state: MemoryState): boolean {
+  if (state.phase !== 'playing' || state.peekUsed || state.resolveIn > 0) return false;
+  state.peekUsed = true;
+  state.peekIn = PEEK_TIME;
+  return true;
+}
+
+/** Whether a key press is the peek key: P. */
+export function isPeekKey(key: string): boolean {
+  return key === 'p' || key === 'P';
+}
+
+/**
+ * Advances the round by `dt` seconds, ending a peek or closing a mismatched
+ * pair when its time is up.
+ */
 export function step(state: MemoryState, dt: number): void {
-  if (state.phase !== 'playing' || state.resolveIn <= 0) return;
+  if (state.phase !== 'playing') return;
+  if (state.peekIn > 0) state.peekIn = Math.max(state.peekIn - dt, 0);
+  if (state.resolveIn <= 0) return;
   state.resolveIn = Math.max(state.resolveIn - dt, 0);
   if (state.resolveIn === 0) state.open = [];
 }
 
-/** The round's score: the score for its moves once it is over, else 0. */
+/** The score for `moves` moves, less PEEK_PENALTY if the peek was used, never below 0. */
+export function scoreWithPeek(moves: number, peekUsed: boolean): number {
+  return Math.max(0, scoreFor(moves) - (peekUsed ? PEEK_PENALTY : 0));
+}
+
+/** The round's score once it is over, else 0. */
 export function finalScore(state: MemoryState): number {
-  return state.phase === 'over' ? scoreFor(state.moves) : 0;
+  return state.phase === 'over' ? scoreWithPeek(state.moves, state.peekUsed) : 0;
 }
 
 /**
@@ -212,6 +256,7 @@ const GAP = 14;
 const GRID_X = (WIDTH - (COLS * CARD_W + (COLS - 1) * GAP)) / 2;
 const GRID_Y = 84;
 const BUTTON = { x: WIDTH / 2 - 110, y: HEIGHT - 82, w: 220, h: 52 } as const;
+const PEEK_BUTTON = { x: WIDTH / 2 - 120, y: 46, w: 240, h: 32 } as const;
 
 /** Where card `index` is drawn on the canvas. */
 export function cardRect(index: number): { x: number; y: number; w: number; h: number } {
@@ -232,6 +277,12 @@ export function cardAt(x: number, y: number): number | undefined {
     if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i;
   }
   return undefined;
+}
+
+/** Whether canvas point (x, y) is on the Peek button. */
+export function onPeekButton(x: number, y: number): boolean {
+  const b = PEEK_BUTTON;
+  return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 }
 
 /** Whether canvas point (x, y) is on the Start or Play again button. */
@@ -322,10 +373,27 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
   ctx.textAlign = 'right';
   ctx.fillText(`Pairs ${state.matches} / ${PAIRS}`, WIDTH - 16, 70);
 
+  if (state.phase === 'playing') {
+    const b = PEEK_BUTTON;
+    const ready = !state.peekUsed && state.resolveIn === 0;
+    ctx.fillStyle = ready ? colors.stripeA : colors.surface;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = ready ? colors.text : colors.muted;
+    ctx.font = canvasFont('small', 'bold');
+    ctx.textAlign = 'center';
+    const label =
+      state.peekIn > 0
+        ? 'Peeking...'
+        : state.peekUsed
+          ? `Peek used (-${PEEK_PENALTY})`
+          : `Peek (P): 1 left, -${PEEK_PENALTY}`;
+    ctx.fillText(label, b.x + b.w / 2, b.y + 22);
+  }
+
   for (let i = 0; i < state.cards.length; i++) {
     const r = cardRect(i);
     const card = state.cards[i];
-    if (isFaceUp(state, i)) {
+    if (isShown(state, i)) {
       ctx.fillStyle = card.matched ? colors.surface : colors.muted;
       ctx.fillRect(r.x, r.y, r.w, r.h);
       drawSymbol(ctx, card.symbol, r.x + r.w / 2, r.y + 38);
@@ -358,9 +426,13 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
   ctx.textAlign = 'center';
   if (state.phase === 'playing') {
     ctx.fillText(
-      state.resolveIn > 0
-        ? 'No match. The cards close in a moment.'
-        : 'Click or tap a card, or move with the arrow keys and press Space or Enter',
+      state.peekIn > 0
+        ? 'Peeking: remember the cards. They turn back over in a moment.'
+        : state.resolveIn > 0
+          ? 'No match. The cards close in a moment.'
+          : state.peekUsed
+            ? 'Click or tap a card, or move with the arrow keys and press Space or Enter'
+            : `Flip a card, or press P to peek at every card once for ${PEEK_TIME}s (costs ${PEEK_PENALTY})`,
       WIDTH / 2,
       HEIGHT - 24,
     );
@@ -384,7 +456,8 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
     ctx.fillText(
       state.phase === 'ready'
         ? `Flip two cards at a time to find the ${PAIRS} matching pairs.`
-        : `${state.moves} moves, ${state.matches} of ${PAIRS} pairs matched.`,
+        : `${state.moves} moves, ${state.matches} of ${PAIRS} pairs matched. ` +
+            (state.peekUsed ? `Peek used: -${PEEK_PENALTY}.` : 'No peek used.'),
       WIDTH / 2,
       240,
     );
@@ -394,6 +467,11 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
       274,
     );
     ctx.fillText('Click a card, or use the arrow keys and Space or Enter.', WIDTH / 2, 308);
+    ctx.fillText(
+      `One optional peek (P) shows every card for ${PEEK_TIME}s and costs ${PEEK_PENALTY} points.`,
+      WIDTH / 2,
+      342,
+    );
 
     ctx.fillStyle = colors.stripeA;
     ctx.fillRect(BUTTON.x, BUTTON.y, BUTTON.w, BUTTON.h);
@@ -433,6 +511,10 @@ export const memoryMenagerie: CarnivalGame = {
         if (onButton(x, y)) state = beginRound(state);
         return;
       }
+      if (onPeekButton(x, y)) {
+        peek(state);
+        return;
+      }
       const card = cardAt(x, y);
       if (card !== undefined) {
         state.cursor = card;
@@ -450,6 +532,11 @@ export const memoryMenagerie: CarnivalGame = {
           flip(state, state.cursor);
           save();
         } else state = beginRound(state);
+        return;
+      }
+      if (isPeekKey(event.key) && state.phase === 'playing') {
+        event.preventDefault();
+        peek(state);
         return;
       }
       const arrow = arrowFor(event.key);
