@@ -1311,6 +1311,14 @@ kbd {
   margin-bottom: 6px;
 }
 
+.visit-summary {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--color-accent);
+}
+
+.visit-summary[hidden],
+.midway-visit p[hidden],
 .visit-moods[hidden],
 .midway-visit button[hidden] {
   display: none;
