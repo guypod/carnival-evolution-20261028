@@ -24,6 +24,12 @@ you can.
   as they were. No card flips while a peek shows, and you can't peek while a
   mismatched pair is waiting to close. The button says whether your peek is
   still available or used.
+- Below the cards, a **Forecast** shows the score you would finish with if
+  every pair still hidden were matched on its first try from here, less the
+  peek if you used it, never below 0. It is a forecast, not points already
+  earned: each miss lowers it by 10. Next to it, a short line says what your
+  last try did (a match and its symbol, or a miss), and the top right shows
+  pairs found and pairs left. The feedback starts empty in every new round.
 - The round ends when all six pairs are found. The results show your moves,
   pairs matched and score. Press **Play again** (or Space or Enter) for a
   freshly shuffled round. Escape takes you back to the midway.
@@ -45,7 +51,7 @@ results and **Play again** still work.
 ## Files
 
 - `game.ts`: the game logic (`deal`, `createState`, `startRound`, `beginRound`,
-  `flip`, `peek`, `isShown`, `step`, `scoreFor`, `scoreWithPeek`, `finalScore`, `takeFinalScore`, `saveFinalScore`,
+  `flip`, `peek`, `isShown`, `step`, `scoreFor`, `scoreWithPeek`, `forecastScore`, `pairsLeft`, `lastTryText`, `finalScore`, `takeFinalScore`, `saveFinalScore`,
   `moveCursor`, `arrowFor`, `isActionKey`, `isPeekKey`, `onPeekButton`, `isPageControl`, `cardAt`,
   `onButton`, `seededRng`) and the `memoryMenagerie` entry the midway
   registers. `createState` takes an rng so tests can choose the shuffle.

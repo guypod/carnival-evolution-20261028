@@ -15,6 +15,9 @@ import {
   createState,
   deal,
   finalScore,
+  forecastScore,
+  lastTryText,
+  pairsLeft,
   flip,
   isActionKey,
   isFaceUp,
@@ -443,5 +446,70 @@ describe('peek', () => {
     expect(onPeekButton(theme.canvas.width / 2, 60)).toBe(true);
     expect(onPeekButton(10, 60)).toBe(false);
     expect(cardAt(theme.canvas.width / 2, 60)).toBeUndefined();
+  });
+});
+
+describe('forecast', () => {
+  it('starts at the perfect score and holds while every try matches', () => {
+    const state = playing();
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(300);
+    const [a, b] = pairsOf(state)[0];
+    flip(state, a);
+    flip(state, b);
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(300);
+    expect(pairsLeft(state)).toBe(PAIRS - 1);
+  });
+
+  it('drops by one move penalty for each miss', () => {
+    const state = playing();
+    flip(state, 0);
+    flip(state, otherThan(state, 0));
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(290);
+    step(state, MISMATCH_TIME);
+    flip(state, 0);
+    flip(state, otherThan(state, 0));
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(280);
+  });
+
+  it('takes off the peek cost once the peek is used', () => {
+    const state = playing();
+    peek(state);
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(300 - PEEK_PENALTY);
+  });
+
+  it('never goes below 0', () => {
+    expect(forecastScore(40, 0, true)).toBe(0);
+    expect(forecastScore(30, 0, true)).toBe(0);
+  });
+
+  it('equals the final score when the round ends', () => {
+    const state = playing();
+    flip(state, 0);
+    flip(state, otherThan(state, 0));
+    step(state, MISMATCH_TIME);
+    peek(state);
+    step(state, PEEK_TIME);
+    solve(state);
+    expect(state.phase).toBe('over');
+    expect(forecastScore(state.moves, state.matches, state.peekUsed)).toBe(finalScore(state));
+    expect(pairsLeft(state)).toBe(0);
+  });
+
+  it('reports the last match or miss, and resets on replay', () => {
+    const state = playing();
+    expect(lastTryText(state)).toBeUndefined();
+    flip(state, 0);
+    flip(state, otherThan(state, 0));
+    expect(lastTryText(state)).toBe(
+      `Miss: no pair for ${SYMBOLS[state.cards[0].symbol]} (-10 forecast)`,
+    );
+    step(state, MISMATCH_TIME);
+    const [a, b] = pairsOf(state)[2];
+    flip(state, a);
+    flip(state, b);
+    expect(lastTryText(state)).toBe(`Match: ${SYMBOLS[2]} pair found`);
+    solve(state);
+    const next = beginRound(state);
+    expect(lastTryText(next)).toBeUndefined();
   });
 });
