@@ -18,6 +18,29 @@ export const ZONES = [
   { within: 1, points: 10, label: 'Barely moved' },
 ] as const;
 
+/** How a strike's timing compares with the centre of the meter. */
+export type Timing = 'early' | 'perfect' | 'late';
+
+/** Labels for each timing, short enough to sit beside the meter. */
+export const TIMING_LABELS: Record<Timing, string> = {
+  early: 'Early: wait a beat longer',
+  perfect: 'Perfect timing',
+  late: 'Late: strike a beat sooner',
+};
+
+/** One swing taken: where the marker stopped and what it scored. */
+export interface Strike {
+  /** Marker position when struck: -1 (left end) to 1 (right end). */
+  position: number;
+  /**
+   * Signed distance from the centre along the marker's travel: negative before
+   * the marker reached the centre (early), positive after it passed (late).
+   */
+  offset: number;
+  points: number;
+  timing: Timing;
+}
+
 export interface StrikerState {
   phase: 'ready' | 'aiming' | 'flying' | 'result' | 'over';
   /** Seconds the marker has been moving this swing. */
@@ -26,18 +49,47 @@ export interface StrikerState {
   flyTime: number;
   /** Points for each swing taken so far. */
   swings: number[];
+  /** Every swing taken so far, with its timing. */
+  strikes: Strike[];
   /** Set once the round's total has been handed to the score board. */
   scoreRecorded: boolean;
 }
 
 export function createState(): StrikerState {
-  return { phase: 'ready', markerTime: 0, flyTime: 0, swings: [], scoreRecorded: false };
+  return {
+    phase: 'ready',
+    markerTime: 0,
+    flyTime: 0,
+    swings: [],
+    strikes: [],
+    scoreRecorded: false,
+  };
 }
 
 /** The marker's position at `time` seconds: -1 (left end) to 1 (right end), starting at the left. */
 export function markerPosition(time: number): number {
   const t = (((time / MARKER_PERIOD) % 1) + 1) % 1;
   return t < 0.5 ? -1 + 4 * t : 3 - 4 * t;
+}
+
+/** Which way the marker is moving at `time` seconds: 1 to the right, -1 to the left. */
+export function markerDirection(time: number): 1 | -1 {
+  const t = (((time / MARKER_PERIOD) % 1) + 1) % 1;
+  return t < 0.5 ? 1 : -1;
+}
+
+/**
+ * The signed distance from the centre at `time` seconds, measured along the
+ * marker's travel: negative before it reaches the centre, positive after.
+ */
+export function signedOffset(time: number): number {
+  return markerPosition(time) * markerDirection(time);
+}
+
+/** Perfect inside the bell zone, otherwise early or late by the sign of `offset`. */
+export function timingFor(offset: number): Timing {
+  if (Math.abs(offset) <= ZONES[0].within) return 'perfect';
+  return offset < 0 ? 'early' : 'late';
 }
 
 /** The zone a marker at `position` lands in. */
@@ -58,10 +110,44 @@ export function total(state: StrikerState): number {
 /** Locks the marker and swings. Returns false unless the marker is moving. */
 export function strike(state: StrikerState): boolean {
   if (state.phase !== 'aiming') return false;
-  state.swings.push(scoreFor(markerPosition(state.markerTime)));
+  const position = markerPosition(state.markerTime);
+  const offset = signedOffset(state.markerTime);
+  const points = scoreFor(position);
+  state.swings.push(points);
+  state.strikes.push({ position, offset, points, timing: timingFor(offset) });
   state.flyTime = 0;
   state.phase = 'flying';
   return true;
+}
+
+/** The swing taken most recently, or undefined before the first. */
+export function lastStrike(state: StrikerState): Strike | undefined {
+  return state.strikes[state.strikes.length - 1];
+}
+
+/** The feedback line for a strike, such as "Great swing: 75 points. Late: strike a beat sooner". */
+export function feedback(strike: Strike): string {
+  const zone = zoneFor(strike.position);
+  return `${zone.label}: ${strike.points} points. ${TIMING_LABELS[strike.timing]}`;
+}
+
+/** The highest-scoring swing (the first of any tie), or undefined before the first. */
+export function bestSwing(state: StrikerState): { index: number; strike: Strike } | undefined {
+  let best: { index: number; strike: Strike } | undefined;
+  state.strikes.forEach((s, index) => {
+    if (!best || s.points > best.strike.points) best = { index, strike: s };
+  });
+  return best;
+}
+
+/** One line per swing for the end screen, such as "Swing 2: 75 points, Late". */
+export function breakdown(state: StrikerState): string[] {
+  const best = bestSwing(state);
+  return state.strikes.map((s, i) => {
+    const timing = s.timing[0].toUpperCase() + s.timing.slice(1);
+    const tag = best?.index === i ? ' (best)' : '';
+    return `Swing ${i + 1}: ${s.points} points, ${timing}${tag}`;
+  });
 }
 
 /** Starts the next swing from a result. Returns false anywhere else. */
@@ -266,6 +352,15 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   }
   ctx.strokeStyle = colors.text;
   ctx.strokeRect(METER.x, METER.y, METER.w, METER.h);
+  const struck = lastStrike(state);
+  if (struck && state.phase !== 'aiming' && state.phase !== 'ready') {
+    // Where the last strike landed stays on the meter while its puck flies.
+    const sx = METER.x + ((struck.position + 1) / 2) * METER.w;
+    ctx.fillStyle = colors.danger;
+    ctx.fillRect(sx - 4, METER.y - 16, 8, METER.h + 32);
+    ctx.strokeStyle = colors.text;
+    ctx.strokeRect(sx - 4, METER.y - 16, 8, METER.h + 32);
+  }
   if (state.phase === 'aiming') {
     const mx = METER.x + ((markerPosition(state.markerTime) + 1) / 2) * METER.w;
     ctx.fillStyle = colors.text;
@@ -280,7 +375,6 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
 
   ctx.font = canvasFont('body');
   ctx.fillStyle = colors.text;
-  const last = state.swings[state.swings.length - 1];
   let message = '';
   if (state.phase === 'ready') {
     ctx.fillStyle = colors.accent;
@@ -291,11 +385,8 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
     message = `${SWINGS} swings. Strike when the marker is in the centre to ring the bell.`;
   } else if (state.phase === 'aiming') {
     message = `Swing ${state.swings.length + 1} of ${SWINGS}: press Space or Enter, click or tap Strike.`;
-  } else if (state.phase === 'flying') {
-    message = 'Up it goes...';
-  } else if (last !== undefined) {
-    const zone = ZONES.find((z) => z.points === last);
-    message = `${zone?.label ?? ''}: ${last} points.`;
+  } else if (struck) {
+    message = feedback(struck);
     if (state.phase === 'over') {
       ctx.fillStyle = colors.accent;
       ctx.font = canvasFont('title', 'bold');
@@ -305,6 +396,14 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
     }
   }
   ctx.fillText(message, mid, 230);
+
+  if (state.phase === 'over') {
+    ctx.font = canvasFont('body');
+    breakdown(state).forEach((line, i) => {
+      ctx.fillStyle = line.endsWith('(best)') ? colors.accent : colors.text;
+      ctx.fillText(line, mid, METER.y + METER.h + 70 + i * 30);
+    });
+  }
 
   const label = buttonLabel(state);
   if (label) {
