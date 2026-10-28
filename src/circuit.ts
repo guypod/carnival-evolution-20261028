@@ -184,6 +184,7 @@ function isRun(value: unknown): value is CircuitRun {
   return (
     isTime(run.startedAt) &&
     isTime(run.completedAt) &&
+    (run.completedAt as number) >= (run.startedAt as number) &&
     isCount(run.total) &&
     Array.isArray(run.legs) &&
     run.legs.every(

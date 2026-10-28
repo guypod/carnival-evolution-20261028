@@ -364,6 +364,7 @@ describe('createCircuitHistory', () => {
       '{"runs":[{"startedAt":1}]}',
       '{"runs":[],"best":"9"}',
       '{"runs":[{"startedAt":1,"completedAt":1e20,"legs":[],"total":0}]}',
+      '{"runs":[{"startedAt":5,"completedAt":4,"legs":[],"total":0}]}',
     ]) {
       const s = setup();
       s.storage.map.set(CIRCUIT_HISTORY_KEY, raw);
