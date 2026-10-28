@@ -11,6 +11,7 @@ import {
   pavilionCollection,
   shelfText,
 } from './prize-pavilion';
+import { emptyText, hallOfRecords, overviewText } from './hall-of-records';
 import { progressText, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -44,6 +45,7 @@ function renderMidway() {
       <div class="midway-panels">
         <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
         <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
+        <a class="records-link" href="#/records">📜 Hall of Records</a>
         <nav class="midway-guide" aria-label="Booths">
           <h2>Booths</h2>
           <ul></ul>
@@ -241,6 +243,63 @@ function renderTrail() {
   stop = onEscapeKey(window, () => (location.hash = '#/'));
 }
 
+function renderRecords() {
+  document.body.dataset.view = 'records';
+  const hall = hallOfRecords(registry.all());
+  app.innerHTML = `
+    <section class="records" aria-labelledby="records-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="records-title" tabindex="-1">Hall of Records</h1>
+      </div>
+      <p class="records-intro">The five best rounds at every booth, highest score first. These are your top scores, not your most recent rounds.</p>
+      <p class="records-overview" role="status"></p>
+      <ul class="records-booths"></ul>
+      <p class="note">Records are kept in this browser only, so another browser or device has its own. Personal bests added up is the sum of each booth's single best round, not every point you have scored.</p>
+    </section>`;
+
+  app.querySelector('.records-overview')!.textContent = overviewText(hall);
+  const booths = app.querySelector('.records-booths')!;
+  for (const booth of hall.booths) {
+    const item = document.createElement('li');
+    item.innerHTML = `
+      <h2></h2>
+      <a class="play-link">Play</a>`;
+    item.querySelector('h2')!.textContent = booth.name;
+    const link = item.querySelector<HTMLAnchorElement>('.play-link')!;
+    link.href = booth.playHref;
+    link.setAttribute('aria-label', `Play ${booth.name}`);
+    if (booth.rows.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = emptyText(booth);
+      link.before(empty);
+    } else {
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <caption></caption>
+        <thead><tr><th scope="col">Rank</th><th scope="col">Score</th><th scope="col">Recorded</th></tr></thead>
+        <tbody></tbody>`;
+      table.querySelector('caption')!.textContent = `Top scores at ${booth.name}`;
+      const body = table.querySelector('tbody')!;
+      for (const row of booth.rows) {
+        const tr = document.createElement('tr');
+        for (const text of [`#${row.rank}`, String(row.score), row.when]) {
+          const cell = document.createElement('td');
+          cell.textContent = text;
+          tr.append(cell);
+        }
+        body.append(tr);
+      }
+      link.before(table);
+    }
+    booths.append(item);
+  }
+
+  app.querySelector<HTMLElement>('h1')!.focus();
+  stop = onEscapeKey(window, () => (location.hash = '#/'));
+}
+
 function renderGame(game: CarnivalGame) {
   document.body.dataset.view = 'game';
   app.innerHTML = `
@@ -269,6 +328,7 @@ function route() {
   if (game) renderGame(game);
   else if (location.hash === '#/prizes') renderPrizes();
   else if (location.hash === '#/trail') renderTrail();
+  else if (location.hash === '#/records') renderRecords();
   else renderMidway();
 }
 
