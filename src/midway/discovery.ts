@@ -1,4 +1,12 @@
-import { distanceToRect, type MidwayMap, type Point, type PropKind, type Rect } from './world';
+import {
+  canStand,
+  distanceToRect,
+  findPath,
+  type MidwayMap,
+  type Point,
+  type PropKind,
+  type Rect,
+} from './world';
 
 /**
  * A small, optional trail of midway landmarks to find by walking up to them.
@@ -64,6 +72,56 @@ export function landmarkInReach(
   reach = DISCOVERY_REACH,
 ): Landmark | undefined {
   return landmarks.find((landmark) => distanceToRect(at, landmark.area) <= reach);
+}
+
+/**
+ * The shortest walk from `from` to an open tile within reach of a landmark, so
+ * the player arrives where the find counts. An empty walk means the player is
+ * already in reach; undefined means no open tile in reach can be walked to.
+ * The walk only moves the player: the find still happens on arrival.
+ */
+export function pathToLandmark(
+  map: MidwayMap,
+  from: Point,
+  landmark: Landmark,
+  reach = DISCOVERY_REACH,
+): Point[] | undefined {
+  if (distanceToRect(from, landmark.area) <= reach) return [];
+  const { area } = landmark;
+  const margin = Math.ceil(reach);
+  let best: Point[] | undefined;
+  let bestLength = Infinity;
+  for (let ty = Math.floor(area.y) - margin; ty < area.y + area.h + margin; ty++) {
+    for (let tx = Math.floor(area.x) - margin; tx < area.x + area.w + margin; tx++) {
+      const spot = { x: tx + 0.5, y: ty + 0.5 };
+      if (!canStand(map, spot.x, spot.y)) continue;
+      if (distanceToRect(spot, area) > reach) continue;
+      const found = findPath(map, from, spot);
+      if (!found) continue;
+      // Same tile, but not yet in reach: step to the tile's centre.
+      const path = found.length > 0 ? found : [spot];
+      let length = 0;
+      let prev = from;
+      for (const step of path) {
+        length += Math.hypot(step.x - prev.x, step.y - prev.y);
+        prev = step;
+      }
+      if (length < bestLength) {
+        best = path;
+        bestLength = length;
+      }
+    }
+  }
+  return best;
+}
+
+/** A short hint for the corner of the map, or undefined once the trail is done. */
+export function landmarkHint(
+  landmarks: readonly Landmark[],
+  found: readonly LandmarkId[],
+): string | undefined {
+  const next = nextLandmark(landmarks, found);
+  return next ? `🧭 Next landmark: ${next.name}` : undefined;
 }
 
 /** Adds a find. Finding the same landmark again changes nothing. */
