@@ -4,6 +4,8 @@ import {
   COLS,
   MISMATCH_TIME,
   PAIRS,
+  PEEK_PENALTY,
+  PEEK_TIME,
   ROWS,
   SYMBOLS,
   arrowFor,
@@ -17,11 +19,16 @@ import {
   isActionKey,
   isFaceUp,
   isPageControl,
+  isPeekKey,
+  isShown,
   memoryMenagerie,
   moveCursor,
   onButton,
+  onPeekButton,
+  peek,
   saveFinalScore,
   scoreFor,
+  scoreWithPeek,
   seededRng,
   startRound,
   step,
@@ -322,5 +329,119 @@ describe('memory menagerie', () => {
     const saved = topScores('memory-menagerie', 50);
     expect(saved.length).toBe(before + 1);
     expect(saved.some((e) => e.score === scoreFor(PAIRS))).toBe(true);
+  });
+});
+
+describe('peek', () => {
+  it('shows every card for PEEK_TIME, then restores the board exactly', () => {
+    const state = playing();
+    const [[a, b], [c]] = pairsOf(state);
+    flip(state, a);
+    flip(state, b);
+    flip(state, c);
+    const before = structuredClone({
+      cards: state.cards,
+      open: state.open,
+      moves: state.moves,
+      matches: state.matches,
+    });
+    expect(peek(state)).toBe(true);
+    for (let i = 0; i < state.cards.length; i++) expect(isShown(state, i)).toBe(true);
+    step(state, PEEK_TIME - 0.01);
+    expect(isShown(state, 0) && state.peekIn > 0).toBe(true);
+    step(state, 0.02);
+    expect(state.peekIn).toBe(0);
+    expect({
+      cards: state.cards,
+      open: state.open,
+      moves: state.moves,
+      matches: state.matches,
+    }).toEqual(before);
+    const hidden = state.cards.findIndex((_, i) => !isFaceUp(state, i));
+    expect(isShown(state, hidden)).toBe(false);
+  });
+
+  it('can be used once per round', () => {
+    const state = playing();
+    expect(peek(state)).toBe(true);
+    step(state, PEEK_TIME);
+    expect(peek(state)).toBe(false);
+    expect(state.peekIn).toBe(0);
+    expect(state.peekUsed).toBe(true);
+  });
+
+  it('blocks flipping while it shows, and the open card resumes after', () => {
+    const state = playing();
+    const [[a, b]] = pairsOf(state);
+    flip(state, a);
+    peek(state);
+    expect(flip(state, b)).toBe('ignored');
+    expect(state.open).toEqual([a]);
+    step(state, PEEK_TIME);
+    expect(flip(state, b)).toBe('match');
+    expect(state.moves).toBe(1);
+  });
+
+  it('is refused while a mismatch is resolving, before the start and after the end', () => {
+    const ready = createState(seededRng(1));
+    expect(peek(ready)).toBe(false);
+
+    const state = playing();
+    const pairs = pairsOf(state);
+    flip(state, pairs[0][0]);
+    flip(state, pairs[1][0]);
+    expect(state.resolveIn).toBeGreaterThan(0);
+    expect(peek(state)).toBe(false);
+    expect(state.peekUsed).toBe(false);
+
+    step(state, MISMATCH_TIME);
+    for (const [x, y] of pairs) {
+      flip(state, x);
+      flip(state, y);
+    }
+    expect(state.phase).toBe('over');
+    expect(peek(state)).toBe(false);
+    expect(state.peekUsed).toBe(false);
+  });
+
+  it('takes PEEK_PENALTY off the final score, never below 0', () => {
+    expect(scoreWithPeek(PAIRS, false)).toBe(300);
+    expect(scoreWithPeek(PAIRS, true)).toBe(300 - PEEK_PENALTY);
+    expect(scoreWithPeek(34, true)).toBe(0);
+    expect(scoreWithPeek(100, true)).toBe(0);
+
+    const state = playing();
+    peek(state);
+    step(state, PEEK_TIME);
+    for (const [x, y] of pairsOf(state)) {
+      flip(state, x);
+      flip(state, y);
+    }
+    expect(finalScore(state)).toBe(300 - PEEK_PENALTY);
+    expect(takeFinalScore(state)).toBe(300 - PEEK_PENALTY);
+  });
+
+  it('is available again after Play again', () => {
+    const state = playing();
+    peek(state);
+    step(state, PEEK_TIME);
+    for (const [x, y] of pairsOf(state)) {
+      flip(state, x);
+      flip(state, y);
+    }
+    const next = beginRound(state);
+    expect(next.phase).toBe('playing');
+    expect(next.peekUsed).toBe(false);
+    expect(next.peekIn).toBe(0);
+    expect(peek(next)).toBe(true);
+  });
+
+  it('answers to P and its button', () => {
+    expect(isPeekKey('p')).toBe(true);
+    expect(isPeekKey('P')).toBe(true);
+    expect(isPeekKey('o')).toBe(false);
+    expect(onPeekButton(theme.canvas.width / 2, 60)).toBe(true);
+    expect(onPeekButton(10, 60)).toBe(false);
+    expect(cardAt(theme.canvas.width / 2, 60)).toBeUndefined();
   });
 });

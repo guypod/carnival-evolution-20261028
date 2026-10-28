@@ -18,6 +18,12 @@ you can.
   cards that don't match stay visible for one second, then turn back over.
   While they are showing, no other card flips. Flipping a card that is already
   face up does nothing.
+- Once per round you may **Peek**: press P, or click the **Peek** button above
+  the cards. Every card shows for 1.5 seconds, then the board is exactly as it
+  was: matched pairs, moves and a single card you had already turned up stay
+  as they were. No card flips while a peek shows, and you can't peek while a
+  mismatched pair is waiting to close. The button says whether your peek is
+  still available or used.
 - The round ends when all six pairs are found. The results show your moves,
   pairs matched and score. Press **Play again** (or Space or Enter) for a
   freshly shuffled round. Escape takes you back to the midway.
@@ -28,6 +34,9 @@ you can.
 - Finishing in 6 moves, the fewest possible, scores 300. Each move beyond 6
   costs 10 points: the score is `max(0, 300 - 10 * (moves - 6))`, so 36 moves
   or more scores 0.
+- Using the peek takes 20 points off the final score, never below 0:
+  `max(0, 300 - 10 * (moves - 6) - 20)`. The results say whether the peek was
+  used. Every new round gets a fresh peek.
 
 Your final score is saved to the carnival's score board once, when the round
 ends. If the browser refuses to save it, the error goes to the console and the
@@ -36,8 +45,8 @@ results and **Play again** still work.
 ## Files
 
 - `game.ts`: the game logic (`deal`, `createState`, `startRound`, `beginRound`,
-  `flip`, `step`, `scoreFor`, `finalScore`, `takeFinalScore`, `saveFinalScore`,
-  `moveCursor`, `arrowFor`, `isActionKey`, `isPageControl`, `cardAt`,
+  `flip`, `peek`, `isShown`, `step`, `scoreFor`, `scoreWithPeek`, `finalScore`, `takeFinalScore`, `saveFinalScore`,
+  `moveCursor`, `arrowFor`, `isActionKey`, `isPeekKey`, `onPeekButton`, `isPageControl`, `cardAt`,
   `onButton`, `seededRng`) and the `memoryMenagerie` entry the midway
   registers. `createState` takes an rng so tests can choose the shuffle.
 - `game.test.ts`: tests for the game logic.
