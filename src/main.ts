@@ -2,6 +2,13 @@ import './style.css';
 import { applyTheme, bestScore, onScoreRecorded, type CarnivalGame } from './carnival';
 import { registry } from './games';
 import { onEscapeKey } from './escape';
+import {
+  CLOSED_GUIDE,
+  escapeGuide,
+  guideToggleLabel,
+  toggleGuide,
+  type GuideState,
+} from './visitor-guide';
 import { boothScoresText } from './booth-scores';
 import { passportStamps, passportSummary, stampText } from './passport';
 import {
@@ -65,20 +72,27 @@ function renderMidway() {
         <a href="https://tessl.io/devcon?utm_source=carnival&amp;utm_medium=midway-credit&amp;utm_campaign=tessl-carnival" target="_blank" rel="noopener">AI DevCon NYC</a>
       </p>
       <div class="midway-panels">
-        <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
-        <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
-        <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
-        <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
-        <a class="records-link" href="#/records">📜 Hall of Records</a>
-        <nav class="midway-guide" aria-label="Booths">
-          <h2>Booths</h2>
-          <ul></ul>
-        </nav>
-        <details class="midway-passport">
-          <summary><h2>Passport</h2> <span class="summary"></span></summary>
-          <ul></ul>
-          <p class="note">Stamps are kept in this browser only.</p>
-        </details>
+        <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
+          🗺️ Guide
+        </button>
+        <div class="visitor-guide" id="visitor-guide" role="region" aria-label="Visitor guide" hidden>
+          <nav class="guide-destinations" aria-label="Destinations">
+            <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
+            <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
+            <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
+            <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
+            <a class="records-link" href="#/records">📜 Hall of Records</a>
+          </nav>
+          <nav class="midway-guide" aria-label="Booths">
+            <h2>Booths</h2>
+            <ul></ul>
+          </nav>
+          <details class="midway-passport">
+            <summary><h2>Passport</h2> <span class="summary"></span></summary>
+            <ul></ul>
+            <p class="note">Stamps are kept in this browser only.</p>
+          </details>
+        </div>
       </div>
       <div class="booth-card" aria-live="polite" hidden>
         <h2></h2>
@@ -118,7 +132,33 @@ function renderMidway() {
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
     onReach: showBooth,
   });
-  stop = midway.stop;
+  const stopGuide = setUpGuide();
+  stop = () => {
+    stopGuide();
+    midway.stop();
+  };
+}
+
+// The visitor guide starts closed so the map has the room. Escape closes it,
+// and focus goes back to its toggle when it was inside the guide.
+function setUpGuide(): () => void {
+  const toggle = app.querySelector<HTMLButtonElement>('.guide-toggle')!;
+  const drawer = app.querySelector<HTMLElement>('.visitor-guide')!;
+  let state = CLOSED_GUIDE;
+  const show = (next: GuideState) => {
+    state = next;
+    drawer.hidden = !state.open;
+    toggle.setAttribute('aria-expanded', String(state.open));
+    toggle.setAttribute('aria-label', guideToggleLabel(state));
+  };
+  show(state);
+  toggle.addEventListener('click', () => show(toggleGuide(state)));
+  return onEscapeKey(window, () => {
+    const result = escapeGuide(state, drawer.contains(document.activeElement));
+    if (!result.handled) return;
+    show(result.state);
+    if (result.restoreFocus) toggle.focus();
+  });
 }
 
 function renderPassport(passport: HTMLDetailsElement) {
