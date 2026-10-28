@@ -718,6 +718,8 @@ function renderPostcard() {
         <p class="postcard-heading"></p>
         <p class="postcard-greeting"></p>
         <ul></ul>
+        <h3>Stamps and emblems</h3>
+        <ul class="postcard-marks"></ul>
       </section>
       <p class="note">The postcard is made in this browser and saved to your device. Nothing is uploaded, and your name is not kept.</p>
     </section>`;
@@ -731,6 +733,11 @@ function renderPostcard() {
     landmarksTotal: landmarks.length,
     stampsPlayed: stamps.filter((stamp) => stamp.played).length,
     stampsTotal: stamps.length,
+    stamps: stamps.map((stamp) => ({ name: stamp.name, earned: stamp.played })),
+    emblems: landmarks.map((landmark) => ({
+      name: landmark.name,
+      earned: found.includes(landmark.id),
+    })),
   };
 
   const name = app.querySelector<HTMLInputElement>('#postcard-name')!;
@@ -759,12 +766,19 @@ function renderPostcard() {
     content = postcardContent({ ...visit, name: name.value });
     app.querySelector('.postcard-heading')!.textContent = content.heading;
     app.querySelector('.postcard-greeting')!.textContent = content.greeting;
-    const list = app.querySelector('.postcard-text ul')!;
+    const list = app.querySelector('.postcard-text ul:not(.postcard-marks)')!;
     list.replaceChildren();
     for (const line of content.lines) {
       const item = document.createElement('li');
       item.textContent = line;
       list.append(item);
+    }
+    const marks = app.querySelector('.postcard-marks')!;
+    marks.replaceChildren();
+    for (const mark of content.marks) {
+      const item = document.createElement('li');
+      item.textContent = mark.label;
+      marks.append(item);
     }
     if (ctx) drawPostcard(ctx, content);
   }

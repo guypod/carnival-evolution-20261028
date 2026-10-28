@@ -22,6 +22,19 @@ export interface PostcardVisit {
   stampsTotal: number;
   /** The visitor's name as typed; it is cleaned before it is shown. */
   name?: string;
+  /** Each booth's stamp, in passport order. */
+  stamps?: readonly { name: string; earned: boolean }[];
+  /** Each trail landmark's emblem, in trail order. */
+  emblems?: readonly { name: string; earned: boolean }[];
+}
+
+/** One symbol on the card's strip: a booth stamp or a landmark emblem. */
+export interface PostcardMark {
+  kind: 'stamp' | 'emblem';
+  name: string;
+  earned: boolean;
+  /** The mark in words, for the page's text equivalent. */
+  label: string;
 }
 
 export interface PostcardContent {
@@ -29,6 +42,8 @@ export interface PostcardContent {
   greeting: string;
   /** The card's lines, in the order the picture shows them. */
   lines: string[];
+  /** The strip of stamps then emblems, earned or not, in the order the picture shows them. */
+  marks: PostcardMark[];
   scene: Scene;
   filename: string;
 }
@@ -75,6 +90,20 @@ export function postcardContent(visit: PostcardVisit): PostcardContent {
       `${visit.stampsPlayed} of ${plural(visit.stampsTotal, 'booth', 'booths')} stamped`,
       visit.scene === 'evening' ? 'Sent by lantern light' : 'Sent on a sunny day',
     ],
+    marks: [
+      ...(visit.stamps ?? []).map(({ name, earned }) => ({
+        kind: 'stamp' as const,
+        name,
+        earned,
+        label: `${name} booth: ${earned ? 'stamped' : 'not stamped yet'}`,
+      })),
+      ...(visit.emblems ?? []).map(({ name, earned }) => ({
+        kind: 'emblem' as const,
+        name,
+        earned,
+        label: `${name} landmark: ${earned ? 'found' : 'not found yet'}`,
+      })),
+    ],
     scene: visit.scene,
     filename: `tessl-carnival-postcard-${visit.scene}.png`,
   };
@@ -114,7 +143,69 @@ type PostcardContext = Pick<
   | 'textAlign'
   | 'textBaseline'
   | 'setTransform'
+  | 'beginPath'
+  | 'arc'
+  | 'moveTo'
+  | 'lineTo'
+  | 'closePath'
+  | 'fill'
+  | 'stroke'
 >;
+
+/** Where each mark sits on the strip, centred in the card, in layout pixels. */
+export function postcardMarkLayout(count: number, centreX: number, y: number, gap = 36) {
+  const start = centreX - ((count - 1) * gap) / 2;
+  return Array.from({ length: count }, (_, i) => ({ x: start + i * gap, y }));
+}
+
+const MARK_RADIUS = 12;
+
+/**
+ * A stamp is a circle and an emblem a diamond. An earned mark is filled and
+ * carries a small star; one not yet earned is a thin outline only.
+ */
+function drawMark(
+  ctx: PostcardContext,
+  mark: PostcardMark,
+  at: { x: number; y: number },
+  colors: ReturnType<typeof postcardColors>,
+) {
+  const r = MARK_RADIUS;
+  ctx.beginPath();
+  if (mark.kind === 'stamp') {
+    ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
+  } else {
+    ctx.moveTo(at.x, at.y - r - 2);
+    ctx.lineTo(at.x + r + 2, at.y);
+    ctx.lineTo(at.x, at.y + r + 2);
+    ctx.lineTo(at.x - r - 2, at.y);
+    ctx.closePath();
+  }
+  if (mark.earned) {
+    ctx.fillStyle = mark.kind === 'stamp' ? colors.accent : theme.colors.water;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = colors.text;
+    ctx.stroke();
+    // A five-point star in the card's colour.
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const radius = i % 2 === 0 ? r * 0.6 : r * 0.25;
+      const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+      const px = at.x + Math.cos(angle) * radius;
+      const py = at.y + Math.sin(angle) * radius;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = colors.card;
+    ctx.fill();
+  } else {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = colors.text;
+    ctx.stroke();
+  }
+}
 
 /**
  * Draws the card on a canvas of POSTCARD_SIZE times POSTCARD_SCALE. Text is
@@ -156,11 +247,13 @@ export function drawPostcard(ctx: PostcardContext, content: PostcardContent) {
   ctx.fillText(content.greeting, width / 2, card.y + 90, card.w - 48);
   ctx.font = canvasFont('body');
   content.lines.forEach((line, i) => {
-    ctx.fillText(line, width / 2, card.y + 140 + i * 28, card.w - 48);
+    ctx.fillText(line, width / 2, card.y + 130 + i * 24, card.w - 48);
   });
+  const spots = postcardMarkLayout(content.marks.length, width / 2, card.y + 232);
+  content.marks.forEach((mark, i) => drawMark(ctx, mark, spots[i], colors));
   ctx.fillStyle = colors.accent;
   ctx.font = canvasFont('small', 'bold');
-  ctx.fillText('★ Tessl Carnival ★', width / 2, card.y + card.h - 28);
+  ctx.fillText('★ Tessl Carnival ★', width / 2, card.y + card.h - 22);
 }
 
 export const POSTCARD_MESSAGES = {
