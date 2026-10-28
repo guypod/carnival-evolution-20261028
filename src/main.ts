@@ -18,9 +18,11 @@ import {
   countText,
   directoryEntries,
   emptyText as directoryEmptyText,
+  favoriteLabel,
   filterDirectory,
   type DirectoryStatus,
 } from './booth-directory';
+import { favorites } from './favorites';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
@@ -313,18 +315,19 @@ function renderRecords() {
 
 function renderBooths() {
   document.body.dataset.view = 'booths';
-  const entries = directoryEntries(registry.all());
+  let entries = directoryEntries(registry.all(), bestScore, favorites.load());
   app.innerHTML = `
     <section class="directory" aria-labelledby="directory-title">
       <div class="game-header">
         <a href="#/">← Back to the midway</a>
         <h1 id="directory-title" tabindex="-1">Booth Directory</h1>
       </div>
-      <p class="directory-intro">Every booth on the midway. Search by name or description, or show only the booths you have or have not played.</p>
+      <p class="directory-intro">Every booth on the midway. Search by name or description, show only the booths you have or have not played, or star booths for your shortlist.</p>
       <div class="directory-controls">
         <label for="directory-search">Search booths</label>
         <input id="directory-search" type="search" autocomplete="off" />
         <div class="directory-filters" role="group" aria-label="Show booths"></div>
+        <button type="button" class="directory-favorites-only" aria-pressed="false">★ Favorites</button>
       </div>
       <p class="directory-count" role="status" aria-live="polite"></p>
       <div class="directory-empty" hidden>
@@ -332,7 +335,7 @@ function renderBooths() {
         <button type="button" class="directory-reset">Show all booths</button>
       </div>
       <ul class="directory-booths"></ul>
-      <p class="note">Personal bests come from your scores in this browser only.</p>
+      <p class="note">Personal bests and favorites are kept in this browser only.</p>
     </section>`;
 
   const search = app.querySelector<HTMLInputElement>('#directory-search')!;
@@ -341,7 +344,25 @@ function renderBooths() {
   const empty = app.querySelector<HTMLElement>('.directory-empty')!;
   const reset = app.querySelector<HTMLButtonElement>('.directory-reset')!;
   const list = app.querySelector<HTMLElement>('.directory-booths')!;
+  const favoritesOnlyButton = app.querySelector<HTMLButtonElement>('.directory-favorites-only')!;
   let status: DirectoryStatus = 'all';
+  let favoritesOnly = false;
+
+  favoritesOnlyButton.addEventListener('click', () => {
+    favoritesOnly = !favoritesOnly;
+    update();
+  });
+
+  function toggleFavorite(gameId: string) {
+    const entry = entries.find((e) => e.gameId === gameId);
+    if (!entry) return;
+    // Only change the card when the shortlist was saved.
+    if (favorites.set(gameId, !entry.favorite) === undefined) return;
+    entries = directoryEntries(registry.all(), bestScore, favorites.load());
+    update();
+    list.querySelector<HTMLButtonElement>(`[data-favorite="${gameId}"]`)?.focus();
+    if (document.activeElement === document.body) favoritesOnlyButton.focus();
+  }
 
   const buttons = DIRECTORY_STATUSES.map(({ id, label }) => {
     const button = document.createElement('button');
@@ -358,9 +379,17 @@ function renderBooths() {
   function update() {
     for (const { id, button } of buttons)
       button.setAttribute('aria-pressed', String(id === status));
-    const shown = filterDirectory(entries, search.value, status);
+    favoritesOnlyButton.setAttribute('aria-pressed', String(favoritesOnly));
+    const shown = filterDirectory(entries, search.value, status, favoritesOnly);
     count.textContent = countText(shown.length, entries.length);
-    const message = directoryEmptyText(shown.length, entries.length, search.value, status);
+    const message = directoryEmptyText(
+      shown.length,
+      entries.length,
+      search.value,
+      status,
+      favoritesOnly,
+      entries.filter((e) => e.favorite).length,
+    );
     empty.hidden = message === undefined;
     empty.querySelector('p')!.textContent = message ?? '';
     reset.hidden = entries.length === 0;
@@ -368,7 +397,9 @@ function renderBooths() {
     for (const entry of shown) {
       const item = document.createElement('li');
       item.classList.toggle('played', entry.played);
+      item.classList.toggle('favorite', entry.favorite);
       item.innerHTML = `
+        <button type="button" class="favorite-toggle"></button>
         <h2></h2>
         <p class="description"></p>
         <p class="best"></p>
@@ -379,6 +410,13 @@ function renderBooths() {
       const link = item.querySelector<HTMLAnchorElement>('.play-link')!;
       link.href = entry.playHref;
       link.setAttribute('aria-label', `Play ${entry.name}`);
+      const toggle = item.querySelector<HTMLButtonElement>('.favorite-toggle')!;
+      toggle.dataset.favorite = entry.gameId;
+      toggle.textContent = entry.favorite ? '★' : '☆';
+      toggle.setAttribute('aria-pressed', String(entry.favorite));
+      toggle.setAttribute('aria-label', favoriteLabel(entry));
+      toggle.title = favoriteLabel(entry);
+      toggle.addEventListener('click', () => toggleFavorite(entry.gameId));
       list.append(item);
     }
   }
@@ -387,6 +425,7 @@ function renderBooths() {
   reset.addEventListener('click', () => {
     search.value = '';
     status = 'all';
+    favoritesOnly = false;
     update();
     search.focus();
   });

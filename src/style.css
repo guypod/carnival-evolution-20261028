@@ -784,6 +784,7 @@ kbd {
 }
 
 .directory-filters button,
+.directory-favorites-only,
 .directory-reset {
   padding: 6px 14px;
   border: 2px solid var(--color-accent);
@@ -795,13 +796,16 @@ kbd {
   cursor: pointer;
 }
 
-.directory-filters button[aria-pressed='true'] {
+.directory-filters button[aria-pressed='true'],
+.directory-favorites-only[aria-pressed='true'] {
   background: var(--color-accent);
   color: var(--color-background);
 }
 
 .directory-controls input:focus-visible,
 .directory-filters button:focus-visible,
+.directory-favorites-only:focus-visible,
+.directory .favorite-toggle:focus-visible,
 .directory-reset:focus-visible,
 .directory .play-link:focus-visible {
   outline: 3px solid var(--color-text);
@@ -834,6 +838,7 @@ kbd {
 }
 
 .directory-booths > li {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -845,6 +850,29 @@ kbd {
 
 .directory-booths > li.played {
   border-color: var(--color-accent);
+}
+
+.directory .favorite-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 2px 8px;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.directory .favorite-toggle[aria-pressed='true'] {
+  border-color: var(--color-accent);
+}
+
+.directory-booths h2 {
+  padding-right: 44px;
 }
 
 .directory-booths h2,
