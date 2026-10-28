@@ -11,6 +11,7 @@ import {
   legText,
   restartCircuit,
   runText,
+  savedProgress,
 } from './circuit';
 import { onEscapeKey } from './escape';
 
@@ -362,6 +363,7 @@ describe('createCircuitHistory', () => {
       '{"runs":"x"}',
       '{"runs":[{"startedAt":1}]}',
       '{"runs":[],"best":"9"}',
+      '{"runs":[{"startedAt":1,"completedAt":1e20,"legs":[],"total":0}]}',
     ]) {
       const s = setup();
       s.storage.map.set(CIRCUIT_HISTORY_KEY, raw);
@@ -394,5 +396,21 @@ describe('createCircuitHistory', () => {
       },
     };
     expect(createCircuitHistory(full).save(done)).toBe('failed');
+  });
+
+  it('shows a saved circuit as saved, even after its scores leave the scoreboard', () => {
+    const s = setup();
+    for (let i = 0; i < 49; i++) s.board.record('ring-toss', 100);
+    const done = playCircuit(s, [1, 2, 3]);
+    expect(s.history.save(done)).toBe('saved');
+    s.tick();
+    s.board.record('ring-toss', 50);
+    const later = circuitProgress(games, done.startedAt, s.board.top);
+    expect(later.legs[0].latest).toBe(50);
+    const shown = savedProgress(later, s.history.read());
+    expect(shown.legs.map((leg) => leg.latest)).toEqual([1, 2, 3]);
+    expect(shown.total).toBe(6);
+    expect(shown.completedAt).toBe(done.completedAt);
+    expect(shown.finished).toBe(true);
   });
 });

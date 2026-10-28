@@ -175,12 +175,15 @@ export type SaveResult = 'saved' | 'already-saved' | 'not-finished' | 'unreadabl
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+/** A time a Date can show: JavaScript dates end at 8.64e15 ms. */
+const isTime = (value: unknown): value is number => isCount(value) && value <= 8.64e15;
+
 function isRun(value: unknown): value is CircuitRun {
   if (typeof value !== 'object' || value === null) return false;
   const run = value as Record<string, unknown>;
   return (
-    isCount(run.startedAt) &&
-    isCount(run.completedAt) &&
+    isTime(run.startedAt) &&
+    isTime(run.completedAt) &&
     isCount(run.total) &&
     Array.isArray(run.legs) &&
     run.legs.every(
@@ -251,6 +254,31 @@ export function createCircuitHistory(storage: CircuitStorage | undefined) {
   }
 
   return { read, save };
+}
+
+/**
+ * The circuit as it was saved, when this start is in the history. Scores can
+ * drop off the scoreboard after a circuit finishes, so a saved run, not the
+ * scoreboard, is the record of a finished circuit.
+ */
+export function savedProgress(
+  progress: CircuitProgress,
+  history: CircuitHistory | undefined,
+): CircuitProgress {
+  const run = history?.runs.find((r) => r.startedAt === progress.startedAt);
+  if (!run) return progress;
+  const legs = progress.legs.map((leg) => {
+    const score = run.legs.find((l) => l.gameId === leg.gameId)?.score;
+    return { ...leg, latest: score, complete: score !== undefined };
+  });
+  return {
+    ...progress,
+    legs,
+    next: undefined,
+    finished: true,
+    completedAt: run.completedAt,
+    total: run.total,
+  };
 }
 
 /** One past circuit's line: each leg's score and the total. */

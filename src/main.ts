@@ -30,6 +30,7 @@ import {
   circuitStatus,
   legText,
   restartCircuit,
+  savedProgress,
   runText,
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
@@ -290,7 +291,10 @@ function renderCircuit() {
       <p class="note">The circuit and its history are kept in this browser only. Free play, scores and records are unchanged.</p>
     </section>`;
 
-  const progress = circuitProgress(registry.all(), circuit.startedAt());
+  const worked = circuitProgress(registry.all(), circuit.startedAt());
+  const saved = circuitHistory.save(worked);
+  const history = circuitHistory.read();
+  const progress = savedProgress(worked, history);
   app.querySelector('.circuit-status')!.textContent = circuitStatus(progress);
   const next = app.querySelector<HTMLAnchorElement>('.circuit-next')!;
   next.hidden = !progress.next;
@@ -333,8 +337,6 @@ function renderCircuit() {
     list.append(total);
   }
 
-  const saved = circuitHistory.save(progress);
-  const history = circuitHistory.read();
   const best = app.querySelector('.circuit-best')!;
   const runs = app.querySelector('.circuit-runs')!;
   if (!history) {
@@ -570,6 +572,9 @@ function renderGame(game: CarnivalGame) {
 function route() {
   stop?.();
   stop = undefined;
+  // Save a finished circuit on every route, so its scores are kept before
+  // later play can push them off the scoreboard.
+  circuitHistory.save(circuitProgress(registry.all(), circuit.startedAt()));
 
   const match = location.hash.match(/^#\/play\/([\w-]+)$/);
   const game = match ? registry.get(match[1]) : undefined;
