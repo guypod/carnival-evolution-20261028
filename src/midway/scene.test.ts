@@ -4,7 +4,7 @@ import {
   lanternGlow,
   nextScene,
   SCENE_KEY,
-  sceneToggleLabel,
+  sceneToggleState,
 } from './scene';
 
 function memory(initial: Record<string, string> = {}) {
@@ -50,8 +50,11 @@ describe('scene toggle', () => {
   it('switches between day and evening and names the next scene', () => {
     expect(nextScene('day')).toBe('evening');
     expect(nextScene('evening')).toBe('day');
-    expect(sceneToggleLabel('day')).toContain('Lantern evening');
-    expect(sceneToggleLabel('evening')).toContain('Daytime');
+  });
+
+  it('keeps one toggle name, with pressed meaning evening is on', () => {
+    expect(sceneToggleState('day')).toEqual({ label: '🏮 Lantern evening', pressed: false });
+    expect(sceneToggleState('evening')).toEqual({ label: '🏮 Lantern evening', pressed: true });
   });
 });
 

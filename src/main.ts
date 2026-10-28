@@ -43,7 +43,7 @@ import {
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
-import { nextScene, scenePreference, sceneToggleLabel, type Scene } from './midway/scene';
+import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
 import type { BoothSlot } from './midway/world';
 
 applyTheme();
@@ -149,8 +149,9 @@ function setUpSceneToggle(setScene: (scene: Scene) => void) {
   const button = app.querySelector<HTMLButtonElement>('.scene-toggle')!;
   let scene = scenePreference.load();
   const show = () => {
-    button.textContent = sceneToggleLabel(scene);
-    button.setAttribute('aria-pressed', String(scene === 'evening'));
+    const { label, pressed } = sceneToggleState(scene);
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(pressed));
   };
   button.addEventListener('click', () => {
     scene = nextScene(scene);

@@ -36,9 +36,12 @@ export function nextScene(scene: Scene): Scene {
   return scene === 'day' ? 'evening' : 'day';
 }
 
-/** The scene toggle's text, which names the scene it switches to. */
-export function sceneToggleLabel(scene: Scene): string {
-  return scene === 'day' ? '🏮 Lantern evening' : '☀️ Daytime';
+/**
+ * The scene toggle's state. The name stays "Lantern evening" in both scenes,
+ * and `pressed` says whether evening is on, so the two never disagree.
+ */
+export function sceneToggleState(scene: Scene): { label: string; pressed: boolean } {
+  return { label: '🏮 Lantern evening', pressed: scene === 'evening' };
 }
 
 /**
