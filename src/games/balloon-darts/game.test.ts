@@ -5,6 +5,7 @@ import {
   FLIGHT_TIME,
   STAR_CELL,
   STAR_POINTS,
+  STREAK_BONUSES,
   accuracy,
   act,
   begin,
@@ -16,6 +17,7 @@ import {
   listen,
   saveFinalScore,
   step,
+  streakBonus,
   throwDart,
   type DartsState,
 } from './game';
@@ -86,17 +88,19 @@ describe('balloon darts', () => {
     throwAndLand(state, -1);
     throwAndLand(state, 2);
     throwAndLand(state, 2);
-    expect(state.dartsLeft).toBe(DARTS_PER_ROUND - 3);
-    expect(state.score).toBe(BALLOON_POINTS);
-    expect(state.hits).toBe(1);
-    expect(accuracy(state)).toBe(33);
+    throwAndLand(state, 3);
+    expect(state.dartsLeft).toBe(DARTS_PER_ROUND - 4);
+    expect(state.score).toBe(2 * BALLOON_POINTS);
+    expect(state.hits).toBe(2);
+    expect(accuracy(state)).toBe(50);
   });
 
   it('ends after nine darts with every balloon popped', () => {
     const state = playing();
     for (let cell = 0; cell < 9; cell++) throwAndLand(state, cell);
     expect(state.phase).toBe('over');
-    expect(state.score).toBe(8 * BALLOON_POINTS + STAR_POINTS);
+    expect(state.score).toBe(8 * BALLOON_POINTS + STAR_POINTS + 0 + 5 + 10 + 6 * 15);
+    expect(state.score).toBe(315);
     expect(accuracy(state)).toBe(100);
     expect(throwDart(state, 0)).toBe(false);
   });
@@ -142,6 +146,72 @@ describe('balloon darts', () => {
     expect(replay.dartsLeft).toBe(DARTS_PER_ROUND);
     expect(replay.popped.every((p) => !p)).toBe(true);
     expect(replay.scoreRecorded).toBe(false);
+  });
+
+  it('adds 0, 5, 10 and then 15 for each pop in a row', () => {
+    expect(STREAK_BONUSES).toEqual([0, 5, 10, 15]);
+    expect([0, 1, 2, 3, 4, 5, 9].map(streakBonus)).toEqual([0, 0, 5, 10, 15, 15, 15]);
+
+    const state = playing();
+    const scores: number[] = [];
+    const bonuses: number[] = [];
+    for (const cell of [0, 1, 2, 3, 5]) {
+      throwAndLand(state, cell);
+      scores.push(state.score);
+      bonuses.push(state.pops.at(-1)?.bonus ?? -1);
+    }
+    expect(bonuses).toEqual([0, 5, 10, 15, 15]);
+    expect(scores).toEqual([20, 45, 75, 110, 145]);
+    expect(state.streak).toBe(5);
+    expect(state.bestStreak).toBe(5);
+  });
+
+  it('adds the bonus on top of the star', () => {
+    const state = playing();
+    throwAndLand(state, 0);
+    throwAndLand(state, STAR_CELL);
+    expect(state.score).toBe(BALLOON_POINTS + STAR_POINTS + 5);
+    expect(state.pops.at(-1)?.points).toBe(STAR_POINTS + 5);
+  });
+
+  it('starts the streak again after a miss and keeps the best', () => {
+    const state = playing();
+    throwAndLand(state, 0);
+    throwAndLand(state, 1);
+    throwAndLand(state, 2);
+    throwAndLand(state, -1);
+    expect(state.streak).toBe(0);
+    expect(state.bestStreak).toBe(3);
+    expect(state.pops.at(-1)?.points).toBe(0);
+    throwAndLand(state, 3);
+    expect(state.streak).toBe(1);
+    expect(state.score).toBe(20 + 25 + 30 + 20);
+    expect(state.bestStreak).toBe(3);
+  });
+
+  it('counts a dart at a popped balloon as a miss that ends the streak', () => {
+    const state = playing();
+    throwAndLand(state, 0);
+    throwAndLand(state, 1);
+    throwAndLand(state, 1);
+    expect(state.streak).toBe(0);
+    expect(state.bestStreak).toBe(2);
+    throwAndLand(state, 2);
+    expect(state.score).toBe(20 + 25 + 20);
+  });
+
+  it('records the bonus score and clears both streaks on replay', () => {
+    const state = playing();
+    for (let cell = 0; cell < 9; cell++) throwAndLand(state, cell);
+    expect(state.bestStreak).toBe(9);
+    const record = vi.fn();
+    saveFinalScore(state, record);
+    expect(record).toHaveBeenCalledWith(315);
+
+    const replay = act(state);
+    expect(replay.score).toBe(0);
+    expect(replay.streak).toBe(0);
+    expect(replay.bestStreak).toBe(0);
   });
 
   it('leaves keys to a focused link or control', () => {
