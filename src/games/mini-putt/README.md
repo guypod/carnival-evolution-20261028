@@ -30,6 +30,7 @@ roll the same way.
 | Not sunk in 6     | 0                         |
 
 The screen shows the hole, strokes on this hole, total strokes and the score so
-far. The final score, the sum of the three holes (0 to 180), is saved once when
-the round ends. If it can't be saved, the result screen says so, and it is
-tried again when you press Play again or leave the booth.
+far. The final score, the sum of the three holes (0 to 180), is saved once, as
+soon as the third hole ends. If it can't be saved, the result screen says so,
+and it is tried again when you press Play again or leave the booth. If Play
+again can't save it either, the result screen stays up so the score is not lost.

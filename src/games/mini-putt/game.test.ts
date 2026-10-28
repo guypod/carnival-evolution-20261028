@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ACTION_BUTTON,
   BALL_RADIUS,
   COURSE,
   CUP_RADIUS,
+  HELP,
   HOLES,
   MAX_STROKES,
+  METER,
+  METER_LABEL,
   SINK_SPEED,
   aimAt,
   beginRound,
@@ -284,6 +288,46 @@ describe('saving and replay', () => {
     expect(next.phase).toBe('aiming');
   });
 
+  it('saves when the last hole ends, before Next is pressed', () => {
+    const state = finished();
+    state.hole = HOLES.length - 1;
+    state.phase = 'holeDone';
+    const record = vi.fn();
+    saveFinalScore(state, record);
+    expect(record).toHaveBeenCalledWith(110);
+    nextHole(state);
+    expect(state.phase).toBe('over');
+    saveFinalScore(state, record, true);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves on exit right after the last hole, before Next', () => {
+    const state = finished();
+    state.hole = HOLES.length - 1;
+    state.phase = 'holeDone';
+    const record = vi.fn();
+    saveFinalScore(state, record, true);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(110);
+  });
+
+  it('keeps the result screen when the replay retry fails too', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state = finished();
+    const fail = vi.fn(() => {
+      throw new Error('full');
+    });
+    saveFinalScore(state, fail);
+    const next = beginRound(state, fail);
+    expect(fail).toHaveBeenCalledTimes(2);
+    expect(next).toBe(state);
+    expect(next.phase).toBe('over');
+    expect(next.saveFailed).toBe(true);
+    const ok = vi.fn();
+    saveFinalScore(next, ok, true);
+    expect(ok).toHaveBeenCalledWith(110);
+  });
+
   it('starts a fresh round on replay', () => {
     const next = beginRound(finished(), () => {});
     expect(next.hole).toBe(0);
@@ -314,6 +358,14 @@ describe('controls', () => {
     const state = createState();
     expect(pointerAction(state, 400, 400)).toEqual({ kind: 'begin' });
     expect(pointerAction(state, 100, 100)).toBeUndefined();
+  });
+
+  it('keeps the help, power label, meter and button apart, below the green', () => {
+    const row = [HELP, METER_LABEL, METER, ACTION_BUTTON];
+    for (let i = 1; i < row.length; i++) {
+      expect(row[i - 1].x + row[i - 1].w).toBeLessThan(row[i].x);
+    }
+    for (const box of row) expect(box.y).toBeGreaterThan(COURSE.y + COURSE.h);
   });
 
   it('putts from the action button only while aiming', () => {

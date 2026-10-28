@@ -304,8 +304,13 @@ export function nextHole(state: PuttState): boolean {
   return true;
 }
 
+/** Whether all three holes are played, whether or not Next has been pressed. */
+export function roundComplete(state: PuttState): boolean {
+  return state.results.length >= HOLES.length;
+}
+
 /**
- * Hands the final score to `record` once the round is over. The score counts as
+ * Hands the final score to `record` once the last hole is done. The score counts as
  * saved only after `record` returns. A failed save is reported, not thrown, and
  * the frame loop does not try again; pass `retry` from an explicit replay or
  * exit to try once more.
@@ -315,7 +320,7 @@ export function saveFinalScore(
   record: (score: number) => void,
   retry = false,
 ): unknown {
-  if (state.phase !== 'over' || state.scoreRecorded) return undefined;
+  if (!roundComplete(state) || state.scoreRecorded) return undefined;
   if (state.saveFailed && !retry) return undefined;
   try {
     record(totalScore(state));
@@ -331,10 +336,11 @@ export function saveFinalScore(
 
 /**
  * Starts a round from the ready or result screen. A finished round's score is
- * saved first, retrying once if an earlier save failed.
+ * saved first, retrying once if an earlier save failed. If that retry fails too,
+ * the result screen stays up so the score is not lost.
  */
 export function beginRound(state: PuttState, record: (score: number) => void): PuttState {
-  saveFinalScore(state, record, true);
+  if (saveFinalScore(state, record, true) !== undefined) return state;
   const next = state.phase === 'over' ? createState() : state;
   startRound(next);
   return next;
@@ -362,9 +368,13 @@ export function keyAction(code: string, key: string, focusedTag?: string): KeyAc
 
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
 /** The Putt or Next button, below the green so a press on the green only aims. */
-const ACTION_BUTTON = { x: 600, y: 448, w: 160, h: 46 } as const;
+export const ACTION_BUTTON = { x: 600, y: 448, w: 160, h: 46 } as const;
 /** The power meter, below the green. A press on it sets the power. */
-export const METER = { x: 230, y: 456, w: 300, h: 26 } as const;
+export const METER = { x: 300, y: 456, w: 270, h: 26 } as const;
+/** The control help, left of the meter. Its text is squeezed to fit. */
+export const HELP = { x: 16, y: 446, w: 214, h: 46 } as const;
+/** The "Power" label, between the help and the meter. */
+export const METER_LABEL = { x: 240, y: 456, w: 52, h: 26 } as const;
 
 function inside(box: { x: number; y: number; w: number; h: number }, x: number, y: number) {
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
@@ -484,7 +494,7 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'left';
-    ctx.fillText('Power', METER.x - 60, METER.y + 18);
+    ctx.fillText('Power', METER_LABEL.x, METER_LABEL.y + 18, METER_LABEL.w);
     ctx.fillStyle = colors.surface;
     ctx.fillRect(METER.x, METER.y, METER.w, METER.h);
     ctx.fillStyle = colors.accent;
@@ -496,8 +506,8 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
     ctx.fillStyle = colors.muted;
     ctx.font = canvasFont('small');
     ctx.textAlign = 'left';
-    ctx.fillText('Aim: tap the green', 16, 462);
-    ctx.fillText('or Left/Right. Up/Down: power', 16, 482);
+    ctx.fillText('Aim: tap the green or Left/Right', HELP.x, HELP.y + 16, HELP.w);
+    ctx.fillText('Power: tap the meter or Up/Down', HELP.x, HELP.y + 38, HELP.w);
 
     const label = state.phase === 'holeDone' ? 'Next' : 'Putt';
     const active = state.phase !== 'rolling';
