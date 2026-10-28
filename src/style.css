@@ -384,6 +384,7 @@ kbd {
 
 .pavilion-link,
 .trail-link,
+.circuit-link,
 .records-link,
 .directory-link {
   display: block;
@@ -400,6 +401,8 @@ kbd {
 .pavilion-link:focus-visible,
 .trail-link:hover,
 .trail-link:focus-visible,
+.circuit-link:hover,
+.circuit-link:focus-visible,
 .records-link:hover,
 .records-link:focus-visible,
 .directory-link:hover,
@@ -651,6 +654,105 @@ kbd {
 .trail .play-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
+}
+
+.circuit h1:focus {
+  outline: none;
+}
+
+.circuit-intro,
+.circuit .note {
+  color: var(--color-muted);
+}
+
+.circuit-status {
+  margin: 16px 0;
+  padding: 14px 18px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-weight: bold;
+}
+
+.circuit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.circuit .play-link,
+.circuit-start {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font: inherit;
+  font-weight: bold;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.circuit .play-link[hidden],
+.circuit-start[hidden] {
+  display: none;
+}
+
+.circuit .play-link:focus-visible,
+.circuit-start:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.circuit-legs {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.circuit-legs > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border: 2px dashed var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.circuit-legs > li.current,
+.circuit-legs > li.complete {
+  border: 2px solid var(--color-accent);
+}
+
+.circuit-legs h2,
+.circuit-legs p {
+  margin: 0;
+}
+
+.circuit-legs > li.circuit-total {
+  border: 2px solid var(--color-accent);
+  font-size: 1.25em;
+  font-weight: bold;
+}
+
+.circuit .badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px dashed var(--color-muted);
+  border-radius: 50%;
+}
+
+.circuit .complete .badge {
+  border: 2px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-background);
 }
 
 .records h1:focus {
