@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   LANES,
   MAX_FRAME,
+  MAX_STREAK_BONUS,
   REED_PENALTY,
   ROUND_TIME,
   SPAWN_GAP,
   STAR_POINTS,
+  STREAK_BONUS,
   TRAVEL_TIME,
   beginRound,
   clampLane,
@@ -16,13 +18,16 @@ import {
   laneAt,
   laneCentre,
   moveDuck,
+  resolveObject,
   saveFinalScore,
   seededRng,
   setLane,
   spawnRow,
   startRound,
   step,
+  streakBonus,
   type DuckState,
+  type RiverObject,
 } from './game';
 
 function playing(seed = 1): DuckState {
@@ -35,7 +40,7 @@ function playing(seed = 1): DuckState {
 function withObject(kind: 'star' | 'reed', lane: number): DuckState {
   const state = playing();
   state.spawnIn = 100;
-  state.objects = [{ id: 1, lane, kind, progress: 0.99, resolved: false, caught: false }];
+  state.objects = [{ id: 1, lane, kind, progress: 0.99, outcome: 'pending' }];
   return state;
 }
 
@@ -192,17 +197,16 @@ describe('duck dash', () => {
       lane: 0,
       kind: 'reed',
       progress: 0.99,
-      resolved: false,
-      caught: false,
+      outcome: 'pending',
     });
     step(state, 0.1);
     const [star, reed] = state.objects;
-    expect(star.resolved && star.caught).toBe(true);
-    expect(reed.resolved && !reed.caught).toBe(true);
+    expect(star.outcome).toBe('caught');
+    expect(reed.outcome).toBe('missed');
     setLane(state, 0);
     step(state, 0.05);
-    expect(star.caught).toBe(true);
-    expect(reed.caught).toBe(false);
+    expect(star.outcome).toBe('caught');
+    expect(reed.outcome).toBe('missed');
     expect(state.hits).toBe(0);
   });
 
@@ -220,5 +224,100 @@ describe('duck dash', () => {
   it('finds the lane under a pointer', () => {
     for (let lane = 0; lane < LANES; lane++) expect(laneAt(laneCentre(lane))).toBe(lane);
     expect(laneAt(0)).toBeUndefined();
+  });
+});
+
+describe('star streak', () => {
+  let nextId = 100;
+  function object(kind: 'star' | 'reed', lane: number): RiverObject {
+    return { id: nextId++, lane, kind, progress: 1, outcome: 'pending' };
+  }
+
+  it('grows the bonus by STREAK_BONUS per star in a row, up to MAX_STREAK_BONUS', () => {
+    expect(streakBonus(0)).toBe(0);
+    expect(streakBonus(1)).toBe(STREAK_BONUS);
+    expect(streakBonus(2)).toBe(2 * STREAK_BONUS);
+    expect(streakBonus(100)).toBe(MAX_STREAK_BONUS);
+  });
+
+  it('adds the bonus to caught stars and tracks streak, peak and bonus total', () => {
+    const state = playing();
+    const n = 8;
+    for (let i = 0; i < n; i++) resolveObject(state, object('star', state.lane));
+    let bonus = 0;
+    for (let i = 0; i < n; i++) bonus += streakBonus(i);
+    expect(state.streak).toBe(n);
+    expect(state.peakStreak).toBe(n);
+    expect(state.collected).toBe(n);
+    expect(state.bonus).toBe(bonus);
+    expect(state.score).toBe(n * STAR_POINTS + bonus);
+    expect(state.flash?.bonus).toBe(MAX_STREAK_BONUS);
+  });
+
+  it('resets the streak on a reed hit but keeps the peak', () => {
+    const state = playing();
+    resolveObject(state, object('star', state.lane));
+    resolveObject(state, object('star', state.lane));
+    resolveObject(state, object('reed', state.lane));
+    expect(state.streak).toBe(0);
+    expect(state.peakStreak).toBe(2);
+    resolveObject(state, object('star', state.lane));
+    expect(state.streak).toBe(1);
+    expect(state.score).toBe(STAR_POINTS * 2 + streakBonus(1) - REED_PENALTY + STAR_POINTS);
+  });
+
+  it('resets the streak on a missed star', () => {
+    const state = playing();
+    resolveObject(state, object('star', state.lane));
+    resolveObject(state, object('star', state.lane + 1));
+    expect(state.streak).toBe(0);
+    expect(state.peakStreak).toBe(1);
+    expect(state.score).toBe(STAR_POINTS);
+  });
+
+  it('keeps the streak when a reed is dodged', () => {
+    const state = playing();
+    resolveObject(state, object('star', state.lane));
+    resolveObject(state, object('reed', state.lane + 1));
+    expect(state.streak).toBe(1);
+    resolveObject(state, object('star', state.lane));
+    expect(state.streak).toBe(2);
+    expect(state.bonus).toBe(streakBonus(1));
+  });
+
+  it('resolves each object once, as caught or missed', () => {
+    const state = playing();
+    const star = object('star', state.lane);
+    resolveObject(state, star);
+    resolveObject(state, star);
+    expect(star.outcome).toBe('caught');
+    expect(state.collected).toBe(1);
+    expect(state.streak).toBe(1);
+
+    const missed = object('star', state.lane + 1);
+    resolveObject(state, missed);
+    setLane(state, missed.lane);
+    resolveObject(state, missed);
+    expect(missed.outcome).toBe('missed');
+    expect(state.collected).toBe(1);
+    expect(state.score).toBe(STAR_POINTS);
+  });
+
+  it('keeps the score nonnegative after a streak breaks on a reed', () => {
+    const state = playing();
+    resolveObject(state, object('reed', state.lane));
+    expect(state.score).toBe(0);
+    expect(state.streak).toBe(0);
+  });
+
+  it('starts a replayed round with no streak', () => {
+    const state = playing();
+    resolveObject(state, object('star', state.lane));
+    state.timeLeft = 0.01;
+    step(state, 0.1);
+    const next = beginRound(state, frameClock(0), 0, () => {});
+    expect(next.streak).toBe(0);
+    expect(next.peakStreak).toBe(0);
+    expect(next.bonus).toBe(0);
   });
 });
