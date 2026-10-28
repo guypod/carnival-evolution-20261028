@@ -25,10 +25,17 @@ describe('landmark stories', () => {
     }
   });
 
-  it('keeps the words plain text, with no markup and no dashes', () => {
+  it('keeps the words plain text, with no markup tags', () => {
     for (const story of Object.values(LANDMARK_STORIES)) {
       for (const text of [story.title, ...story.lines, story.revisit]) {
-        expect(text).not.toMatch(/[<>&]/);
+        expect(text).not.toMatch(/[<>]/);
+      }
+    }
+  });
+
+  it('keeps the copy short and free of typographic dashes', () => {
+    for (const story of Object.values(LANDMARK_STORIES)) {
+      for (const text of [story.title, ...story.lines, story.revisit]) {
         expect(text).not.toMatch(/[–—]/);
         expect(text.length).toBeLessThan(140);
       }

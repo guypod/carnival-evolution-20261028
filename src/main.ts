@@ -423,6 +423,12 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
   };
   const onClose = () => closeCard();
   card.querySelector('.story-close')!.addEventListener('click', onClose);
+  // Keys inside the card stay in the card: no walking or playing from its
+  // focused heading. Escape is handled above, on the way down.
+  const onCardKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') event.stopPropagation();
+  };
+  card.addEventListener('keydown', onCardKeyDown);
   const onKeyDown = (event: KeyboardEvent) => {
     // A card left open in a closed guide waits: Escape goes to what is showing.
     if (event.key !== 'Escape' || section.closest<HTMLElement>('.visitor-guide')?.hidden) return;
@@ -455,6 +461,7 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
       window.clearTimeout(hideToast);
       hint.removeEventListener('click', onHint);
       window.removeEventListener('keydown', onKeyDown, true);
+      card.removeEventListener('keydown', onCardKeyDown);
     },
   };
 }
