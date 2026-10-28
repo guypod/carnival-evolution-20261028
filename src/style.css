@@ -1548,3 +1548,74 @@ kbd {
 .landmark-story h3:focus {
   outline: none;
 }
+
+/* The welcome tour: a small card beside the toggles, never covering the map
+   fully. It wraps on narrow screens and has no animation, so reduced motion
+   needs nothing extra. */
+.welcome-tour {
+  box-sizing: border-box;
+  width: min(300px, 100%);
+  max-height: 50vh;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  font-size: 14px;
+}
+
+.welcome-tour[hidden],
+.tour-start[hidden] {
+  display: none;
+}
+
+.welcome-tour .step {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.welcome-tour h2 {
+  margin: 2px 0 6px;
+  font-size: 16px;
+}
+
+.welcome-tour .text {
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tour-actions button,
+.tour-start,
+.help-tour {
+  padding: 0.35rem 0.7rem;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.help-tour {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.tour-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tour-actions button:focus-visible,
+.tour-start:focus-visible,
+.help-tour:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}

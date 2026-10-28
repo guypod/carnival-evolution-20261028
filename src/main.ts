@@ -112,6 +112,17 @@ import { nextScene, scenePreference, sceneToggleState, type Scene } from './midw
 import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './midway/view';
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
+import {
+  CLOSED_TOUR,
+  TOUR_STEPS,
+  isLastStep,
+  nextStep,
+  previousStep,
+  startTour,
+  stepLabel,
+  tourMemory,
+  type TourState,
+} from './welcome-tour';
 
 applyTheme();
 
@@ -147,6 +158,7 @@ function renderMidway() {
           <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
             🗺️ Guide
           </button>
+          <button type="button" class="tour-start" aria-controls="welcome-tour" hidden>👋 Start tour</button>
         </div>
         <div class="midway-view" role="group" aria-label="Map view">
           <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
@@ -157,7 +169,18 @@ function renderMidway() {
         <section class="midway-help-panel" id="midway-help-panel" aria-labelledby="midway-help-title" hidden>
           <h2 id="midway-help-title">Controls</h2>
           <dl></dl>
+          <button type="button" class="help-tour" aria-controls="welcome-tour">👋 Take the welcome tour</button>
           <button type="button" class="help-to-map">Back to the map</button>
+        </section>
+        <section class="welcome-tour" id="welcome-tour" aria-labelledby="welcome-tour-title" hidden>
+          <p class="step" aria-live="polite"></p>
+          <h2 id="welcome-tour-title" tabindex="-1"></h2>
+          <p class="text"></p>
+          <div class="tour-actions">
+            <button type="button" class="tour-back">Back</button>
+            <button type="button" class="tour-next">Next</button>
+            <button type="button" class="tour-skip">Skip tour</button>
+          </div>
         </section>
         <div class="visitor-guide" id="visitor-guide" role="region" aria-label="Visitor guide" hidden>
           <nav class="guide-destinations" aria-label="Destinations">
@@ -280,9 +303,11 @@ function renderMidway() {
   setUpViewControls(midway.setViewScale);
   const stopSound = setUpSound();
   const stopGuide = setUpGuide();
-  const stopHelp = setUpHelp();
+  const tour = setUpTour();
+  const stopHelp = setUpHelp(tour.start);
   stop = () => {
     stopSound();
+    tour.stop();
     routeStatus.stop();
     discovery.stop();
     stopHelp();
@@ -675,7 +700,7 @@ function setUpGuide(): () => void {
 // The controls help starts closed. Escape closes it before anything else sees
 // the key, and focus goes back to its button when it was inside the panel.
 // "Back to the map" closes it and focuses the map, so the keys walk again.
-function setUpHelp(): () => void {
+function setUpHelp(onTour: () => void): () => void {
   const toggle = app.querySelector<HTMLButtonElement>('.help-toggle')!;
   const panel = app.querySelector<HTMLElement>('.midway-help-panel')!;
   const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
@@ -705,6 +730,10 @@ function setUpHelp(): () => void {
     show(CLOSED_HELP);
     map.focus();
   });
+  panel.querySelector('.help-tour')!.addEventListener('click', () => {
+    show(CLOSED_HELP);
+    onTour();
+  });
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
@@ -717,6 +746,70 @@ function setUpHelp(): () => void {
   };
   window.addEventListener('keydown', onKeyDown, true);
   return () => window.removeEventListener('keydown', onKeyDown, true);
+}
+
+// The welcome tour never opens by itself. The small Start tour button shows
+// until the visitor finishes or skips the tour once, and Help can always start
+// it again. Opening it focuses the step's heading; Skip, Done or Escape close
+// it, remember it, and focus the map so the keys walk again. It never takes
+// the walking keys: only Escape, and only while the tour is open.
+function setUpTour(): { start: () => void; stop: () => void } {
+  const panel = app.querySelector<HTMLElement>('.welcome-tour')!;
+  const startButton = app.querySelector<HTMLButtonElement>('.tour-start')!;
+  const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
+  const title = panel.querySelector<HTMLElement>('h2')!;
+  const back = panel.querySelector<HTMLButtonElement>('.tour-back')!;
+  const next = panel.querySelector<HTMLButtonElement>('.tour-next')!;
+
+  let state = CLOSED_TOUR;
+  const show = (value: TourState) => {
+    state = value;
+    panel.hidden = !state.open;
+    startButton.hidden = state.open || tourMemory.dismissed();
+    startButton.setAttribute('aria-expanded', String(state.open));
+    if (!state.open) return;
+    const step = TOUR_STEPS[state.step];
+    panel.querySelector('.step')!.textContent = stepLabel(state);
+    title.textContent = step.title;
+    panel.querySelector('.text')!.textContent = step.text;
+    back.disabled = state.step === 0;
+    next.textContent = isLastStep(state) ? 'Done' : 'Next';
+  };
+  const finish = () => {
+    tourMemory.dismiss();
+    show(CLOSED_TOUR);
+    map.focus();
+  };
+  const start = () => {
+    show(startTour());
+    title.focus();
+  };
+  show(state);
+
+  startButton.addEventListener('click', start);
+  back.addEventListener('click', () => {
+    show(previousStep(state));
+    title.focus();
+  });
+  next.addEventListener('click', () => {
+    if (isLastStep(state)) return finish();
+    show(nextStep(state));
+    title.focus();
+  });
+  panel.querySelector('.tour-skip')!.addEventListener('click', finish);
+  // Keys on the tour's buttons stay there: Space or Enter never walks or plays.
+  panel.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') event.stopPropagation();
+  });
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !state.open) return;
+    // One Escape closes one panel: Help and the guide wait for the next press.
+    event.stopImmediatePropagation();
+    finish();
+  };
+  window.addEventListener('keydown', onKeyDown, true);
+  return { start, stop: () => window.removeEventListener('keydown', onKeyDown, true) };
 }
 
 function renderPassport(passport: HTMLDetailsElement) {
