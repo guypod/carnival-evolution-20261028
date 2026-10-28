@@ -59,7 +59,7 @@ function renderMidway() {
   document.body.dataset.view = 'midway';
   app.innerHTML = `
     <section class="midway">
-      <canvas class="midway-map" aria-label="The carnival midway. Walk up to a booth to play its game."></canvas>
+      <canvas class="midway-map" tabindex="0" aria-label="The carnival midway. Focus the map, then walk with WASD or the arrow keys, and press E at a booth to play."></canvas>
       <p class="midway-help">
         Welcome to Guy's Carnival!<br />
         <kbd>WASD</kbd> or <kbd>arrows</kbd> to walk, or click where you want to go.

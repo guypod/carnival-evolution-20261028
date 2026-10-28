@@ -62,6 +62,12 @@ The carnival is a small browser game. It ships with one game, the **water
 cannon**, and a midway you walk around: a sunny fairground with tents, rides and
 a booth for every game. Empty booths say "coming soon" until a game fills them.
 
+The **Guide** button in the corner opens the visitor guide: the destinations,
+the booth list with your bests, and your Passport. Escape closes it and puts
+focus back on the button. The midway's keys never fire while a link, button or
+field has focus, so to walk again with the keyboard, Tab (or Shift+Tab) to the
+map, or click it. The map shows an outline while it has focus.
+
 If your system asks for reduced motion, the midway goes quiet: the clouds,
 rides, flags, balloons and strolling visitors hold still. You still walk, click
 to travel and open booths at full speed, and the games themselves don't change.

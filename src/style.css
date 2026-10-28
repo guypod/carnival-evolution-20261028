@@ -96,6 +96,11 @@ body[data-view='midway'] main {
   touch-action: none;
 }
 
+.midway-map:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: -3px;
+}
+
 .midway-help,
 .midway-guide,
 .midway-credit,
