@@ -12,6 +12,10 @@ export const FLIGHT_TIME = 0.35;
 /** Seconds the pop burst shows. */
 export const POP_TIME = 0.4;
 export const BALLOON_RADIUS = 42;
+/** The horizontal radius of a balloon's body. */
+export const BALLOON_WIDTH = BALLOON_RADIUS - 6;
+/** How far a balloon's body sits above its cell's centre. */
+export const BALLOON_LIFT = 2;
 const CELL = 120;
 const RACK_LEFT = WIDTH / 2 - CELL * 1.5;
 const RACK_TOP = 80;
@@ -80,7 +84,10 @@ export function cellCenter(cell: number): { x: number; y: number } {
 export function cellAt(x: number, y: number): number {
   for (let cell = 0; cell < 9; cell++) {
     const c = cellCenter(cell);
-    if (Math.hypot(c.x - x, c.y - y) <= BALLOON_RADIUS) return cell;
+    // Match the drawn body: an ellipse BALLOON_WIDTH across, raised by BALLOON_LIFT.
+    const dx = (x - c.x) / BALLOON_WIDTH;
+    const dy = (y - (c.y - BALLOON_LIFT)) / BALLOON_RADIUS;
+    if (dx * dx + dy * dy <= 1) return cell;
   }
   return -1;
 }
@@ -219,7 +226,7 @@ function drawBalloon(ctx: CanvasRenderingContext2D, cell: number) {
   // Body and knot.
   ctx.fillStyle = star ? colors.accent : BALLOON_COLORS[cell];
   ctx.beginPath();
-  ctx.ellipse(x, y - 2, BALLOON_RADIUS - 6, BALLOON_RADIUS, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y - BALLOON_LIFT, BALLOON_WIDTH, BALLOON_RADIUS, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
   ctx.moveTo(x - 5, y + BALLOON_RADIUS + 4);
@@ -230,7 +237,7 @@ function drawBalloon(ctx: CanvasRenderingContext2D, cell: number) {
     ctx.strokeStyle = colors.text;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(x, y - 2, BALLOON_RADIUS - 6, BALLOON_RADIUS, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y - BALLOON_LIFT, BALLOON_WIDTH, BALLOON_RADIUS, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.fillStyle = colors.stripeA;
     drawStar(ctx, x, y - 8, 18);

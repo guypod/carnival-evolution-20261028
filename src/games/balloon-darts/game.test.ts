@@ -50,6 +50,14 @@ describe('balloon darts', () => {
     expect(cellAt(5, 5)).toBe(-1);
   });
 
+  it('hits a balloon only inside its drawn body', () => {
+    const star = cellCenter(STAR_CELL);
+    expect(cellAt(star.x + 40, star.y)).toBe(-1);
+    expect(cellAt(star.x + 35, star.y - 2)).toBe(STAR_CELL);
+    expect(cellAt(star.x, star.y - 43)).toBe(STAR_CELL);
+    expect(cellAt(star.x, star.y + 41)).toBe(-1);
+  });
+
   it('scores a balloon only after the dart lands', () => {
     const state = playing();
     throwDart(state, 0);
