@@ -93,6 +93,7 @@ import {
   type MotionPreference,
 } from './midway/motion';
 import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
+import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './midway/view';
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
 
@@ -130,6 +131,11 @@ function renderMidway() {
           <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
             🗺️ Guide
           </button>
+        </div>
+        <div class="midway-view" role="group" aria-label="Map view">
+          <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
+          <button type="button" class="view-reset" aria-label="Reset the map view">Reset view</button>
+          <button type="button" class="view-in" aria-label="Zoom the map in">+</button>
         </div>
         <button type="button" class="discovery-hint" hidden></button>
         <section class="midway-help-panel" id="midway-help-panel" aria-labelledby="midway-help-title" hidden>
@@ -240,6 +246,7 @@ function renderMidway() {
   setUpVisit(midway.walkTo, midway.walkToLandmark);
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
+  setUpViewControls(midway.setViewScale);
   const stopGuide = setUpGuide();
   const stopHelp = setUpHelp();
   stop = () => {
@@ -472,6 +479,27 @@ function setUpMotionToggle(setMotion: (preference: MotionPreference) => void) {
     show();
   });
   show();
+}
+
+// Zoom the map in and out by modest steps, or back to the fitted size. Only
+// these buttons zoom: the wheel and pinch are left to the page. The zoom lasts
+// while the midway is open and starts fitted each time it opens.
+function setUpViewControls(setViewScale: (scale: number) => void) {
+  const out = app.querySelector<HTMLButtonElement>('.view-out')!;
+  const reset = app.querySelector<HTMLButtonElement>('.view-reset')!;
+  const zoomInButton = app.querySelector<HTMLButtonElement>('.view-in')!;
+  let scale = DEFAULT_VIEW_SCALE;
+  const apply = (next: number) => {
+    scale = next;
+    setViewScale(scale);
+    out.disabled = !canZoomOut(scale);
+    zoomInButton.disabled = !canZoomIn(scale);
+    reset.disabled = scale === DEFAULT_VIEW_SCALE;
+  };
+  out.addEventListener('click', () => apply(zoomOut(scale)));
+  zoomInButton.addEventListener('click', () => apply(zoomIn(scale)));
+  reset.addEventListener('click', () => apply(DEFAULT_VIEW_SCALE));
+  apply(DEFAULT_VIEW_SCALE);
 }
 
 // The visitor guide starts closed so the map has the room. Escape closes it,
