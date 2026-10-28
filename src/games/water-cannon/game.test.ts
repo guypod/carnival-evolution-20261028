@@ -80,7 +80,7 @@ describe('water cannon', () => {
   it('scores a fast target higher than a slow one', () => {
     const slow = scoreForHit({ ...target, speed: 60 });
     const fast = scoreForHit({ ...target, speed: -180 });
-    expect(Math.max(fast, slow)).toBeGreaterThanOrEqual(slow);
+    expect(fast).toBeGreaterThan(slow);
   });
 
   it('grows the multiplier from the second hit in a row and caps it at 3', () => {
