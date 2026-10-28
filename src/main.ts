@@ -52,6 +52,16 @@ import {
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import {
+  POSTCARD_MESSAGES,
+  POSTCARD_NAME_MAX,
+  limitNameInput,
+  POSTCARD_SCALE,
+  POSTCARD_SIZE,
+  drawPostcard,
+  postcardContent,
+  postcardExporter,
+} from './postcard';
+import {
   discover,
   discoveryClue,
   discoveryProgress,
@@ -60,6 +70,7 @@ import {
   mergeDiscoveries,
   nextLandmark,
   trailComplete,
+  trailLandmarks,
   type Landmark,
   type LandmarkId,
 } from './midway/discovery';
@@ -70,7 +81,7 @@ import {
   type MotionPreference,
 } from './midway/motion';
 import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
-import type { BoothSlot } from './midway/world';
+import { layoutMidway, type BoothSlot } from './midway/world';
 
 applyTheme();
 
@@ -120,6 +131,7 @@ function renderMidway() {
             <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
             <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
             <a class="records-link" href="#/records">📜 Hall of Records</a>
+            <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
           </nav>
           <button type="button" class="scene-toggle" aria-pressed="false"></button>
           <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
@@ -685,6 +697,116 @@ function renderRecords() {
   stop = onEscapeKey(window, () => (location.hash = '#/'));
 }
 
+function renderPostcard() {
+  document.body.dataset.view = 'postcard';
+  app.innerHTML = `
+    <section class="postcard" aria-labelledby="postcard-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="postcard-title" tabindex="-1">Souvenir Postcard</h1>
+      </div>
+      <p class="postcard-intro">A card from your visit: the landmarks you found on the discovery trail and the booths stamped in your passport, in the midway's current scene. Add your name if you like, then save it as a picture.</p>
+      <div class="postcard-controls">
+        <label for="postcard-name">Your name (optional, up to ${POSTCARD_NAME_MAX} characters)</label>
+        <input id="postcard-name" type="text" autocomplete="off" />
+        <button type="button" class="postcard-download">Download postcard (PNG)</button>
+      </div>
+      <p class="postcard-status" role="status"></p>
+      <canvas class="postcard-preview" aria-hidden="true"></canvas>
+      <section class="postcard-text" aria-labelledby="postcard-text-title">
+        <h2 id="postcard-text-title">On the card</h2>
+        <p class="postcard-heading"></p>
+        <p class="postcard-greeting"></p>
+        <ul></ul>
+      </section>
+      <p class="note">The postcard is made in this browser and saved to your device. Nothing is uploaded, and your name is not kept.</p>
+    </section>`;
+
+  const landmarks = trailLandmarks(layoutMidway(registry.all().map((game) => game.id)));
+  const found = discoveryStore.load();
+  const stamps = passportStamps(registry.all());
+  const visit = {
+    scene: scenePreference.load(),
+    landmarksFound: landmarks.filter((landmark) => found.includes(landmark.id)).length,
+    landmarksTotal: landmarks.length,
+    stampsPlayed: stamps.filter((stamp) => stamp.played).length,
+    stampsTotal: stamps.length,
+  };
+
+  const name = app.querySelector<HTMLInputElement>('#postcard-name')!;
+  const download = app.querySelector<HTMLButtonElement>('.postcard-download')!;
+  const status = app.querySelector<HTMLElement>('.postcard-status')!;
+  const canvas = app.querySelector<HTMLCanvasElement>('.postcard-preview')!;
+  canvas.width = POSTCARD_SIZE.width * POSTCARD_SCALE;
+  canvas.height = POSTCARD_SIZE.height * POSTCARD_SCALE;
+  const ctx = canvas.getContext('2d');
+  let content = postcardContent(visit);
+
+  // Normalize and bound the field, keeping the caret after the same text.
+  // Skipped while an input method is composing, and run when it finishes.
+  function limitField() {
+    const limited = limitNameInput(name.value);
+    if (limited === name.value) return;
+    const caret = limitNameInput(
+      name.value.slice(0, name.selectionStart ?? name.value.length),
+    ).length;
+    name.value = limited;
+    name.setSelectionRange(Math.min(caret, limited.length), Math.min(caret, limited.length));
+  }
+
+  function update(event?: Event) {
+    if (!(event instanceof InputEvent && event.isComposing)) limitField();
+    content = postcardContent({ ...visit, name: name.value });
+    app.querySelector('.postcard-heading')!.textContent = content.heading;
+    app.querySelector('.postcard-greeting')!.textContent = content.greeting;
+    const list = app.querySelector('.postcard-text ul')!;
+    list.replaceChildren();
+    for (const line of content.lines) {
+      const item = document.createElement('li');
+      item.textContent = line;
+      list.append(item);
+    }
+    if (ctx) drawPostcard(ctx, content);
+  }
+
+  const fail = () => {
+    status.textContent = POSTCARD_MESSAGES.failed;
+  };
+  const exporter = postcardExporter<Blob>({
+    encode: (done) => canvas.toBlob(done, 'image/png'),
+    createUrl: (blob) => URL.createObjectURL(blob),
+    revokeUrl: (url) => URL.revokeObjectURL(url),
+    download: (url, filename) => {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+    },
+    report: (message) => {
+      status.textContent = message;
+    },
+  });
+  download.addEventListener('click', () => {
+    if (!ctx) return fail();
+    exporter.export(content.filename);
+  });
+
+  name.addEventListener('input', update);
+  name.addEventListener('compositionend', () => update());
+  update();
+  if (!ctx) {
+    canvas.hidden = true;
+    fail();
+  }
+
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    exporter.dispose();
+  };
+}
+
 function renderBooths() {
   document.body.dataset.view = 'booths';
   let entries = directoryEntries(registry.all(), bestScore, favorites.load());
@@ -849,6 +971,7 @@ function route() {
   else if (location.hash === '#/circuit') renderCircuit();
   else if (location.hash === '#/records') renderRecords();
   else if (location.hash === '#/booths') renderBooths();
+  else if (location.hash === '#/postcard') renderPostcard();
   else renderMidway();
 }
 
