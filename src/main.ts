@@ -45,7 +45,6 @@ import { progressText, trailIntro, trailMissions, trailRecommendation } from './
 import { startMidway } from './midway/midway';
 import {
   POSTCARD_MESSAGES,
-  POSTCARD_NAME_INPUT_MAX,
   POSTCARD_NAME_MAX,
   limitNameInput,
   POSTCARD_SCALE,
@@ -642,7 +641,7 @@ function renderPostcard() {
       <p class="postcard-intro">A card from your visit: the landmarks you found on the discovery trail and the booths stamped in your passport, in the midway's current scene. Add your name if you like, then save it as a picture.</p>
       <div class="postcard-controls">
         <label for="postcard-name">Your name (optional, up to ${POSTCARD_NAME_MAX} characters)</label>
-        <input id="postcard-name" type="text" autocomplete="off" maxlength="${POSTCARD_NAME_INPUT_MAX}" />
+        <input id="postcard-name" type="text" autocomplete="off" />
         <button type="button" class="postcard-download">Download postcard (PNG)</button>
       </div>
       <p class="postcard-status" role="status"></p>
@@ -676,9 +675,20 @@ function renderPostcard() {
   const ctx = canvas.getContext('2d');
   let content = postcardContent(visit);
 
-  function update() {
+  // Normalize and bound the field, keeping the caret after the same text.
+  // Skipped while an input method is composing, and run when it finishes.
+  function limitField() {
     const limited = limitNameInput(name.value);
-    if (limited !== name.value) name.value = limited;
+    if (limited === name.value) return;
+    const caret = limitNameInput(
+      name.value.slice(0, name.selectionStart ?? name.value.length),
+    ).length;
+    name.value = limited;
+    name.setSelectionRange(Math.min(caret, limited.length), Math.min(caret, limited.length));
+  }
+
+  function update(event?: Event) {
+    if (!(event instanceof InputEvent && event.isComposing)) limitField();
     content = postcardContent({ ...visit, name: name.value });
     app.querySelector('.postcard-heading')!.textContent = content.heading;
     app.querySelector('.postcard-greeting')!.textContent = content.greeting;
@@ -715,6 +725,7 @@ function renderPostcard() {
   });
 
   name.addEventListener('input', update);
+  name.addEventListener('compositionend', () => update());
   update();
   if (!ctx) {
     canvas.hidden = true;

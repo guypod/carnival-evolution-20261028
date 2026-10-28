@@ -10,12 +10,6 @@ import type { Scene } from './midway/scene';
  * locally on a canvas of a fixed size.
  */
 export const POSTCARD_NAME_MAX = 24;
-/**
- * The name field's maxlength. The browser counts UTF-16 code units, so this
- * leaves room for POSTCARD_NAME_MAX characters outside the basic plane, such
- * as emoji. cleanVisitorName then keeps the first POSTCARD_NAME_MAX characters.
- */
-export const POSTCARD_NAME_INPUT_MAX = POSTCARD_NAME_MAX * 2;
 /** The card's size in layout pixels. The picture is drawn at POSTCARD_SCALE times this. */
 export const POSTCARD_SIZE = { width: 600, height: 400 } as const;
 export const POSTCARD_SCALE = 2;
@@ -43,21 +37,22 @@ export interface PostcardContent {
 const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 
 /**
- * The visitor name as the card shows it: no control or formatting characters,
- * spaces collapsed, trimmed, and at most POSTCARD_NAME_MAX characters.
+ * The name field's value, normalized and then bounded once: control and
+ * formatting characters become spaces, runs of spaces become one, leading
+ * spaces go, and the result keeps at most POSTCARD_NAME_MAX characters. A
+ * single trailing space stays so the visitor can type the next word.
  */
-export function cleanVisitorName(raw: string): string {
-  const text = raw.replace(UNSAFE, ' ').replace(/\s+/g, ' ').trim();
-  return Array.from(text).slice(0, POSTCARD_NAME_MAX).join('').trim();
+export function limitNameInput(value: string): string {
+  const text = value.replace(UNSAFE, ' ').replace(/\s+/g, ' ').trimStart();
+  return Array.from(text).slice(0, POSTCARD_NAME_MAX).join('');
 }
 
 /**
- * The name field's value, cut to POSTCARD_NAME_MAX characters so the field
- * never holds more than the card can show.
+ * The visitor name as the card shows it: the name field's value with no
+ * trailing space. A name that fits after normalization is never shortened.
  */
-export function limitNameInput(value: string): string {
-  const chars = Array.from(value);
-  return chars.length > POSTCARD_NAME_MAX ? chars.slice(0, POSTCARD_NAME_MAX).join('') : value;
+export function cleanVisitorName(raw: string): string {
+  return limitNameInput(raw).trimEnd();
 }
 
 function plural(count: number, one: string, many: string) {

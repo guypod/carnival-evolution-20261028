@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   POSTCARD_MESSAGES,
-  POSTCARD_NAME_INPUT_MAX,
   POSTCARD_NAME_MAX,
   POSTCARD_SCALE,
   cleanVisitorName,
@@ -41,12 +40,6 @@ describe('cleanVisitorName', () => {
     expect(name).toBe('🎡'.repeat(POSTCARD_NAME_MAX));
   });
 
-  it('has a name field long enough for the limit in emoji', () => {
-    const name = '🎡'.repeat(POSTCARD_NAME_MAX);
-    expect(name.length).toBeLessThanOrEqual(POSTCARD_NAME_INPUT_MAX);
-    expect(cleanVisitorName(name)).toBe(name);
-  });
-
   it('cuts the name field to what the card shows', () => {
     const ascii = 'a'.repeat(30);
     expect(limitNameInput(ascii)).toBe('a'.repeat(POSTCARD_NAME_MAX));
@@ -54,6 +47,37 @@ describe('cleanVisitorName', () => {
     const emoji = '🎡'.repeat(POSTCARD_NAME_MAX);
     expect(limitNameInput(emoji)).toBe(emoji);
     expect(limitNameInput(emoji + '🎡')).toBe(emoji);
+  });
+
+  it('normalizes the name field before it bounds it', () => {
+    expect(limitNameInput('    Alexandria Montgomery')).toBe('Alexandria Montgomery');
+    const visible = 'Abcdefghij Klmnopqrstuvw';
+    expect(Array.from(visible)).toHaveLength(POSTCARD_NAME_MAX);
+    const messy = '   Abcdefghij \u0000\t  \u200b Klmnopqrstuvw';
+    expect(limitNameInput(messy)).toBe(visible);
+    expect(cleanVisitorName(messy)).toBe(visible);
+    expect(limitNameInput(messy + 'xyz')).toBe(visible);
+  });
+
+  it('keeps 24 supplementary characters through spaces and controls', () => {
+    const letters = '𝒜'.repeat(12) + ' ' + '🎡'.repeat(11);
+    expect(Array.from(letters)).toHaveLength(POSTCARD_NAME_MAX);
+    const messy = '  \u0007' + '𝒜'.repeat(12) + ' \u202e  ' + '🎡'.repeat(11) + '🎡';
+    expect(limitNameInput(messy)).toBe(letters);
+    expect(cleanVisitorName(messy)).toBe(letters);
+  });
+
+  it('keeps one trailing space in the field so the next word can follow', () => {
+    expect(limitNameInput('Ada   ')).toBe('Ada ');
+    expect(cleanVisitorName('Ada   ')).toBe('Ada');
+    expect(limitNameInput('Ada \n')).toBe('Ada ');
+  });
+
+  it('gives the field and the card the same name', () => {
+    for (const raw of ['  Ada   Lovelace ', '\u0000\u0000' + 'b'.repeat(40), ' 🎡 '.repeat(20)]) {
+      expect(cleanVisitorName(limitNameInput(raw))).toBe(cleanVisitorName(raw));
+      expect(limitNameInput(limitNameInput(raw))).toBe(limitNameInput(raw));
+    }
   });
 
   it('reads blank as no name', () => {
