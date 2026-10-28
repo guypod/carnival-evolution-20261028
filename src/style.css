@@ -384,7 +384,8 @@ kbd {
 
 .pavilion-link,
 .trail-link,
-.records-link {
+.records-link,
+.directory-link {
   display: block;
   padding: 10px 14px;
   border-radius: var(--radius);
@@ -400,7 +401,9 @@ kbd {
 .trail-link:hover,
 .trail-link:focus-visible,
 .records-link:hover,
-.records-link:focus-visible {
+.records-link:focus-visible,
+.directory-link:hover,
+.directory-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
@@ -740,4 +743,126 @@ kbd {
 .records .play-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
+}
+
+.directory h1:focus {
+  outline: none;
+}
+
+.directory-intro,
+.directory .note,
+.directory-empty p {
+  color: var(--color-muted);
+}
+
+.directory-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 16px 0;
+}
+
+.directory-controls label {
+  font-weight: bold;
+}
+
+.directory-controls input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.directory-filters {
+  display: flex;
+  gap: 8px;
+}
+
+.directory-filters button,
+.directory-reset {
+  padding: 6px 14px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.directory-filters button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.directory-controls input:focus-visible,
+.directory-filters button:focus-visible,
+.directory-reset:focus-visible,
+.directory .play-link:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.directory-count {
+  font-weight: bold;
+}
+
+.directory-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.directory-empty[hidden] {
+  display: none;
+}
+
+.directory-booths {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.directory-booths > li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.directory-booths > li.played {
+  border-color: var(--color-accent);
+}
+
+.directory-booths h2,
+.directory-booths p {
+  margin: 0;
+}
+
+.directory-booths .best {
+  font-weight: bold;
+}
+
+.directory .play-link {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 6px 16px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+  text-decoration: none;
 }
