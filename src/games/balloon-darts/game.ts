@@ -7,6 +7,8 @@ export const BALLOON_POINTS = 20;
 export const STAR_POINTS = 50;
 /** The middle cell of the rack holds the star balloon. */
 export const STAR_CELL = 4;
+/** The bonus for each pop in a streak: the first scores none, the fourth and later 15. */
+export const STREAK_BONUSES = [0, 5, 10, 15] as const;
 /** Seconds a dart is in the air. Only one dart flies at a time. */
 export const FLIGHT_TIME = 0.35;
 /** Seconds the pop burst shows. */
@@ -45,6 +47,8 @@ export interface Pop {
   x: number;
   y: number;
   points: number;
+  /** The streak bonus inside `points`. */
+  bonus: number;
   age: number;
 }
 
@@ -56,6 +60,9 @@ export interface DartsState {
   pops: Pop[];
   score: number;
   hits: number;
+  /** Pops in a row since the last miss. */
+  streak: number;
+  bestStreak: number;
   scoreRecorded: boolean;
 }
 
@@ -68,6 +75,8 @@ export function createState(phase: DartsState['phase'] = 'ready'): DartsState {
     pops: [],
     score: 0,
     hits: 0,
+    streak: 0,
+    bestStreak: 0,
     scoreRecorded: false,
   };
 }
@@ -101,6 +110,12 @@ export function pointsFor(cell: number): number {
   return cell === STAR_CELL ? STAR_POINTS : BALLOON_POINTS;
 }
 
+/** The bonus for the pop that makes a streak `streak` long, counting from 1. */
+export function streakBonus(streak: number): number {
+  if (streak < 1) return 0;
+  return STREAK_BONUSES[Math.min(streak, STREAK_BONUSES.length) - 1];
+}
+
 /** Starts the round from the ready screen. Returns false otherwise. */
 export function begin(state: DartsState): boolean {
   if (state.phase !== 'ready') return false;
@@ -120,17 +135,24 @@ export function throwDart(state: DartsState, cell: number, x?: number, y?: numbe
   return true;
 }
 
-/** Settles a dart that has landed: pops a whole balloon, else it is a miss. */
+/**
+ * Settles a dart that has landed: pops a whole balloon and grows the streak,
+ * else it is a miss and the streak starts again.
+ */
 export function resolveDart(state: DartsState, dart: Dart): void {
   const { cell } = dart;
   if (cell >= 0 && !state.popped[cell]) {
-    const points = pointsFor(cell);
+    state.streak += 1;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
+    const bonus = streakBonus(state.streak);
+    const points = pointsFor(cell) + bonus;
     state.popped[cell] = true;
     state.score += points;
     state.hits += 1;
-    state.pops.push({ x: dart.x, y: dart.y, points, age: 0 });
+    state.pops.push({ x: dart.x, y: dart.y, points, bonus, age: 0 });
   } else {
-    state.pops.push({ x: dart.x, y: dart.y, points: 0, age: 0 });
+    state.streak = 0;
+    state.pops.push({ x: dart.x, y: dart.y, points: 0, bonus: 0, age: 0 });
   }
 }
 
@@ -287,7 +309,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
   ctx.font = canvasFont('small', 'bold');
   ctx.textAlign = 'center';
   ctx.fillText(
-    `Click a balloon or press 1 to 9. Balloons ${BALLOON_POINTS}, star ${STAR_POINTS}.`,
+    `Click a balloon or press 1 to 9. Balloons ${BALLOON_POINTS}, star ${STAR_POINTS}, pops in a row up to +${streakBonus(STREAK_BONUSES.length)}.`,
     WIDTH / 2,
     60,
   );
@@ -335,6 +357,11 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
     ctx.fillStyle = pop.points > 0 ? colors.accent : colors.danger;
     ctx.font = canvasFont('body', 'bold');
     ctx.fillText(pop.points > 0 ? `POP! +${pop.points}` : 'Miss', pop.x, pop.y - 30 - t * 20);
+    if (pop.bonus > 0) {
+      ctx.fillStyle = colors.stripeA;
+      ctx.font = canvasFont('small', 'bold');
+      ctx.fillText(`Streak bonus +${pop.bonus}`, pop.x, pop.y - 8 - t * 20);
+    }
   }
   ctx.globalAlpha = 1;
 
@@ -358,6 +385,8 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
   ctx.font = canvasFont('body', 'bold');
   ctx.textAlign = 'left';
   ctx.fillText(`Score ${state.score}`, 16, HEIGHT - 20);
+  ctx.textAlign = 'center';
+  ctx.fillText(`Streak ${state.streak}  Best ${state.bestStreak}`, WIDTH / 2, HEIGHT - 20);
   ctx.textAlign = 'right';
   ctx.fillText(`Darts ${state.dartsLeft}/${DARTS_PER_ROUND}`, WIDTH - 16, HEIGHT - 20);
 
@@ -375,6 +404,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
       ctx,
       [
         `${state.hits} hits from ${DARTS_PER_ROUND} darts, ${accuracy(state)}% accuracy.`,
+        `Best streak ${state.bestStreak}.`,
         'Click or press Space or Enter to play again.',
       ],
       `You scored ${state.score}`,
@@ -385,7 +415,8 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
 export const balloonDarts: CarnivalGame = {
   id: 'balloon-darts',
   name: 'Balloon Darts',
-  description: 'Nine darts, nine balloons. Pop them for 20 each, and the star for 50.',
+  description:
+    'Nine darts, nine balloons. Pop them for 20 each and the star for 50, with a bonus for pops in a row.',
 
   start(canvas) {
     const ctx = canvas.getContext('2d');
@@ -394,10 +425,13 @@ export const balloonDarts: CarnivalGame = {
     canvas.height = HEIGHT;
 
     let state = createState();
+    // Saves a finished round before a replay or leaving the game can drop it.
+    const save = () => saveFinalScore(state, (score) => recordScore(balloonDarts.id, score));
 
     const stopListening = listen(canvas, window, {
       pointerdown(event) {
         if (state.phase !== 'playing') {
+          save();
           state = act(state);
           return;
         }
@@ -416,6 +450,7 @@ export const balloonDarts: CarnivalGame = {
           throwDart(state, cell);
         } else if (event.code === 'Space' || event.key === 'Enter') {
           event.preventDefault();
+          save();
           state = act(state);
         }
       },
@@ -428,7 +463,7 @@ export const balloonDarts: CarnivalGame = {
       const dt = Math.min((time - last) / 1000, 0.05);
       last = time;
       step(state, dt);
-      saveFinalScore(state, (score) => recordScore(balloonDarts.id, score));
+      save();
       draw(ctx, state);
     };
     frame = requestAnimationFrame(loop);
@@ -436,6 +471,7 @@ export const balloonDarts: CarnivalGame = {
     return () => {
       cancelAnimationFrame(frame);
       stopListening();
+      save();
     };
   },
 };
