@@ -1,0 +1,7 @@
+{
+  "name": "ws-01a163fa71c4754eb74e01d925aab797/carnival-evolution-20261028-factory",
+  "version": "0.1.0",
+  "description": "The carnival's own maintenance skills for scheduled factory loops.",
+  "private": true,
+  "skills": ["skills/test-health"]
+}

@@ -6,8 +6,9 @@ pins that file to an approved contract and tests the routes offline.
 - `contract.mjs`: the exact actions (skill `tessl-labs/factory@0.6.0`, agent
   `claude-code`, model `claude-opus-5-5`, environment, timeouts) and the eleven
   triggers, with their guards, concurrency keys (the existing 90s shepherd
-  debounce, and replies sharing the implement lock) and actions.
-- `check-contract.mjs`: fails when `tessl.json`'s `actions` or `triggers`
+  debounce, and replies sharing the implement lock) and actions, plus the
+  `test-health` action and its one weekly schedule.
+- `check-contract.mjs`: fails when `tessl.json`'s `actions`, `triggers` or `schedules`
   differ from the contract. It does not check the top-level `name`, `mode` or
   `dependencies`, which `tessl install` manages.
 - `matcher.mjs`: an offline model of how a trigger's `when` block matches a
