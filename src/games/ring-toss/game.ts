@@ -17,6 +17,8 @@ export const SHELVES = [
   { y: 300, speed: 50, points: 10 },
 ] as const;
 const BOTTLES_PER_SHELF = 4;
+/** A golden bottle scores this many times its shelf's points. */
+export const GOLDEN_MULTIPLIER = 2;
 
 export interface Bottle {
   x: number;
@@ -24,6 +26,8 @@ export interface Bottle {
   /** Pixels per second; negative moves left. */
   speed: number;
   points: number;
+  /** One bottle on each shelf is golden and worth double. */
+  golden: boolean;
 }
 
 export interface Ring {
@@ -38,6 +42,7 @@ export interface Landing {
   x: number;
   y: number;
   points: number;
+  golden: boolean;
   age: number;
 }
 
@@ -48,20 +53,33 @@ export interface RingTossState {
   ringsLeft: number;
   score: number;
   ringers: number;
+  /** Rings that landed on a golden bottle this round. */
+  bonusHits: number;
+  /** Which round this is, counting from 0. It picks the golden bottles. */
+  round: number;
   phase: 'playing' | 'over';
   /** Set once the round's score has been handed to the score board. */
   scoreRecorded: boolean;
 }
 
-export function createState(): RingTossState {
+/** The bottle on a shelf that is golden: it moves along one place each round. */
+export function goldenIndex(shelfIndex: number, round: number): number {
+  return (shelfIndex + round) % BOTTLES_PER_SHELF;
+}
+
+export function createState(round = 0): RingTossState {
   const spacing = WIDTH / BOTTLES_PER_SHELF;
-  const bottles = SHELVES.flatMap((shelf) =>
-    Array.from({ length: BOTTLES_PER_SHELF }, (_, i) => ({
-      x: spacing * i + spacing / 2,
-      y: shelf.y,
-      speed: shelf.speed,
-      points: shelf.points,
-    })),
+  const bottles = SHELVES.flatMap((shelf, s) =>
+    Array.from({ length: BOTTLES_PER_SHELF }, (_, i) => {
+      const golden = i === goldenIndex(s, round);
+      return {
+        x: spacing * i + spacing / 2,
+        y: shelf.y,
+        speed: shelf.speed,
+        points: golden ? shelf.points * GOLDEN_MULTIPLIER : shelf.points,
+        golden,
+      };
+    }),
   );
   return {
     bottles,
@@ -70,6 +88,8 @@ export function createState(): RingTossState {
     ringsLeft: RINGS_PER_ROUND,
     score: 0,
     ringers: 0,
+    bonusHits: 0,
+    round,
     phase: 'playing',
     scoreRecorded: false,
   };
@@ -122,8 +142,10 @@ export function step(state: RingTossState, dt: number): void {
     const bottle = bottleAt(state.bottles, ring.x, ring.y);
     const points = bottle ? bottle.points : 0;
     state.score += points;
+    const golden = bottle?.golden ?? false;
     if (bottle) state.ringers += 1;
-    state.landings.push({ x: ring.x, y: ring.y, points, age: 0 });
+    if (golden) state.bonusHits += 1;
+    state.landings.push({ x: ring.x, y: ring.y, points, golden, age: 0 });
   }
   state.rings = flying;
 
@@ -174,23 +196,33 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
     ctx.fillStyle = colors.wood;
     ctx.fillRect(0, shelf.y + 34, WIDTH, 8);
     ctx.fillStyle = colors.accent;
-    ctx.fillText(`${shelf.points} pts`, 8, shelf.y + 58);
+    ctx.fillText(`${shelf.points} pts, gold ${shelf.points * GOLDEN_MULTIPLIER}`, 8, shelf.y + 58);
   }
+
+  ctx.fillStyle = colors.text;
+  ctx.textAlign = 'center';
+  ctx.fillText('Lead moving bottles by half a second. Gold bottles score double.', WIDTH / 2, 62);
 
   for (const bottle of state.bottles) {
     // The scoring zone: land the ring's centre inside it.
-    ctx.strokeStyle = colors.muted;
-    ctx.lineWidth = 1;
+    // Golden bottles keep the same zone size, so they are no easier to ring.
+    ctx.strokeStyle = bottle.golden ? colors.accent : colors.muted;
+    ctx.lineWidth = bottle.golden ? 2 : 1;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
     ctx.arc(bottle.x, bottle.y, RINGER_RADIUS, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.fillStyle = colors.water;
+    ctx.fillStyle = bottle.golden ? colors.accent : colors.water;
     ctx.fillRect(bottle.x - 12, bottle.y + 6, 24, 28);
     ctx.fillRect(bottle.x - 5, bottle.y - 10, 10, 18);
-    ctx.fillStyle = colors.text;
+    if (bottle.golden) {
+      ctx.strokeStyle = colors.text;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bottle.x - 12, bottle.y + 6, 24, 28);
+    }
+    ctx.fillStyle = bottle.golden ? colors.background : colors.text;
     ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'center';
     ctx.fillText(String(bottle.points), bottle.x, bottle.y + 26);
@@ -231,8 +263,13 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
     ctx.lineWidth = 4;
     drawRing(ctx, landing.x, landing.y, 1);
     ctx.fillStyle = landing.points > 0 ? colors.accent : colors.danger;
+    if (landing.golden) ctx.fillStyle = colors.stripeB;
     ctx.fillText(
-      landing.points > 0 ? `+${landing.points}` : 'Miss',
+      landing.golden
+        ? `Golden! +${landing.points}`
+        : landing.points > 0
+          ? `+${landing.points}`
+          : 'Miss',
       landing.x,
       landing.y - 24 - landing.age * 30,
     );
@@ -263,10 +300,11 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('body');
     ctx.fillText(
-      `${state.ringers} of ${RINGS_PER_ROUND} rings landed. Click or press Space to play again`,
+      `${state.ringers} of ${RINGS_PER_ROUND} rings landed, ${state.bonusHits} on golden bottles.`,
       WIDTH / 2,
       HEIGHT / 2 + 40,
     );
+    ctx.fillText('Click or press Space to play again', WIDTH / 2, HEIGHT / 2 + 70);
   }
 }
 
@@ -280,7 +318,8 @@ const KEYS: Record<string, [number, number]> = {
 export const ringToss: CarnivalGame = {
   id: 'ring-toss',
   name: 'Ring Toss',
-  description: 'Ring the moving bottles with ten rings. Higher shelves score more.',
+  description:
+    'Ring the moving bottles with ten rings. Higher shelves score more, golden bottles double.',
 
   start(canvas) {
     const ctx = canvas.getContext('2d');
@@ -294,7 +333,7 @@ export const ringToss: CarnivalGame = {
 
     const throwOrReplay = () => {
       if (state.phase === 'over') {
-        state = createState();
+        state = createState(state.round + 1);
       } else {
         toss(state, aim.x, aim.y);
       }
