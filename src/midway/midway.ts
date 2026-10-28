@@ -1,4 +1,5 @@
 import { isControl } from './controls';
+import { advanceSceneClock, watchReducedMotion, type MotionHost } from './motion';
 import { palette } from './palette';
 import {
   archBounds,
@@ -107,7 +108,16 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     speed: 3 + Math.random() * 4,
   }));
   const floaters: Floater[] = [];
-  const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Quiet mode: decoration holds still, the player doesn't. See motion.ts. */
+  let quiet = false;
+  /** The clock the scenery animates by; it stops in quiet mode. */
+  let sceneTime = 0;
+  const stopWatchingMotion = watchReducedMotion(window as MotionHost, (reduce) => {
+    quiet = reduce;
+    if (!quiet) return;
+    floaters.length = 0;
+    for (const visitor of visitors) visitor.walking = false;
+  });
   let nextFloater = 2;
   let inReach: BoothSlot | undefined;
   let destination: Point | undefined;
@@ -221,7 +231,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   canvas.addEventListener('pointermove', onPointerMove);
 
   const updateFloaters = (dt: number) => {
-    if (calm) return;
+    if (quiet) return;
     nextFloater -= dt;
     if (nextFloater <= 0) {
       nextFloater = 4 + Math.random() * 5;
@@ -260,6 +270,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     cameraReady = true;
   };
 
+  /** `t` is the scenery's clock, which stands still in quiet mode. */
   const draw = (t: number) => {
     // The sky, and clouds drifting slowly behind the midway.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -274,9 +285,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     const span = view.w + 200;
     for (const cloud of clouds) {
       const x =
-        ((((cloud.x * span - camera.x * 0.3 + (calm ? 0 : t * cloud.speed)) % span) + span) %
-          span) -
-        100;
+        ((((cloud.x * span - camera.x * 0.3 + t * cloud.speed) % span) + span) % span) - 100;
       const y = HORIZON - camera.y - 50 - cloud.y * 100;
       drawCloud(ctx, x, y, cloud.size);
     }
@@ -420,7 +429,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     else if (player.path.length > 0) followPath(player, dt);
     else player.walking = false;
 
-    for (const visitor of visitors) updateVisitor(map, visitor, dt, Math.random, strolls);
+    if (!quiet)
+      for (const visitor of visitors) updateVisitor(map, visitor, dt, Math.random, strolls);
 
     const reach = boothInReach(map, player);
     if (reach !== inReach) {
@@ -430,7 +440,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
     updateFloaters(dt);
     updateCamera(dt);
-    draw(time / 1000);
+    sceneTime = advanceSceneClock(sceneTime, Math.max(0, elapsed), quiet);
+    draw(sceneTime);
     frame = requestAnimationFrame(loop);
   };
   frame = requestAnimationFrame(loop);
@@ -442,6 +453,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     },
     stop() {
       cancelAnimationFrame(frame);
+      stopWatchingMotion();
       observer.disconnect();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
