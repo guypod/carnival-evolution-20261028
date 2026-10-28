@@ -18,6 +18,7 @@ import {
   laneAt,
   laneCentre,
   moveDuck,
+  resolveArrivals,
   resolveObject,
   saveFinalScore,
   seededRng,
@@ -308,6 +309,41 @@ describe('star streak', () => {
     resolveObject(state, object('reed', state.lane));
     expect(state.score).toBe(0);
     expect(state.streak).toBe(0);
+  });
+
+  it('scores a row of two stars the same whatever the array order', () => {
+    function playRow(reverse: boolean): DuckState {
+      const state = playing();
+      state.spawnIn = 100;
+      for (let i = 0; i < 3; i++) resolveObject(state, object('star', state.lane));
+      const row: RiverObject[] = [
+        { id: 1, lane: state.lane, kind: 'star', progress: 0.99, outcome: 'pending' },
+        { id: 2, lane: state.lane + 1, kind: 'star', progress: 0.99, outcome: 'pending' },
+      ];
+      state.objects = reverse ? row.reverse() : row;
+      step(state, 0.1);
+      return state;
+    }
+    const forward = playRow(false);
+    const reversed = playRow(true);
+    for (const state of [forward, reversed]) {
+      expect(state.streak).toBe(4);
+      expect(state.peakStreak).toBe(4);
+      expect(state.score).toBe(4 * STAR_POINTS + streakBonus(1) + streakBonus(2) + streakBonus(3));
+      expect(state.objects.map((o) => o.outcome).sort()).toEqual(['caught', 'missed']);
+    }
+  });
+
+  it('resets the streak when a row of stars is missed, and on a reed in a row', () => {
+    const state = playing();
+    resolveObject(state, object('star', state.lane));
+    resolveArrivals(state, [object('star', state.lane + 1), object('star', state.lane + 2)]);
+    expect(state.streak).toBe(0);
+    resolveObject(state, object('star', state.lane));
+    resolveArrivals(state, [object('star', state.lane + 1), object('reed', state.lane)]);
+    expect(state.streak).toBe(0);
+    expect(state.hits).toBe(1);
+    expect(state.peakStreak).toBe(1);
   });
 
   it('starts a replayed round with no streak', () => {

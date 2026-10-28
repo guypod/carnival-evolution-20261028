@@ -27,6 +27,8 @@ working for that control.
   when you already have a streak of `s` stars earns `10 + min(2 × s, 10)`, so
   the run goes 10, 12, 14, 16, 18, 20, 20, ...
 - Hitting a reed or letting a star go past in another lane resets the streak to 0. Dodging a reed does not. The best streak of the round is kept.
+- When a row has two stars, you can catch only one. Catching it keeps the
+  streak and the other star's miss does not reset it. Missing both resets it.
 - Each object counts once: when it reaches the duck's row it is either caught
   (in the duck's lane) or missed, and never changes after that. The duck
   flashes `+10`, `+10 +4 streak` or `Ouch! -5` briefly.

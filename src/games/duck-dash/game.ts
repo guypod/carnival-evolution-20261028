@@ -170,16 +170,35 @@ export function resolveObject(state: DuckState, object: RiverObject): void {
   state.flash = { kind: object.kind, bonus, left: FLASH_TIME };
 }
 
+/**
+ * Settles the objects that reach the duck's row together, which is always one
+ * row. The object in the duck's lane resolves first, whatever the array order.
+ * A star caught in the row keeps its streak: a star in another lane of the same
+ * row could not have been caught too, so its miss does not reset the streak.
+ */
+export function resolveArrivals(state: DuckState, arrivals: RiverObject[]): void {
+  const pending = arrivals.filter((o) => o.outcome === 'pending');
+  const inLane = pending.filter((o) => o.lane === state.lane);
+  for (const object of inLane) resolveObject(state, object);
+  const caughtStar = inLane.some((o) => o.kind === 'star');
+  for (const object of pending) {
+    if (object.outcome !== 'pending') continue;
+    if (caughtStar) object.outcome = 'missed';
+    else resolveObject(state, object);
+  }
+}
+
 function stepSlice(state: DuckState, dt: number): void {
   state.timeLeft = Math.max(state.timeLeft - dt, 0);
   if (state.flash) {
     state.flash.left -= dt;
     if (state.flash.left <= 0) state.flash = undefined;
   }
-  for (const object of state.objects) {
-    object.progress += dt / TRAVEL_TIME;
-    if (object.progress >= 1) resolveObject(state, object);
-  }
+  for (const object of state.objects) object.progress += dt / TRAVEL_TIME;
+  resolveArrivals(
+    state,
+    state.objects.filter((o) => o.progress >= 1),
+  );
   state.objects = state.objects.filter((o) => o.progress < 1.15);
   state.spawnIn -= dt;
   if (state.spawnIn <= 0 && state.timeLeft > 0) {
