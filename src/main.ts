@@ -48,9 +48,12 @@ import {
   discoveryClue,
   discoveryProgress,
   discoveryStore,
+  landmarkHint,
   mergeDiscoveries,
+  nextLandmark,
   trailComplete,
   type Landmark,
+  type LandmarkId,
 } from './midway/discovery';
 import {
   motionPreference,
@@ -91,6 +94,7 @@ function renderMidway() {
         <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
           🗺️ Guide
         </button>
+        <button type="button" class="discovery-hint" hidden></button>
         <div class="visitor-guide" id="visitor-guide" role="region" aria-label="Visitor guide" hidden>
           <nav class="guide-destinations" aria-label="Destinations">
             <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
@@ -162,7 +166,7 @@ function renderMidway() {
     onLandmark: (landmark) => discovery.found(landmark),
     motion: motionPreference.load(),
   });
-  const discovery = setUpDiscovery(midway.landmarks);
+  const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
   const stopGuide = setUpGuide();
@@ -174,14 +178,40 @@ function renderMidway() {
 }
 
 // The optional discovery trail: a checklist in the guide, and a short note on
-// the map when the player finds a landmark. Finds never touch scores or stamps.
-function setUpDiscovery(landmarks: Landmark[]) {
+// the map when the player finds a landmark. "Walk there" and the hint by the
+// guide toggle only walk the player over; the find still waits for arrival.
+// Finds never touch scores or stamps.
+function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boolean) {
   const section = app.querySelector<HTMLElement>('.midway-discovery')!;
   const toast = app.querySelector<HTMLElement>('.discovery-toast')!;
+  const hint = app.querySelector<HTMLButtonElement>('.discovery-hint')!;
   let found = discoveryStore.load();
   let hideToast: number | undefined;
 
+  const showToast = (text: string) => {
+    toast.textContent = text;
+    toast.hidden = false;
+    window.clearTimeout(hideToast);
+    hideToast = window.setTimeout(() => (toast.hidden = true), 4000);
+  };
+
+  const guideTo = (landmark: Landmark) => {
+    if (!walkTo(landmark.id)) {
+      showToast(`No open path to the ${landmark.name} from here. Try walking closer yourself.`);
+    }
+  };
+
+  const onHint = () => {
+    const next = nextLandmark(landmarks, found);
+    if (next) guideTo(next);
+  };
+  hint.addEventListener('click', onHint);
+
   const render = () => {
+    const text = landmarkHint(landmarks, found);
+    hint.hidden = text === undefined;
+    hint.textContent = text ?? '';
+    hint.setAttribute('aria-label', text ? `${text}. Walk there.` : '');
     section.querySelector('.discovery-progress')!.textContent = discoveryProgress(landmarks, found);
     section.querySelector('.discovery-clue')!.textContent = discoveryClue(landmarks, found);
     const list = section.querySelector('ul')!;
@@ -190,7 +220,14 @@ function setUpDiscovery(landmarks: Landmark[]) {
       const done = found.includes(landmark.id);
       const item = document.createElement('li');
       item.classList.toggle('found', done);
-      item.textContent = `${done ? '✓' : '○'} ${landmark.name}${done ? ', found' : ', not found yet'}`;
+      item.textContent = `${done ? '✓' : '○'} ${landmark.name}${done ? ', found' : ', not found yet'} `;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'walk-there';
+      button.textContent = 'Walk there';
+      button.setAttribute('aria-label', `Walk to the ${landmark.name}`);
+      button.addEventListener('click', () => guideTo(landmark));
+      item.append(button);
       list.append(item);
     }
   };
@@ -203,15 +240,15 @@ function setUpDiscovery(landmarks: Landmark[]) {
       found = discover(mergeDiscoveries(found, discoveryStore.load()), landmark.id);
       discoveryStore.save(found);
       render();
-      toast.textContent = trailComplete(landmarks, found)
-        ? `You found the ${landmark.name}! ${discoveryClue(landmarks, found)}`
-        : `You found the ${landmark.name}! ${discoveryProgress(landmarks, found)}.`;
-      toast.hidden = false;
-      window.clearTimeout(hideToast);
-      hideToast = window.setTimeout(() => (toast.hidden = true), 4000);
+      showToast(
+        trailComplete(landmarks, found)
+          ? `You found the ${landmark.name}! ${discoveryClue(landmarks, found)}`
+          : `You found the ${landmark.name}! ${discoveryProgress(landmarks, found)}.`,
+      );
     },
     stop() {
       window.clearTimeout(hideToast);
+      hint.removeEventListener('click', onHint);
     },
   };
 }

@@ -1153,6 +1153,43 @@ kbd {
   font-size: 12px;
 }
 
+.midway-discovery .walk-there {
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* The next-landmark hint by the guide toggle: small and still, never pulsing. */
+.discovery-hint {
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 80%, transparent);
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.discovery-hint[hidden] {
+  display: none;
+}
+
+.midway-discovery .walk-there:hover,
+.midway-discovery .walk-there:focus-visible,
+.discovery-hint:hover,
+.discovery-hint:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+  color: var(--color-text);
+}
+
 .discovery-toast {
   top: 16px;
   left: 50%;

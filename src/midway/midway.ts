@@ -1,5 +1,11 @@
 import { isControl } from './controls';
-import { landmarkInReach, trailLandmarks, type Landmark } from './discovery';
+import {
+  landmarkInReach,
+  pathToLandmark,
+  trailLandmarks,
+  type Landmark,
+  type LandmarkId,
+} from './discovery';
 import {
   advanceSceneClock,
   isQuiet,
@@ -70,6 +76,11 @@ export interface MidwayOptions {
 export interface MidwayControls {
   /** Walks the player to a game's booth. */
   walkTo(gameId: string): void;
+  /**
+   * Walks the player to an open spot within reach of a landmark. Returns false,
+   * and leaves the player where they are, when no such spot can be reached.
+   */
+  walkToLandmark(id: LandmarkId): boolean;
   /** Switches between day and lantern evening. */
   setScene(scene: Scene): void;
   /** The discovery trail's landmarks on this map. */
@@ -230,6 +241,30 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     destination = player.path.at(-1);
   };
 
+  const walkToLandmark = (landmark: Landmark) => {
+    const path = pathToLandmark(map, player, landmark);
+    if (!path) return false;
+    player.path = path;
+    destination = path.at(-1);
+    return true;
+  };
+
+  // Landmark artwork stands on blocked tiles, so a click on it walks to a spot
+  // beside it instead.
+  const landmarkAt = (point: Point) =>
+    landmarks.find((landmark) => {
+      const prop = map.props.find(
+        (p) =>
+          p.x === landmark.area.x &&
+          p.y === landmark.area.y &&
+          p.w === landmark.area.w &&
+          p.h === landmark.area.h,
+      );
+      if (!prop) return false;
+      const b = propBounds(prop);
+      return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+    });
+
   const onPointerDown = (event: PointerEvent) => {
     const point = toWorld(event);
     const booth = boothAt(point);
@@ -246,7 +281,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (path) {
       player.path = path;
       destination = path.at(-1);
+      return;
     }
+    const landmark = landmarkAt(point);
+    if (landmark) walkToLandmark(landmark);
   };
   const onPointerMove = (event: PointerEvent) => {
     const point = toWorld(event);
@@ -506,6 +544,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     walkTo(gameId) {
       const booth = map.booths.find((b) => b.gameId === gameId);
       if (booth) walkToBooth(booth);
+    },
+    walkToLandmark(id) {
+      const landmark = landmarks.find((l) => l.id === id);
+      return landmark ? walkToLandmark(landmark) : false;
     },
     setScene(next) {
       scene = next;
