@@ -381,3 +381,171 @@ kbd {
   cursor: crosshair;
   touch-action: none;
 }
+
+.pavilion-link {
+  display: block;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+  text-align: center;
+  text-decoration: none;
+}
+
+.pavilion-link:hover,
+.pavilion-link:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.pavilion h1:focus {
+  outline: none;
+}
+
+.pavilion-intro,
+.pavilion .note {
+  color: var(--color-muted);
+}
+
+.pavilion-collector {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0 24px;
+  padding: 14px 18px;
+  border: 2px dashed var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.pavilion-collector.won {
+  border: 2px solid var(--color-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.pavilion-collector h2 {
+  margin: 0 0 4px;
+}
+
+.pavilion-collector p {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.pavilion-collector:not(.won) .badge {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.pavilion-shelves {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pavilion-shelves > li {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.pavilion-shelves h2,
+.pavilion-shelves p {
+  margin: 0;
+}
+
+.pavilion-shelves .best {
+  font-weight: bold;
+}
+
+.pavilion-shelves .next {
+  color: var(--color-accent);
+}
+
+.pavilion .badges {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pavilion .prize {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-muted);
+}
+
+.pavilion .badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px dashed var(--color-muted);
+  border-radius: 50%;
+  font-size: 16px;
+}
+
+.pavilion .badge.collector {
+  width: 48px;
+  height: 48px;
+  border: none;
+  font-size: 32px;
+}
+
+.pavilion .prize .label {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+
+.pavilion .prize .tier {
+  font-weight: bold;
+}
+
+.pavilion .prize.won {
+  color: var(--color-text);
+}
+
+.pavilion .bronze.won .badge {
+  border: 2px solid var(--color-wood);
+  background: var(--color-wood);
+}
+
+.pavilion .silver.won .badge {
+  border: 2px solid var(--color-muted);
+  background: var(--color-muted);
+  color: var(--color-background);
+}
+
+.pavilion .gold.won .badge {
+  border: 2px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.pavilion .play-link {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 6px 16px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.pavilion .play-link:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
