@@ -2,7 +2,7 @@ import { bestScore, type CarnivalGame } from './carnival';
 
 /** One Carnival Trail mission, worked out from best scores. Nothing is stored. */
 export interface TrailMission {
-  id: 'explorer' | 'crowd-pleaser' | 'headliner';
+  id: 'explorer' | 'crowd-pleaser' | 'headliner' | 'midway-master';
   name: string;
   goal: string;
   /** Booths that count towards the mission so far. */
@@ -56,14 +56,18 @@ function explorer(games: readonly CarnivalGame[], best: Best): TrailMission {
   );
 }
 
+/** Midway Master's score, needed at every registered booth. */
+export const MIDWAY_MASTER_SCORE = 100;
+
 function scoreMission(
-  id: 'crowd-pleaser' | 'headliner',
+  id: 'crowd-pleaser' | 'headliner' | 'midway-master',
   name: string,
   minScore: number,
   games: readonly CarnivalGame[],
   best: Best,
+  everyBooth = false,
 ): TrailMission {
-  const target = Math.min(TRAIL_BOOTHS_NEEDED, games.length);
+  const target = everyBooth ? games.length : Math.min(TRAIL_BOOTHS_NEEDED, games.length);
   const below = games.filter((game) => (best(game.id) ?? 0) < minScore);
   // The unfinished booth closest to the threshold; ties keep registry order.
   const pick = below.reduce<CarnivalGame | undefined>(
@@ -76,7 +80,9 @@ function scoreMission(
     {
       id,
       name,
-      goal: `Score at least ${minScore} at ${target} ${boothWord}.`,
+      goal: everyBooth
+        ? `Score at least ${minScore} at every booth.`
+        : `Score at least ${minScore} at ${target} ${boothWord}.`,
       progress: games.length - below.length,
       target,
     },
@@ -89,7 +95,7 @@ function scoreMission(
 }
 
 /**
- * The Carnival Trail's three missions for the registered games, read from the
+ * The Carnival Trail's missions for the registered games, read from the
  * shared scores module. A new game joins the trail when it registers.
  */
 export function trailMissions(
@@ -100,7 +106,14 @@ export function trailMissions(
     explorer(games, best),
     scoreMission('crowd-pleaser', 'Crowd Pleaser', 50, games, best),
     scoreMission('headliner', 'Headliner', 150, games, best),
+    scoreMission('midway-master', 'Midway Master', MIDWAY_MASTER_SCORE, games, best, true),
   ];
+}
+
+/** The trail's intro line, with the real mission count. */
+export function trailIntro(missions: readonly TrailMission[]): string {
+  const noun = missions.length === 1 ? 'mission' : 'missions';
+  return `${missions.length} ${noun} across every booth on the midway.`;
 }
 
 /** The mission counter, e.g. "1 of 2 booths". Progress never shows above the target. */

@@ -21,7 +21,7 @@ import {
   filterDirectory,
   type DirectoryStatus,
 } from './booth-directory';
-import { progressText, trailMissions, trailRecommendation } from './trail';
+import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { BoothSlot } from './midway/world';
 
@@ -207,12 +207,13 @@ function renderTrail() {
         <a href="#/">← Back to the midway</a>
         <h1 id="trail-title" tabindex="-1">Carnival Trail</h1>
       </div>
-      <p class="trail-intro">Three missions across every booth on the midway.</p>
+      <p class="trail-intro"></p>
       <p class="trail-next" role="status"></p>
       <ol class="trail-missions"></ol>
       <p class="note">Progress comes from your best scores in this browser only. Nothing to buy, and nothing is spent.</p>
     </section>`;
 
+  app.querySelector('.trail-intro')!.textContent = trailIntro(missions);
   const recommended = trailRecommendation(missions);
   app.querySelector('.trail-next')!.textContent = recommended
     ? `Next up: ${recommended.nextAction}`
