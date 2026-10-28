@@ -11,6 +11,9 @@ const RAILS = [
   { y: 290, speed: 60, radius: 34 },
 ];
 const TARGETS_PER_RAIL = 3;
+/** The streak multiplier never goes above this. */
+export const MAX_MULTIPLIER = 3;
+const POPUP_LIFE = 0.8;
 
 export interface Target {
   x: number;
@@ -31,6 +34,9 @@ export interface Splash {
   x: number;
   y: number;
   age: number;
+  /** Points the hit scored, shown as a popup above the splash. */
+  points: number;
+  multiplier: number;
 }
 
 export interface WaterCannonState {
@@ -39,7 +45,11 @@ export interface WaterCannonState {
   splashes: Splash[];
   tank: number;
   score: number;
+  /** Consecutive hits since the last miss. */
+  streak: number;
   phase: 'playing' | 'over';
+  /** True once the final score has been handed out by takeFinalScore. */
+  scoreTaken: boolean;
 }
 
 export function createState(): WaterCannonState {
@@ -52,12 +62,51 @@ export function createState(): WaterCannonState {
       speed: rail.speed,
     })),
   );
-  return { targets, shots: [], splashes: [], tank: TANK_SIZE, score: 0, phase: 'playing' };
+  return {
+    targets,
+    shots: [],
+    splashes: [],
+    tank: TANK_SIZE,
+    score: 0,
+    streak: 0,
+    phase: 'playing',
+    scoreTaken: false,
+  };
 }
 
 /** Faster targets are worth more: 10 points per 60 px/s, rounded up. */
 export function scoreForHit(target: Target): number {
   return 10 * Math.ceil(Math.abs(target.speed) / 60);
+}
+
+/** The multiplier for a hit that brings the streak to `streak`: x1, then x2, then x3 at most. */
+export function multiplierFor(streak: number): number {
+  return Math.min(Math.max(streak, 1), MAX_MULTIPLIER);
+}
+
+/** Scores a hit on `target`, growing the streak. Returns the points it scored. */
+export function registerHit(state: WaterCannonState, target: Target): number {
+  state.streak += 1;
+  const multiplier = multiplierFor(state.streak);
+  const points = scoreForHit(target) * multiplier;
+  state.score += points;
+  state.splashes.push({ x: target.x, y: target.y, age: 0, points, multiplier });
+  return points;
+}
+
+/** A shot left the booth without hitting anything: the streak starts again. */
+export function registerMiss(state: WaterCannonState): void {
+  state.streak = 0;
+}
+
+/**
+ * Hands out the final score once, when the round is over, and null otherwise.
+ * A new round from createState can be scored again.
+ */
+export function takeFinalScore(state: WaterCannonState): number | null {
+  if (state.phase !== 'over' || state.scoreTaken) return null;
+  state.scoreTaken = true;
+  return state.score;
 }
 
 export function isHit(shot: Shot, target: Target): boolean {
@@ -94,18 +143,19 @@ export function step(state: WaterCannonState, dt: number): void {
     shot.y += shot.vy * dt;
     const target = state.targets.find((t) => isHit(shot, t));
     if (target) {
-      state.score += scoreForHit(target);
-      state.splashes.push({ x: target.x, y: target.y, age: 0 });
+      registerHit(state, target);
       // Send the soaked target back to the start of its rail.
       target.x = target.speed > 0 ? -target.radius : WIDTH + target.radius;
     } else if (shot.y > -10 && shot.x > -10 && shot.x < WIDTH + 10) {
       remaining.push(shot);
+    } else {
+      registerMiss(state);
     }
   }
   state.shots = remaining;
 
   for (const splash of state.splashes) splash.age += dt;
-  state.splashes = state.splashes.filter((s) => s.age < 0.4);
+  state.splashes = state.splashes.filter((s) => s.age < POPUP_LIFE);
 
   if (state.tank === 0 && state.shots.length === 0) state.phase = 'over';
 }
@@ -157,10 +207,23 @@ function draw(
   ctx.strokeStyle = colors.water;
   ctx.lineWidth = 3;
   for (const splash of state.splashes) {
-    ctx.globalAlpha = 1 - splash.age / 0.4;
-    ctx.beginPath();
-    ctx.arc(splash.x, splash.y, 10 + splash.age * 90, 0, Math.PI * 2);
-    ctx.stroke();
+    if (splash.age < 0.4) {
+      ctx.globalAlpha = 1 - splash.age / 0.4;
+      ctx.beginPath();
+      ctx.arc(splash.x, splash.y, 10 + splash.age * 90, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Score popups float up from each splash and fade.
+  ctx.textAlign = 'center';
+  for (const splash of state.splashes) {
+    ctx.globalAlpha = 1 - splash.age / POPUP_LIFE;
+    const bonus = splash.multiplier > 1;
+    ctx.fillStyle = bonus ? colors.accent : colors.text;
+    ctx.font = canvasFont(bonus ? 'title' : 'body', 'bold');
+    const label = bonus ? `+${splash.points} x${splash.multiplier}` : `+${splash.points}`;
+    ctx.fillText(label, splash.x, splash.y - 20 - splash.age * 60);
   }
   ctx.globalAlpha = 1;
 
@@ -183,6 +246,15 @@ function draw(
   ctx.fillText(`Score ${state.score}`, 16, HEIGHT - 20);
   ctx.textAlign = 'right';
   ctx.fillText(`Water ${state.tank}/${TANK_SIZE}`, WIDTH - 16, HEIGHT - 20);
+
+  // Streak indicator, lit up once the multiplier kicks in.
+  const multiplier = multiplierFor(state.streak);
+  ctx.fillStyle = colors.surface;
+  ctx.fillRect(WIDTH - 196, 48, 180, 34);
+  ctx.fillStyle = multiplier > 1 ? colors.accent : colors.muted;
+  ctx.font = canvasFont(multiplier > 1 ? 'body' : 'small', 'bold');
+  ctx.textAlign = 'center';
+  ctx.fillText(`Streak ${state.streak}  x${multiplier}`, WIDTH - 106, 71);
 
   if (state.phase === 'over') {
     ctx.fillStyle = colors.background;
@@ -211,7 +283,6 @@ export const waterCannon: CarnivalGame = {
     canvas.height = HEIGHT;
 
     let state = createState();
-    let scoreRecorded = false;
     const aim = { x: WIDTH / 2, y: 0 };
 
     const toCanvas = (event: PointerEvent) => {
@@ -226,7 +297,6 @@ export const waterCannon: CarnivalGame = {
       Object.assign(aim, toCanvas(event));
       if (state.phase === 'over') {
         state = createState();
-        scoreRecorded = false;
       } else {
         fire(state, aim.x, aim.y);
       }
@@ -241,10 +311,8 @@ export const waterCannon: CarnivalGame = {
       const dt = Math.min((time - last) / 1000, 0.05);
       last = time;
       step(state, dt);
-      if (state.phase === 'over' && !scoreRecorded) {
-        recordScore(waterCannon.id, state.score);
-        scoreRecorded = true;
-      }
+      const finalScore = takeFinalScore(state);
+      if (finalScore !== null) recordScore(waterCannon.id, finalScore);
       draw(ctx, state, aim);
       frame = requestAnimationFrame(loop);
     };
