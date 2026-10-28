@@ -1,4 +1,5 @@
-// The factory contract: the exact actions and triggers tessl.json must keep.
+// The factory contract: the exact actions, triggers and schedules tessl.json
+// must keep.
 // Any change to an approved action, a route's guards, its concurrency or its
 // action fails the check, so a change to the factory has to change this file
 // too, in review. The top-level name, mode and dependencies are not checked:
@@ -23,6 +24,25 @@ export const EXPECTED_ACTIONS = {
   'implement-github-issue': action('implement-github-issue', '15m'),
   shepherd: action('shepherd', '10m'),
   'follow-ticket-changes': action('follow-ticket-changes', '5m'),
+  // The test health maintenance loop, from the repository's own skill. It files
+  // issues only; a person labels them before the factory ships a fix.
+  'test-health': {
+    skill: 'file:tessl-factory#test-health',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '15m',
+  },
+};
+
+// Weekly, per WORKSHOP module 04. No other schedules: gameplay batching is
+// owned outside this repository.
+export const EXPECTED_SCHEDULES = {
+  'test-health-weekly': {
+    cron: '0 9 * * 1',
+    description: 'Weekly test health check: file an issue for each test that cannot fail',
+    action: 'test-health',
+  },
 };
 
 const tesslLabel = (path) => ({ [path]: { any: { equals: 'tessl' } } });
@@ -211,5 +231,6 @@ export function checkContract(manifest) {
   const errors = [];
   compareSet('actions', manifest.actions, EXPECTED_ACTIONS, errors);
   compareSet('triggers', manifest.triggers, EXPECTED_TRIGGERS, errors);
+  compareSet('schedules', manifest.schedules, EXPECTED_SCHEDULES, errors);
   return errors;
 }

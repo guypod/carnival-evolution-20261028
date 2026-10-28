@@ -249,6 +249,10 @@ test('unsafe mutants fail the contract', () => {
       (m.triggers['follow-ticket-changes-github-replied'].concurrency.keys[0].key = 'reply'),
     'change the debounce': (m) => (m.triggers['shepherd-pr-review'].concurrency.debounce = '10s'),
     'add a route': (m) => (m.triggers.extra = structuredClone(m.triggers['shepherd-pr-review'])),
+    'add a schedule': (m) =>
+      (m.schedules.extra = structuredClone(m.schedules['test-health-weekly'])),
+    'make test health daily': (m) => (m.schedules['test-health-weekly'].cron = '0 9 * * *'),
+    'drop the schedules': (m) => delete m.schedules,
   };
   for (const [label, change] of Object.entries(mutants)) {
     const m = clone();

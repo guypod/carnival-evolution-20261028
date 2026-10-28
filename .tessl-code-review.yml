@@ -1,0 +1,9 @@
+schemaVersion: 1
+lenses:
+  - ref: tessl/code-review@0.5.0#review-correctness-and-data-integrity
+  - ref: tessl/code-review@0.5.0#review-security-and-privacy
+  - ref: tessl/code-review@0.5.0#review-scale-and-resilience
+  - ref: tessl/code-review@0.5.0#review-maintainability-and-code-quality
+  - ref: ./review-lenses/carnival-house-rules/SKILL.md
+    globs:
+      - src/games/**
