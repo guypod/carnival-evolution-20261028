@@ -4,11 +4,11 @@
 // too, in review. The top-level name, mode and dependencies are not checked:
 // tessl install manages them.
 
-export const REPOSITORY_ID = 1430175635;
+export const REPOSITORY_ID = 1437265009;
 export const OWNER_ID = 1106394;
 export const REVIEWER_ID = 325629464;
 
-const ENVIRONMENT = 'carnival-factory-lab-20261022-factory';
+const ENVIRONMENT = 'carnival-evolution-20261028-factory';
 const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
 
 const action = (name, timeout) => ({
