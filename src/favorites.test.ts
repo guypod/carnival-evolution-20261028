@@ -53,6 +53,20 @@ describe('createFavorites', () => {
     expect(favorites.load()).toEqual(['a']);
   });
 
+  it('reports a failed read and never overwrites the saved list', () => {
+    const storage = memoryStorage({ [FAVORITES_KEY]: '["a", "b"]' });
+    const favorites = createFavorites({
+      getItem: () => {
+        throw new Error('SecurityError');
+      },
+      setItem: storage.setItem,
+    });
+    expect(favorites.load()).toEqual([]);
+    expect(favorites.set('c', true)).toBeUndefined();
+    expect(favorites.set('a', false)).toBeUndefined();
+    expect(storage.map.get(FAVORITES_KEY)).toBe('["a", "b"]');
+  });
+
   it('works with no storage at all', () => {
     const favorites = createFavorites(undefined);
     expect(favorites.load()).toEqual([]);
