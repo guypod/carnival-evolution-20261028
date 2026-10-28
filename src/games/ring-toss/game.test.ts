@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   FLIGHT_TIME,
+  GOLDEN_MULTIPLIER,
   RINGER_RADIUS,
   RINGS_PER_ROUND,
   SHELVES,
   bottleAt,
   createState,
+  goldenIndex,
   step,
   takeFinalScore,
   toss,
@@ -13,9 +15,9 @@ import {
 } from './game';
 
 /** A round with one still bottle, so landings are easy to predict. */
-function stillBottle(points = 20): RingTossState {
+function stillBottle(points = 20, golden = false): RingTossState {
   const state = createState();
-  state.bottles = [{ x: 400, y: 200, speed: 0, points }];
+  state.bottles = [{ x: 400, y: 200, speed: 0, points, golden }];
   return state;
 }
 
@@ -69,8 +71,8 @@ describe('ring toss', () => {
   });
 
   it('picks the closest bottle when two zones overlap', () => {
-    const near = { x: 100, y: 100, speed: 0, points: 10 };
-    const far = { x: 110, y: 100, speed: 0, points: 30 };
+    const near = { x: 100, y: 100, speed: 0, points: 10, golden: false };
+    const far = { x: 110, y: 100, speed: 0, points: 30, golden: false };
     expect(bottleAt([far, near], 102, 100)).toBe(near);
     expect(bottleAt([far, near], 300, 100)).toBeUndefined();
   });
@@ -113,5 +115,69 @@ describe('ring toss', () => {
     expect(takeFinalScore(state)).toBeUndefined();
     step(state, 0.1);
     expect(takeFinalScore(state)).toBeUndefined();
+  });
+
+  it('has exactly one golden bottle per shelf, worth double its shelf', () => {
+    const state = createState();
+    for (const shelf of SHELVES) {
+      const onShelf = state.bottles.filter((b) => b.y === shelf.y);
+      const golden = onShelf.filter((b) => b.golden);
+      expect(golden).toHaveLength(1);
+      expect(golden[0].points).toBe(shelf.points * GOLDEN_MULTIPLIER);
+      expect(GOLDEN_MULTIPLIER).toBe(2);
+      for (const bottle of onShelf.filter((b) => !b.golden)) {
+        expect(bottle.points).toBe(shelf.points);
+      }
+    }
+  });
+
+  it('scores a normal ringer at shelf points and a golden ringer at double', () => {
+    const normal = stillBottle(20);
+    toss(normal, 400, 200);
+    step(normal, FLIGHT_TIME);
+    expect(normal.score).toBe(20);
+    expect(normal.bonusHits).toBe(0);
+    expect(normal.landings[0].golden).toBe(false);
+
+    const golden = createState();
+    const bottle = golden.bottles.find((b) => b.golden && b.y === SHELVES[1].y)!;
+    golden.bottles = [{ ...bottle, x: 400, y: 200, speed: 0 }];
+    toss(golden, 400, 200);
+    step(golden, FLIGHT_TIME);
+    expect(golden.score).toBe(SHELVES[1].points * 2);
+    expect(golden.bonusHits).toBe(1);
+    expect(golden.landings[0].golden).toBe(true);
+  });
+
+  it('counts a golden ringer only once, however long it lies there', () => {
+    const state = stillBottle(40, true);
+    toss(state, 400, 200);
+    step(state, FLIGHT_TIME);
+    step(state, 0.1);
+    step(state, 0.5);
+    expect(state.score).toBe(40);
+    expect(state.bonusHits).toBe(1);
+    expect(state.ringers).toBe(1);
+  });
+
+  it('does not count a miss as a golden hit', () => {
+    const state = stillBottle(40, true);
+    toss(state, 400, 200 + RINGER_RADIUS + 1);
+    step(state, FLIGHT_TIME);
+    expect(state.bonusHits).toBe(0);
+    expect(state.score).toBe(0);
+  });
+
+  it('starts every round with no golden hits and moves the golden bottles', () => {
+    const state = stillBottle(40, true);
+    toss(state, 400, 200);
+    step(state, FLIGHT_TIME);
+    expect(state.bonusHits).toBe(1);
+    const next = createState(state.round + 1);
+    expect(next.bonusHits).toBe(0);
+    expect(next.round).toBe(1);
+    expect(goldenIndex(0, 0)).not.toBe(goldenIndex(0, 1));
+    const goldenXs = (s: RingTossState) => s.bottles.filter((b) => b.golden).map((b) => b.x);
+    expect(goldenXs(next)).not.toEqual(goldenXs(createState(0)));
   });
 });
