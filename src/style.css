@@ -382,7 +382,8 @@ kbd {
   touch-action: none;
 }
 
-.pavilion-link {
+.pavilion-link,
+.trail-link {
   display: block;
   padding: 10px 14px;
   border-radius: var(--radius);
@@ -394,7 +395,9 @@ kbd {
 }
 
 .pavilion-link:hover,
-.pavilion-link:focus-visible {
+.pavilion-link:focus-visible,
+.trail-link:hover,
+.trail-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
@@ -546,6 +549,100 @@ kbd {
 }
 
 .pavilion .play-link:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.trail h1:focus {
+  outline: none;
+}
+
+.trail-intro,
+.trail .note {
+  color: var(--color-muted);
+}
+
+.trail-next {
+  margin: 16px 0 24px;
+  padding: 14px 18px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-weight: bold;
+}
+
+.trail-missions {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trail-missions > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border: 2px dashed var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.trail-missions > li.complete {
+  border: 2px solid var(--color-accent);
+}
+
+.trail-missions .details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trail-missions h2,
+.trail-missions p {
+  margin: 0;
+}
+
+.trail-missions .goal {
+  color: var(--color-muted);
+}
+
+.trail-missions .progress {
+  font-weight: bold;
+}
+
+.trail-missions .action {
+  color: var(--color-accent);
+}
+
+.trail .badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px dashed var(--color-muted);
+  border-radius: 50%;
+}
+
+.trail .complete .badge {
+  border: 2px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.trail .play-link {
+  align-self: flex-start;
+  padding: 6px 16px;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.trail .play-link:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
