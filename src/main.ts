@@ -62,6 +62,12 @@ import {
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
+import {
+  createSoundscape,
+  DEFAULT_SOUNDSCAPE_VOLUME,
+  soundToggleState,
+  type SoundContext,
+} from './midway/soundscape';
 import { routeMessage, type RouteState } from './midway/route';
 import {
   POSTCARD_MESSAGES,
@@ -155,6 +161,9 @@ function renderMidway() {
           <button type="button" class="scene-toggle" aria-pressed="false"></button>
           <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
           <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
+          <button type="button" class="sound-toggle" aria-pressed="false" aria-describedby="sound-note"></button>
+          <label class="sound-volume">Volume <input type="range" min="0" max="1" step="0.05" value="${DEFAULT_SOUNDSCAPE_VOLUME}" /></label>
+          <p class="note" id="sound-note">A soft hum made in your browser. Starts off, stops when you leave the midway or hide the page. Nothing on the map depends on it.</p>
           <section class="midway-visit" aria-label="Choose my visit">
             <h2>Choose my visit</h2>
             <div class="visit-moods"></div>
@@ -247,9 +256,11 @@ function renderMidway() {
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
+  const stopSound = setUpSound();
   const stopGuide = setUpGuide();
   const stopHelp = setUpHelp();
   stop = () => {
+    stopSound();
     routeStatus.stop();
     discovery.stop();
     stopHelp();
@@ -479,6 +490,46 @@ function setUpMotionToggle(setMotion: (preference: MotionPreference) => void) {
     show();
   });
   show();
+}
+
+// The opt-in soundscape. It starts off on every visit and only a click starts
+// it, so the browser's autoplay rules always hold. Hiding the page or leaving
+// the midway stops it; the choice is not remembered.
+function setUpSound(): () => void {
+  const button = app.querySelector<HTMLButtonElement>('.sound-toggle')!;
+  const slider = app.querySelector<HTMLInputElement>('.sound-volume input')!;
+  const sound = createSoundscape(
+    () => {
+      const AudioContextClass =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      return AudioContextClass ? (new AudioContextClass() as unknown as SoundContext) : undefined;
+    },
+    () => show(),
+  );
+  const show = () => {
+    const { label, pressed } = soundToggleState(sound.isPlaying());
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(pressed));
+  };
+  button.addEventListener('click', () => {
+    if (sound.isPlaying()) sound.stop();
+    else if (!sound.start()) button.disabled = true;
+    show();
+  });
+  slider.addEventListener('input', () => sound.setVolume(Number(slider.value)));
+  const onVisibility = () => {
+    if (document.hidden) {
+      sound.stop();
+      show();
+    }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  show();
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibility);
+    sound.dispose();
+  };
 }
 
 // Zoom the map in and out by modest steps, or back to the fitted size. Only
