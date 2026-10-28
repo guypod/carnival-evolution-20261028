@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CarnivalGame } from './carnival';
-import { progressText, trailMissions, trailRecommendation } from './trail';
+import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 
 function game(id: string, name: string): CarnivalGame {
   return { id, name, description: `${name}.`, start: () => () => {} };
@@ -22,7 +22,12 @@ function byId(games: CarnivalGame[], map: Record<string, number>) {
 describe('trailMissions', () => {
   it('never completes a mission with no booths registered', () => {
     const missions = trailMissions([], scores({}));
-    expect(missions.map((m) => m.id)).toEqual(['explorer', 'crowd-pleaser', 'headliner']);
+    expect(missions.map((m) => m.id)).toEqual([
+      'explorer',
+      'crowd-pleaser',
+      'headliner',
+      'midway-master',
+    ]);
     for (const mission of missions) {
       expect(mission).toMatchObject({ progress: 0, target: 0, complete: false, next: undefined });
       expect(mission.nextAction).toBe('No booths are open yet.');
@@ -78,15 +83,96 @@ describe('trailMissions', () => {
     expect(m.headliner.next?.gameId).toBe('ring-toss');
   });
 
-  it('completes every mission once the scores are there, with no booth left to suggest', () => {
+  it('completes the first three missions with two high scores, leaving Midway Master open', () => {
     const missions = trailMissions(
       [cannon, rings, moles],
       scores({ 'water-cannon': 150, 'ring-toss': 160, 'mole-mayhem': 0 }),
+    );
+    const [explorer, crowd, headliner, master] = missions;
+    expect([explorer, crowd, headliner].every((m) => m.complete)).toBe(true);
+    expect([explorer, crowd, headliner].every((m) => m.nextAction === 'Mission complete!')).toBe(
+      true,
+    );
+    expect(master).toMatchObject({ id: 'midway-master', progress: 2, target: 3, complete: false });
+    expect(master.nextAction).toBe('Score 100 more points at Mole Mayhem to reach 100.');
+    expect(trailRecommendation(missions)?.id).toBe('midway-master');
+    expect(progressText(crowd)).toBe('2 of 2 booths');
+  });
+
+  it('completes every mission once the scores are there, with no booth left to suggest', () => {
+    const missions = trailMissions(
+      [cannon, rings, moles],
+      scores({ 'water-cannon': 150, 'ring-toss': 160, 'mole-mayhem': 100 }),
     );
     expect(missions.every((m) => m.complete)).toBe(true);
     expect(missions.every((m) => m.nextAction === 'Mission complete!')).toBe(true);
     expect(trailRecommendation(missions)).toBeUndefined();
     expect(progressText(missions[1])).toBe('2 of 2 booths');
+  });
+});
+
+describe('Midway Master', () => {
+  function master(games: CarnivalGame[], map: Record<string, number>) {
+    return byId(games, map)['midway-master'];
+  }
+
+  it('is never earned with no booths registered', () => {
+    expect(master([], {})).toMatchObject({
+      progress: 0,
+      target: 0,
+      complete: false,
+      next: undefined,
+    });
+  });
+
+  it('needs at least 100 at every registered booth, met at exactly 100', () => {
+    const below = master([cannon, rings], { 'water-cannon': 100, 'ring-toss': 99 });
+    expect(below).toMatchObject({ progress: 1, target: 2, complete: false });
+    expect(below.goal).toBe('Score at least 100 at every booth.');
+    expect(below.next?.gameId).toBe('ring-toss');
+    expect(below.nextAction).toBe('Score 1 more point at Ring Toss to reach 100.');
+
+    const exact = master([cannon, rings], { 'water-cannon': 100, 'ring-toss': 100 });
+    expect(exact).toMatchObject({ progress: 2, target: 2, complete: true, next: undefined });
+    expect(exact.nextAction).toBe('Mission complete!');
+  });
+
+  it('recommends the closest unfinished booth and counts a zero score as below the line', () => {
+    const m = master([cannon, rings, moles, ducks], {
+      'water-cannon': 0,
+      'ring-toss': 70,
+      'mole-mayhem': 120,
+    });
+    expect(m).toMatchObject({ progress: 1, target: 4, complete: false });
+    expect(m.next?.gameId).toBe('ring-toss');
+    expect(m.nextAction).toBe('Score 30 more points at Ring Toss to reach 100.');
+    expect(progressText(m)).toBe('1 of 4 booths');
+  });
+
+  it('breaks ties by registry order', () => {
+    const m = master([cannon, rings, moles], {
+      'water-cannon': 120,
+      'ring-toss': 60,
+      'mole-mayhem': 60,
+    });
+    expect(m.next?.gameId).toBe('ring-toss');
+  });
+
+  it('reopens when a new booth registers that has not been played', () => {
+    const before = master([cannon, rings], { 'water-cannon': 100, 'ring-toss': 140 });
+    expect(before.complete).toBe(true);
+    const after = master([cannon, rings, ducks], { 'water-cannon': 100, 'ring-toss': 140 });
+    expect(after).toMatchObject({ progress: 2, target: 3, complete: false });
+    expect(after.next?.gameId).toBe('duck-pond');
+    expect(after.nextAction).toBe('Score 100 more points at Duck Pond to reach 100.');
+  });
+});
+
+describe('trailIntro', () => {
+  it('counts the missions on the trail', () => {
+    expect(trailIntro(trailMissions([cannon], scores({})))).toBe(
+      '4 missions across every booth on the midway.',
+    );
   });
 });
 
