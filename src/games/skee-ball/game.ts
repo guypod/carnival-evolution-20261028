@@ -19,6 +19,8 @@ export const FLIGHT_TIME = 0.9;
 /** The most time one frame may advance, so a stalled tab never skips ahead. */
 export const MAX_FRAME = 0.25;
 
+export type Aim = 'under' | 'over' | 'on';
+
 export interface SkeeState {
   phase: 'ready' | 'aiming' | 'rolling' | 'over';
   lane: number;
@@ -31,6 +33,8 @@ export interface SkeeState {
   ballsLeft: number;
   score: number;
   lastRoll: number | undefined;
+  /** Whether the last ball had too little power, too much, or reached the centre ring. */
+  lastAim: Aim | undefined;
   scoreRecorded: boolean;
   /** The last save threw. Only an explicit replay or exit tries again. */
   saveFailed: boolean;
@@ -46,6 +50,7 @@ export function createState(): SkeeState {
     ballsLeft: BALLS,
     score: 0,
     lastRoll: undefined,
+    lastAim: undefined,
     scoreRecorded: false,
     saveFailed: false,
   };
@@ -63,6 +68,19 @@ export function scoreRoll(lane: number, power: number): number {
   for (const ring of RINGS) if (off <= ring.within + 1e-9) return ring.points;
   return 0;
 }
+
+/** Whether `power` falls short of, overshoots or lands in `lane`'s centre ring. */
+export function aimFor(lane: number, power: number): Aim {
+  const off = power - TARGETS[clampLane(lane)];
+  if (Math.abs(off) <= RINGS[0].within + 1e-9) return 'on';
+  return off < 0 ? 'under' : 'over';
+}
+
+const AIM_TEXT: Record<Aim, string> = {
+  under: 'Too little power',
+  over: 'Too much power',
+  on: 'Right on target',
+};
 
 /** Where the ball is on the ramp, 0 to its landing point, `flight` of the way there. */
 export function ballDistance(power: number, flight: number): number {
@@ -105,6 +123,7 @@ function land(state: SkeeState): void {
   const points = scoreRoll(state.lane, state.power);
   state.score += points;
   state.lastRoll = points;
+  state.lastAim = aimFor(state.lane, state.power);
   state.ballsLeft -= 1;
   state.meterTime = 0;
   state.phase = state.ballsLeft === 0 ? 'over' : 'aiming';
@@ -181,6 +200,8 @@ const RAMP = { x: 220, y: 70, w: 360, h: 380 } as const;
 const LANE_W = RAMP.w / LANES;
 const METER = { x: 640, y: 120, w: 36, h: 280 } as const;
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
+/** The Roll button for pointer and touch players, clear of the ramp so a lane tap never rolls. */
+const ROLL_BUTTON = { x: 600, y: 418, w: 180, h: 60 } as const;
 
 export function laneCentre(lane: number): number {
   return RAMP.x + LANE_W * (lane + 0.5);
@@ -197,8 +218,26 @@ function rampY(distance: number): number {
   return RAMP.y + RAMP.h - distance * RAMP.h;
 }
 
-function onButton(x: number, y: number) {
-  return x >= BUTTON.x && x <= BUTTON.x + BUTTON.w && y >= BUTTON.y && y <= BUTTON.y + BUTTON.h;
+function inside(box: { x: number; y: number; w: number; h: number }, x: number, y: number) {
+  return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
+}
+
+export type PointerAction = { kind: 'begin' } | { kind: 'roll' } | { kind: 'lane'; lane: number };
+
+/**
+ * What a press at canvas (x, y) does: start or replay from the Start/Play again
+ * button, roll from the Roll button while aiming, or pick the lane under it.
+ * Undefined when the press lands on nothing, or the Roll button is pressed
+ * while a ball is still rolling.
+ */
+export function pointerAction(state: SkeeState, x: number, y: number): PointerAction | undefined {
+  if (state.phase === 'ready' || state.phase === 'over') {
+    return inside(BUTTON, x, y) ? { kind: 'begin' } : undefined;
+  }
+  if (inside(ROLL_BUTTON, x, y)) return state.phase === 'aiming' ? { kind: 'roll' } : undefined;
+  const lane = laneAt(x);
+  if (lane !== undefined && y >= RAMP.y && y <= RAMP.y + RAMP.h) return { kind: 'lane', lane };
+  return undefined;
 }
 
 function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
@@ -218,6 +257,11 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
   ctx.fillText(`Balls ${state.ballsLeft}`, 16, 60);
   ctx.fillText(`Total ${state.score}`, 16, 90);
   ctx.fillText(`Last roll ${state.lastRoll ?? '-'}`, 16, 120);
+  if (state.lastAim) {
+    ctx.fillStyle = state.lastAim === 'on' ? colors.accent : colors.muted;
+    ctx.font = canvasFont('small', 'bold');
+    ctx.fillText(AIM_TEXT[state.lastAim], 16, 145);
+  }
 
   ctx.fillStyle = colors.wood;
   ctx.fillRect(RAMP.x, RAMP.y, RAMP.w, RAMP.h);
@@ -282,9 +326,17 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
     ctx.fillStyle = colors.muted;
     ctx.font = canvasFont('small');
     ctx.textAlign = 'left';
-    ctx.fillText('Left/Right or click', 16, 420);
+    ctx.fillText('Left/Right or tap', 16, 420);
     ctx.fillText('a lane to aim.', 16, 440);
-    ctx.fillText('Space/Enter to roll.', 16, 460);
+    ctx.fillText('Space/Enter or Roll.', 16, 460);
+
+    const ready = state.phase === 'aiming';
+    ctx.fillStyle = ready ? colors.stripeA : colors.surface;
+    ctx.fillRect(ROLL_BUTTON.x, ROLL_BUTTON.y, ROLL_BUTTON.w, ROLL_BUTTON.h);
+    ctx.fillStyle = ready ? colors.text : colors.muted;
+    ctx.font = canvasFont('title', 'bold');
+    ctx.textAlign = 'center';
+    ctx.fillText('Roll', ROLL_BUTTON.x + ROLL_BUTTON.w / 2, ROLL_BUTTON.y + 41);
   } else {
     ctx.fillStyle = colors.background;
     ctx.globalAlpha = 0.85;
@@ -304,7 +356,11 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
         WIDTH / 2,
         250,
       );
-      ctx.fillText('Left/Right or click a lane to aim, Space or Enter to roll.', WIDTH / 2, 290);
+      ctx.fillText(
+        'Tap a lane or use Left/Right to aim. Press Roll, Space or Enter to roll.',
+        WIDTH / 2,
+        290,
+      );
     } else if (state.saveFailed) {
       ctx.fillStyle = colors.danger;
       ctx.fillText('Your score could not be saved.', WIDTH / 2, 230);
@@ -341,15 +397,16 @@ export const skeeBall: CarnivalGame = {
     };
 
     const onDown = (event: PointerEvent) => {
+      if (!event.isPrimary || event.button !== 0) return;
       const rect = canvas.getBoundingClientRect();
       const x = ((event.clientX - rect.left) / rect.width) * WIDTH;
       const y = ((event.clientY - rect.top) / rect.height) * HEIGHT;
-      if (state.phase === 'ready' || state.phase === 'over') {
-        if (onButton(x, y)) begin();
-        return;
-      }
-      const lane = laneAt(x);
-      if (lane !== undefined && y >= RAMP.y) setLane(state, lane);
+      const action = pointerAction(state, x, y);
+      if (!action) return;
+      event.preventDefault();
+      if (action.kind === 'begin') begin();
+      else if (action.kind === 'roll') launch(state);
+      else setLane(state, action.lane);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return;
