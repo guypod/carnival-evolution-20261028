@@ -9,6 +9,14 @@ import {
   toggleGuide,
   type GuideState,
 } from './visitor-guide';
+import {
+  CLOSED_HELP,
+  HELP_CONTROLS,
+  escapeHelp,
+  helpToggleLabel,
+  toggleHelp,
+  type HelpState,
+} from './midway-help';
 import { boothScoresText } from './booth-scores';
 import { passportStamps, passportSummary, stampText } from './passport';
 import {
@@ -88,9 +96,19 @@ function renderMidway() {
         <a href="https://tessl.io/devcon?utm_source=carnival&amp;utm_medium=midway-credit&amp;utm_campaign=tessl-carnival" target="_blank" rel="noopener">AI DevCon NYC</a>
       </p>
       <div class="midway-panels">
-        <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
-          🗺️ Guide
-        </button>
+        <div class="midway-toggles">
+          <button type="button" class="help-toggle" aria-expanded="false" aria-controls="midway-help-panel">
+            ❔ Help
+          </button>
+          <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
+            🗺️ Guide
+          </button>
+        </div>
+        <section class="midway-help-panel" id="midway-help-panel" aria-labelledby="midway-help-title" hidden>
+          <h2 id="midway-help-title">Controls</h2>
+          <dl></dl>
+          <button type="button" class="help-to-map">Back to the map</button>
+        </section>
         <div class="visitor-guide" id="visitor-guide" role="region" aria-label="Visitor guide" hidden>
           <nav class="guide-destinations" aria-label="Destinations">
             <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
@@ -166,8 +184,10 @@ function renderMidway() {
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
   const stopGuide = setUpGuide();
+  const stopHelp = setUpHelp();
   stop = () => {
     discovery.stop();
+    stopHelp();
     stopGuide();
     midway.stop();
   };
@@ -274,6 +294,53 @@ function setUpGuide(): () => void {
     show(result.state);
     if (result.restoreFocus) toggle.focus();
   });
+}
+
+// The controls help starts closed. Escape closes it before anything else sees
+// the key, and focus goes back to its button when it was inside the panel.
+// "Back to the map" closes it and focuses the map, so the keys walk again.
+function setUpHelp(): () => void {
+  const toggle = app.querySelector<HTMLButtonElement>('.help-toggle')!;
+  const panel = app.querySelector<HTMLElement>('.midway-help-panel')!;
+  const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
+  const list = panel.querySelector('dl')!;
+  for (const control of HELP_CONTROLS) {
+    const keys = document.createElement('dt');
+    for (const key of control.keys) {
+      const kbd = document.createElement('kbd');
+      kbd.textContent = key;
+      keys.append(kbd, ' ');
+    }
+    const action = document.createElement('dd');
+    action.textContent = control.action;
+    list.append(keys, action);
+  }
+
+  let state = CLOSED_HELP;
+  const show = (next: HelpState) => {
+    state = next;
+    panel.hidden = !state.open;
+    toggle.setAttribute('aria-expanded', String(state.open));
+    toggle.setAttribute('aria-label', helpToggleLabel(state));
+  };
+  show(state);
+  toggle.addEventListener('click', () => show(toggleHelp(state)));
+  panel.querySelector('.help-to-map')!.addEventListener('click', () => {
+    show(CLOSED_HELP);
+    map.focus();
+  });
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    const result = escapeHelp(state, panel.contains(document.activeElement));
+    if (!result.handled) return;
+    // One Escape closes one panel: the guide waits for the next press.
+    event.stopImmediatePropagation();
+    show(result.state);
+    if (result.restoreFocus) toggle.focus();
+  };
+  window.addEventListener('keydown', onKeyDown, true);
+  return () => window.removeEventListener('keydown', onKeyDown, true);
 }
 
 function renderPassport(passport: HTMLDetailsElement) {

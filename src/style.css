@@ -163,6 +163,12 @@ kbd {
   max-height: calc(100% - 32px);
 }
 
+.midway-toggles {
+  display: flex;
+  gap: 8px;
+}
+
+.help-toggle,
 .guide-toggle {
   padding: 8px 16px;
   border: 2px solid var(--color-accent);
@@ -174,16 +180,20 @@ kbd {
   cursor: pointer;
 }
 
+.help-toggle[aria-expanded='true'],
 .guide-toggle[aria-expanded='true'] {
   background: var(--color-accent);
   color: var(--color-background);
 }
 
 /* A visible close mark while the guide is open; the button's label says it too. */
+.help-toggle[aria-expanded='true']::after,
 .guide-toggle[aria-expanded='true']::after {
   content: ' ✕';
 }
 
+.help-toggle:hover,
+.help-toggle:focus-visible,
 .guide-toggle:hover,
 .guide-toggle:focus-visible {
   outline: 3px solid var(--color-text);
@@ -209,6 +219,63 @@ kbd {
 
 .visitor-guide[hidden] {
   display: none;
+}
+
+/* The controls help: a short list of keys, bounded and scrollable like the
+   guide so it fits small screens. */
+.midway-help-panel {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: min(280px, 100%);
+  max-height: 50%;
+  padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  font-size: 14px;
+}
+
+.midway-help-panel[hidden] {
+  display: none;
+}
+
+.midway-help-panel h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.midway-help-panel dl {
+  margin: 0 0 8px;
+}
+
+.midway-help-panel dt {
+  margin-top: 6px;
+}
+
+.midway-help-panel dd {
+  margin: 2px 0 0;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+.help-to-map {
+  width: 100%;
+  padding: 0.35rem 0.7rem;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.help-to-map:hover,
+.help-to-map:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
 }
 
 .guide-destinations {
@@ -437,8 +504,13 @@ kbd {
     gap: 6px;
   }
 
+  .help-toggle,
   .guide-toggle {
     padding: 4px 12px;
+  }
+
+  .midway-help-panel {
+    padding: 6px 10px;
   }
 
   .visitor-guide {
