@@ -5,6 +5,7 @@ import {
   countText,
   directoryEntries,
   emptyText,
+  favoriteLabel,
   filterDirectory,
 } from './booth-directory';
 
@@ -83,5 +84,43 @@ describe('countText and emptyText', () => {
     expect(emptyText(0, 3, '  zzz ', 'all')).toBe('No booths match "zzz".');
     expect(emptyText(0, 3, 'zzz', 'played')).toBe('No played booths match "zzz".');
     expect(emptyText(0, 3, '', 'unplayed')).toBe('No unplayed booths right now.');
+  });
+});
+
+describe('favorites in the directory', () => {
+  const entries = directoryEntries(games, scores({ 'ring-toss': 3 }), [
+    'ring-toss',
+    'balloon-darts',
+    'not-a-booth',
+  ]);
+
+  it('marks registered favorites and ignores unknown ids', () => {
+    expect(entries.map((e) => e.favorite)).toEqual([false, true, true]);
+    expect(entries.map((e) => e.gameId)).not.toContain('not-a-booth');
+    expect(favoriteLabel(entries[0])).toBe('Add Water Cannon to favorites');
+    expect(favoriteLabel(entries[1])).toBe('Remove Ring Toss from favorites');
+  });
+
+  it('combines the favorites filter with search and status', () => {
+    expect(filterDirectory(entries, '', 'all', true).map((e) => e.gameId)).toEqual([
+      'ring-toss',
+      'balloon-darts',
+    ]);
+    expect(filterDirectory(entries, '', 'unplayed', true).map((e) => e.gameId)).toEqual([
+      'balloon-darts',
+    ]);
+    expect(filterDirectory(entries, 'ring', 'all', true).map((e) => e.gameId)).toEqual([
+      'ring-toss',
+    ]);
+    expect(filterDirectory(entries, 'water', 'all', true)).toEqual([]);
+    expect(filterDirectory(entries, '', 'all')).toHaveLength(3);
+  });
+
+  it('explains an empty favorites view', () => {
+    expect(emptyText(0, 3, '', 'all', true, 0)).toMatch(/^No favorites yet/);
+    expect(emptyText(0, 3, 'water', 'played', true, 2)).toBe(
+      'No played favorite booths match "water".',
+    );
+    expect(emptyText(0, 3, '', 'all', false, 2)).toBe('No booths right now.');
   });
 });
