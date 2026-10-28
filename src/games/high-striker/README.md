@@ -48,7 +48,7 @@ it, the error goes to the console and **Play again** still works.
 
 - `game.ts`: the game logic (`createState`, `markerPosition`,
   `markerDirection`, `signedOffset`, `timingFor`, `zoneFor`, `scoreFor`,
-  `lastStrike`, `feedback`, `bestSwing`, `breakdown`, `strike`, `nextSwing`, `step`, `press`, `puckHeight`, `total`,
+  `lastStrike`, `feedback`, `bestSwing`, `breakdown`, `breakdownRow`, `strike`, `nextSwing`, `step`, `press`, `puckHeight`, `total`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isActionKey`, `listen`) and
   the `highStriker` entry the midway registers.
 - `game.test.ts`: tests for the game logic.

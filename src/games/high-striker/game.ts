@@ -294,9 +294,18 @@ export function listen(
   };
 }
 
-const BUTTON = { x: WIDTH - 280, y: HEIGHT - 90, w: 240, h: 52 } as const;
-const TOWER = { x: 140, top: 90, bottom: HEIGHT - 60, w: 40 } as const;
-const METER = { x: 300, y: 300, w: 440, h: 36 } as const;
+export const BUTTON = { x: WIDTH - 280, y: HEIGHT - 90, w: 240, h: 52 } as const;
+export const TOWER = { x: 140, top: 90, bottom: HEIGHT - 60, w: 40 } as const;
+export const METER = { x: 300, y: 300, w: 440, h: 36 } as const;
+
+/**
+ * Where each end-screen breakdown line is drawn: right-aligned at x, with its
+ * baseline at y, in the small font. The lines sit left of the replay button,
+ * below the zones legend and above the tower's base, so nothing covers them.
+ */
+export function breakdownRow(index: number): { x: number; y: number } {
+  return { x: BUTTON.x - 16, y: METER.y + METER.h + 50 + index * 24 };
+}
 
 function onButton(x: number, y: number) {
   return x >= BUTTON.x && x <= BUTTON.x + BUTTON.w && y >= BUTTON.y && y <= BUTTON.y + BUTTON.h;
@@ -398,11 +407,14 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   ctx.fillText(message, mid, 230);
 
   if (state.phase === 'over') {
-    ctx.font = canvasFont('body');
+    ctx.font = canvasFont('small');
+    ctx.textAlign = 'right';
     breakdown(state).forEach((line, i) => {
+      const row = breakdownRow(i);
       ctx.fillStyle = line.endsWith('(best)') ? colors.accent : colors.text;
-      ctx.fillText(line, mid, METER.y + METER.h + 70 + i * 30);
+      ctx.fillText(line, row.x, row.y);
     });
+    ctx.textAlign = 'center';
   }
 
   const label = buttonLabel(state);

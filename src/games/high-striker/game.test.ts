@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { theme } from '../../carnival/theme';
 import {
+  BUTTON,
+  METER,
+  TOWER,
   FLIGHT_TIME,
   TIMING_LABELS,
   MARKER_PERIOD,
   SWINGS,
   bestSwing,
   breakdown,
+  breakdownRow,
   buttonLabel,
   createState,
   feedback,
@@ -271,6 +276,23 @@ describe('high striker timing feedback', () => {
       'Swing 3: 10 points, Early',
     ]);
     expect(total(state)).toBe(185);
+  });
+
+  it('keeps every breakdown line clear of the replay button and inside the canvas', () => {
+    const size = theme.font.small;
+    const legendBaseline = METER.y + METER.h + 26;
+    let previous = legendBaseline;
+    for (let i = 0; i < SWINGS; i++) {
+      const row = breakdownRow(i);
+      // Right-aligned at row.x, so the whole line ends left of the button.
+      expect(row.x).toBeLessThan(BUTTON.x);
+      // Each line starts a full line below the one above it, the legend first.
+      expect(row.y - size).toBeGreaterThanOrEqual(previous);
+      // Descenders stay above the tower's base and the bottom of the canvas.
+      expect(row.y + size * 0.3).toBeLessThan(TOWER.bottom);
+      expect(row.y).toBeLessThan(theme.canvas.height);
+      previous = row.y;
+    }
   });
 
   it('marks the first of tied swings as best', () => {
