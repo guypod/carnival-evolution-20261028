@@ -9,6 +9,7 @@ import {
   postcardColors,
   postcardContent,
   postcardExporter,
+  postcardMarkLayout,
   type PostcardVisit,
 } from './postcard';
 
@@ -96,6 +97,7 @@ describe('postcardContent', () => {
         '2 of 9 booths stamped',
         'Sent on a sunny day',
       ],
+      marks: [],
       scene: 'day',
       filename: 'tessl-carnival-postcard-day.png',
     });
@@ -154,6 +156,13 @@ describe('drawPostcard', () => {
       font: '',
       textAlign: 'start',
       textBaseline: 'alphabetic',
+      beginPath: () => {},
+      arc: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      fill: () => {},
+      stroke: () => {},
     } as unknown as Parameters<typeof drawPostcard>[0];
     const content = postcardContent({ ...visit, name: 'Ada' });
     drawPostcard(ctx, content);
@@ -235,5 +244,76 @@ describe('postcardExporter', () => {
     exporter.export('day.png');
     expect(io.report).toHaveBeenLastCalledWith(POSTCARD_MESSAGES.failed);
     expect(io.download).not.toHaveBeenCalled();
+  });
+});
+
+const nine = Array.from({ length: 9 }, (_, i) => ({ name: `Booth ${i + 1}`, earned: false }));
+const three = ['Carousel', 'Ferris Wheel', 'Fountain'].map((name) => ({ name, earned: false }));
+
+describe('postcard marks', () => {
+  it('lists nine stamps then three emblems, earned only where earned', () => {
+    const stamps = nine.map((s, i) => ({ ...s, earned: i < 2 }));
+    const emblems = three.map((e, i) => ({ ...e, earned: i === 1 }));
+    const { marks } = postcardContent({ ...visit, stamps, emblems });
+    expect(marks.map((m) => m.kind)).toEqual([
+      ...Array(9).fill('stamp'),
+      ...Array(3).fill('emblem'),
+    ]);
+    expect(marks.filter((m) => m.earned).map((m) => m.name)).toEqual([
+      'Booth 1',
+      'Booth 2',
+      'Ferris Wheel',
+    ]);
+    expect(marks[2].label).toBe('Booth 3 booth: not stamped yet');
+    expect(marks[10].label).toBe('Ferris Wheel landmark: found');
+  });
+
+  it('shows no earned marks at zero progress and all at full progress', () => {
+    expect(
+      postcardContent({ ...visit, stamps: nine, emblems: three }).marks.some((m) => m.earned),
+    ).toBe(false);
+    const full = postcardContent({
+      ...visit,
+      stamps: nine.map((s) => ({ ...s, earned: true })),
+      emblems: three.map((e) => ({ ...e, earned: true })),
+    });
+    expect(full.marks.every((m) => m.earned)).toBe(true);
+  });
+
+  it('lays twelve marks out evenly and centred inside the card', () => {
+    const spots = postcardMarkLayout(12, 300, 280);
+    expect(spots[0].x + spots[11].x).toBe(600);
+    expect(spots[0].x).toBeGreaterThan(40 + 24);
+    expect(spots[11].x).toBeLessThan(560 - 24);
+  });
+
+  it('draws every stamp as a circle, and fills only the earned ones', () => {
+    const arcs: number[][] = [];
+    let fills = 0;
+    const noop = () => {};
+    const ctx = {
+      createLinearGradient: () => ({ addColorStop: noop }) as unknown as CanvasGradient,
+      fillRect: noop,
+      strokeRect: noop,
+      fillText: noop,
+      setTransform: noop,
+      beginPath: noop,
+      arc: (...args: number[]) => void arcs.push(args),
+      moveTo: noop,
+      lineTo: noop,
+      closePath: noop,
+      fill: () => void fills++,
+      stroke: noop,
+    } as unknown as Parameters<typeof drawPostcard>[0];
+    const draw = (earned: number) => {
+      arcs.length = 0;
+      fills = 0;
+      const stamps = nine.map((s, i) => ({ ...s, earned: i < earned }));
+      drawPostcard(ctx, postcardContent({ ...visit, stamps, emblems: three }));
+      return { arcs: arcs.length, fills };
+    };
+    // Each earned mark fills its shape and its star.
+    expect(draw(0)).toEqual({ arcs: 9, fills: 0 });
+    expect(draw(3)).toEqual({ arcs: 9, fills: 6 });
   });
 });
