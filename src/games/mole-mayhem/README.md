@@ -1,0 +1,36 @@
+# Mole Mayhem
+
+Whack the moles as they pop out of six numbered holes. You have 30 seconds.
+
+## How to play
+
+- Press the **Start** button (or Space or Enter). The 30 second timer only
+  starts then.
+- One mole is up at a time. Click or tap it, or press the key for its hole:
+  `1` `2` `3` on the top row and `4` `5` `6` on the bottom row.
+- A mole stays up for 1.2 seconds, then ducks away. The next mole pops up a
+  quarter of a second after the last one leaves or is whacked.
+- The top of the screen shows the time left, your score, and your streak with
+  its bonus.
+- When time runs out the round ends. Press **Play again** (or Space or Enter)
+  for a fresh round. Escape takes you back to the midway.
+
+## Scoring
+
+- A hit is worth 10 points times your bonus.
+- The bonus grows with hits in a row: the first hit is x1, the second x2, and
+  every hit after that x3.
+- Whacking an empty hole is a miss: it resets your streak to 0 but never takes
+  points away. A whacked mole can't be hit twice, and tapping it again doesn't
+  count as a miss.
+
+The end screen shows your score, hits and misses. Your final score is saved to
+the carnival's score board once, when the round ends.
+
+## Files
+
+- `game.ts`: the game logic (`createState`, `startRound`, `whack`, `step`,
+  `takeFinalScore`, `seededRng`, `holeForKey`, `holeAt`) and the `moleMayhem`
+  entry the midway registers. `createState` takes an rng so tests can choose
+  where moles pop.
+- `game.test.ts`: tests for the game logic.
