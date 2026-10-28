@@ -1268,7 +1268,9 @@ kbd {
   font-size: 12px;
 }
 
-.midway-discovery .walk-there {
+.midway-discovery .walk-there,
+.midway-discovery .read-story,
+.landmark-story .story-close {
   margin-left: 4px;
   padding: 0 6px;
   border: 1px solid var(--color-accent);
@@ -1359,6 +1361,10 @@ kbd {
 }
 
 .midway-discovery .walk-there:hover,
+.midway-discovery .read-story:hover,
+.midway-discovery .read-story:focus-visible,
+.landmark-story .story-close:hover,
+.landmark-story .story-close:focus-visible,
 .midway-discovery .walk-there:focus-visible,
 .discovery-hint:hover,
 .discovery-hint:focus-visible {
@@ -1494,4 +1500,51 @@ kbd {
 
 .booth-card .prompt[hidden] {
   display: none;
+}
+
+.midway-discovery .story-locked {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.landmark-story {
+  position: relative;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  line-height: 1.4;
+}
+
+.landmark-story[hidden] {
+  display: none;
+}
+
+.landmark-story .badge {
+  float: right;
+  font-size: 28px;
+}
+
+.landmark-story h3 {
+  margin: 0 0 6px;
+  color: var(--color-accent);
+  font-size: 15px;
+}
+
+.landmark-story p {
+  margin: 0 0 6px;
+}
+
+.landmark-story .revisit {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.landmark-story .story-close {
+  margin: 4px 0 0;
+}
+
+.landmark-story h3:focus {
+  outline: none;
 }

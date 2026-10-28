@@ -94,6 +94,15 @@ import {
   type LandmarkId,
 } from './midway/discovery';
 import {
+  CLOSED_STORY,
+  closeStory,
+  escapeStory,
+  openStory,
+  storyStatus,
+  unlockedStory,
+  type StoryState,
+} from './landmark-stories';
+import {
   motionPreference,
   motionToggleState,
   nextMotionPreference,
@@ -195,6 +204,13 @@ function renderMidway() {
             <p class="discovery-progress" role="status"></p>
             <ul></ul>
             <p class="discovery-clue"></p>
+            <section class="landmark-story" id="landmark-story" aria-labelledby="landmark-story-title" hidden>
+              <span class="badge" aria-hidden="true"></span>
+              <h3 id="landmark-story-title" tabindex="-1"></h3>
+              <div class="lines"></div>
+              <p class="revisit"></p>
+              <button type="button" class="story-close">Back to the trail</button>
+            </section>
             <p class="note">Optional, and separate from scores and stamps. Kept in this browser only.</p>
           </section>
           <details class="midway-passport">
@@ -358,9 +374,66 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
       button.setAttribute('aria-label', `Walk to the ${landmark.name}`);
       button.addEventListener('click', () => guideTo(landmark));
       item.append(button);
+      if (unlockedStory(landmark.id, found)) {
+        const read = document.createElement('button');
+        read.type = 'button';
+        read.className = 'read-story';
+        read.dataset.landmark = landmark.id;
+        read.textContent = '📖 Story';
+        read.setAttribute('aria-label', storyStatus(landmark.name, landmark.id, found));
+        read.setAttribute('aria-controls', 'landmark-story');
+        read.addEventListener('click', () => showStory(openStory(story, landmark.id, found)));
+        item.append(' ', read);
+      } else {
+        const locked = document.createElement('span');
+        locked.className = 'story-locked';
+        locked.textContent = storyStatus(landmark.name, landmark.id, found);
+        item.append(' ', locked);
+      }
       list.append(item);
     }
   };
+
+  // A found landmark's story card, inside the guide. Back to the trail and
+  // Escape close it and put focus back on its Story button.
+  const card = section.querySelector<HTMLElement>('.landmark-story')!;
+  let story: StoryState = CLOSED_STORY;
+  const showStory = (next: StoryState) => {
+    const opening = next.open !== undefined && next.open !== story.open;
+    story = next;
+    const open = story.open === undefined ? undefined : unlockedStory(story.open, found);
+    card.hidden = !open;
+    if (!open) return;
+    card.querySelector('.badge')!.textContent = open.badge;
+    card.querySelector('h3')!.textContent = open.title;
+    const lines = card.querySelector('.lines')!;
+    lines.replaceChildren();
+    for (const text of open.lines) {
+      const p = document.createElement('p');
+      p.textContent = text;
+      lines.append(p);
+    }
+    card.querySelector('.revisit')!.textContent = open.revisit;
+    if (opening) card.querySelector<HTMLElement>('h3')!.focus();
+  };
+  const closeCard = () => {
+    const id = story.open;
+    showStory(closeStory());
+    if (id) section.querySelector<HTMLElement>(`.read-story[data-landmark="${id}"]`)?.focus();
+  };
+  const onClose = () => closeCard();
+  card.querySelector('.story-close')!.addEventListener('click', onClose);
+  const onKeyDown = (event: KeyboardEvent) => {
+    // A card left open in a closed guide waits: Escape goes to what is showing.
+    if (event.key !== 'Escape' || section.closest<HTMLElement>('.visitor-guide')?.hidden) return;
+    const result = escapeStory(story, card.contains(document.activeElement));
+    if (!result.handled) return;
+    // One Escape closes one panel: the guide waits for the next press.
+    event.stopImmediatePropagation();
+    if (result.restoreFocus) closeCard();
+    else showStory(result.state);
+  };
+  window.addEventListener('keydown', onKeyDown, true);
   render();
 
   return {
@@ -379,6 +452,7 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
     stop() {
       window.clearTimeout(hideToast);
       hint.removeEventListener('click', onHint);
+      window.removeEventListener('keydown', onKeyDown, true);
     },
   };
 }
