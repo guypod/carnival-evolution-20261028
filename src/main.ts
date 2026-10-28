@@ -185,6 +185,7 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
   const section = app.querySelector<HTMLElement>('.midway-discovery')!;
   const toast = app.querySelector<HTMLElement>('.discovery-toast')!;
   const hint = app.querySelector<HTMLButtonElement>('.discovery-hint')!;
+  const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
   let found = discoveryStore.load();
   let hideToast: number | undefined;
 
@@ -195,8 +196,12 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
     hideToast = window.setTimeout(() => (toast.hidden = true), 4000);
   };
 
+  // Focus moves to the map once the walk starts, so a movement key can still
+  // cancel it: the midway ignores keys while a button has focus.
   const guideTo = (landmark: Landmark) => {
-    if (!walkTo(landmark.id)) {
+    if (walkTo(landmark.id)) {
+      map.focus();
+    } else {
       showToast(`No open path to the ${landmark.name} from here. Try walking closer yourself.`);
     }
   };
