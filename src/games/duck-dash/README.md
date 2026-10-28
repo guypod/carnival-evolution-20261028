@@ -23,4 +23,7 @@ working for that control.
 - A reed that reaches the duck in its lane: **-5**, never below 0.
 - Each object counts once. The duck flashes `+10` or `Ouch! -5` briefly.
 - Your final score is saved to the carnival's score board once, when the round
-  ends.
+  ends. If the save fails (for example, browser storage is full), the result
+  screen says `Your score could not be saved.` and the game tries once more
+  when you press Play again or leave the booth. If that also fails, the score
+  is not saved.

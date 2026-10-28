@@ -29,6 +29,8 @@ export interface RiverObject {
   progress: number;
   /** Set once the object has met the duck's row, so it counts once. */
   resolved: boolean;
+  /** Set when the object resolved in the duck's lane, so it stops drawing. */
+  caught: boolean;
 }
 
 export interface DuckState {
@@ -44,6 +46,8 @@ export interface DuckState {
   /** Brief feedback after the last collision. */
   flash: { kind: 'star' | 'reed'; left: number } | undefined;
   scoreRecorded: boolean;
+  /** The last save threw. Only an explicit replay or exit tries again. */
+  saveFailed: boolean;
   rng: Rng;
 }
 
@@ -72,6 +76,7 @@ export function createState(rng: Rng = Math.random): DuckState {
     hits: 0,
     flash: undefined,
     scoreRecorded: false,
+    saveFailed: false,
     rng,
   };
 }
@@ -121,6 +126,7 @@ export function spawnRow(rng: Rng): { lane: number; kind: 'star' | 'reed' }[] {
 function collide(state: DuckState, object: RiverObject): void {
   object.resolved = true;
   if (object.lane !== state.lane) return;
+  object.caught = true;
   if (object.kind === 'star') {
     state.score += STAR_POINTS;
     state.collected += 1;
@@ -145,7 +151,14 @@ function stepSlice(state: DuckState, dt: number): void {
   state.spawnIn -= dt;
   if (state.spawnIn <= 0 && state.timeLeft > 0) {
     for (const { lane, kind } of spawnRow(state.rng)) {
-      state.objects.push({ id: state.nextId++, lane, kind, progress: 0, resolved: false });
+      state.objects.push({
+        id: state.nextId++,
+        lane,
+        kind,
+        progress: 0,
+        resolved: false,
+        caught: false,
+      });
     }
     state.spawnIn += SPAWN_GAP;
   }
@@ -167,25 +180,27 @@ export function step(state: DuckState, dt: number): void {
 }
 
 /**
- * The round's final score the first time it is asked for after the round ends,
- * and undefined before that and every time after, so the score is saved once.
+ * Hands the final score to `record` once the round is over. The score counts as
+ * saved only after `record` returns. A failed save is reported, not thrown, and
+ * the frame loop does not try again; pass `retry` from an explicit replay or
+ * exit to try once more.
  */
-export function takeFinalScore(state: DuckState): number | undefined {
+export function saveFinalScore(
+  state: DuckState,
+  record: (score: number) => void,
+  retry = false,
+): unknown {
   if (state.phase !== 'over' || state.scoreRecorded) return undefined;
-  state.scoreRecorded = true;
-  return state.score;
-}
-
-/** Hands the final score to `record` once. A failed save is reported, not thrown. */
-export function saveFinalScore(state: DuckState, record: (score: number) => void): unknown {
-  const score = takeFinalScore(state);
-  if (score === undefined) return undefined;
+  if (state.saveFailed && !retry) return undefined;
   try {
-    record(score);
+    record(state.score);
   } catch (error) {
-    console.error('Duck Dash could not save the score', error);
+    if (!state.saveFailed) console.error('Duck Dash could not save the score', error);
+    state.saveFailed = true;
     return error;
   }
+  state.scoreRecorded = true;
+  state.saveFailed = false;
   return undefined;
 }
 
@@ -209,7 +224,7 @@ export function frameClock(now: number) {
 
 /**
  * Starts a round from the ready or end screen. A finished round's score is
- * saved first, synchronously, so replaying can never discard it.
+ * saved first, synchronously, retrying once if an earlier save failed.
  */
 export function beginRound(
   state: DuckState,
@@ -218,7 +233,7 @@ export function beginRound(
   record: (score: number) => void,
   fresh: () => DuckState = createState,
 ): DuckState {
-  saveFinalScore(state, record);
+  saveFinalScore(state, record, true);
   const next = state.phase === 'over' ? fresh() : state;
   if (startRound(next)) clock.resume(now);
   return next;
@@ -345,7 +360,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
   for (const object of state.objects) {
     const x = laneCentre(object.lane);
     const y = TOP_Y + (DUCK_Y - TOP_Y) * object.progress;
-    if (object.resolved && object.lane === state.lane) continue;
+    if (object.caught) continue;
     if (object.kind === 'star') drawStar(ctx, x, y, 20);
     else drawReed(ctx, x, y);
   }
@@ -397,6 +412,10 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
       ctx.fillText('Left/Right or A/D, or tap a lane button.', WIDTH / 2, 290);
     } else {
       ctx.fillText(`${state.collected} stars collected, ${state.hits} reeds hit.`, WIDTH / 2, 230);
+      if (state.saveFailed) {
+        ctx.fillStyle = colors.danger;
+        ctx.fillText('Your score could not be saved.', WIDTH / 2, 270);
+      }
     }
     ctx.fillStyle = colors.stripeA;
     ctx.fillRect(BUTTON.x, BUTTON.y, BUTTON.w, BUTTON.h);
@@ -471,7 +490,7 @@ export const duckDash: CarnivalGame = {
 
     return () => {
       cancelAnimationFrame(frame);
-      saveFinalScore(state, record);
+      saveFinalScore(state, record, true);
       canvas.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('visibilitychange', onVisibility);

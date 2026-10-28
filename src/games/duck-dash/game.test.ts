@@ -35,7 +35,7 @@ function playing(seed = 1): DuckState {
 function withObject(kind: 'star' | 'reed', lane: number): DuckState {
   const state = playing();
   state.spawnIn = 100;
-  state.objects = [{ id: 1, lane, kind, progress: 0.99, resolved: false }];
+  state.objects = [{ id: 1, lane, kind, progress: 0.99, resolved: false, caught: false }];
   return state;
 }
 
@@ -156,6 +156,54 @@ describe('duck dash', () => {
     });
     expect(error).toBeInstanceOf(Error);
     spy.mockRestore();
+  });
+
+  it('saves exactly once after a failed save, retrying only on replay or exit', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state = playing();
+    state.score = 30;
+    state.phase = 'over';
+    let full = true;
+    const record = vi.fn((score: number) => {
+      if (full) throw new Error(`full ${score}`);
+    });
+    expect(saveFinalScore(state, record)).toBeInstanceOf(Error);
+    expect(state.saveFailed).toBe(true);
+    expect(state.scoreRecorded).toBe(false);
+    for (let i = 0; i < 5; i++) saveFinalScore(state, record);
+    expect(record).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledOnce();
+    full = false;
+    const next = beginRound(state, frameClock(0), 0, record, () => createState(seededRng(3)));
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(record).toHaveBeenLastCalledWith(30);
+    expect(state.scoreRecorded).toBe(true);
+    expect(state.saveFailed).toBe(false);
+    expect(next.phase).toBe('playing');
+    saveFinalScore(state, record, true);
+    expect(record).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it('keeps a resolved object caught or missed when the duck changes lanes', () => {
+    const state = withObject('star', 1);
+    state.objects.push({
+      id: 2,
+      lane: 0,
+      kind: 'reed',
+      progress: 0.99,
+      resolved: false,
+      caught: false,
+    });
+    step(state, 0.1);
+    const [star, reed] = state.objects;
+    expect(star.resolved && star.caught).toBe(true);
+    expect(reed.resolved && !reed.caught).toBe(true);
+    setLane(state, 0);
+    step(state, 0.05);
+    expect(star.caught).toBe(true);
+    expect(reed.caught).toBe(false);
+    expect(state.hits).toBe(0);
   });
 
   it('maps keys, and leaves them alone when a page control has focus', () => {
