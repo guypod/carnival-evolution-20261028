@@ -73,6 +73,12 @@ focus back on the button. The midway's keys never fire while a link, button or
 field has focus, so to walk again with the keyboard, Tab (or Shift+Tab) to the
 map, or click it. The map shows an outline while it has focus.
 
+Each landmark you find on the guide's discovery trail unlocks a short story
+card: press **📖 Story** next to it. Landmarks you haven't found yet say what
+to find to unlock theirs. **Back to the trail** or Escape closes the card and
+puts focus back on its button. Stories never change your finds, scores or
+stamps.
+
 The guide's **Souvenir Postcard** makes a card from your visit: the landmarks
 you found, your stamped booths, the current day or evening scene and an
 optional name. Download it as a PNG made in your browser; the page says when the download starts. Nothing is uploaded,
