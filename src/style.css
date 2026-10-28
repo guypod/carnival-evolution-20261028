@@ -1221,7 +1221,8 @@ kbd {
 }
 
 .scene-toggle,
-.motion-toggle {
+.motion-toggle,
+.sound-toggle {
   font: inherit;
   margin: 0.5rem 0;
   padding: 0.35rem 0.7rem;
@@ -1232,14 +1233,21 @@ kbd {
   cursor: pointer;
 }
 
-.visitor-guide #motion-note {
+.sound-volume {
+  display: block;
+  margin: 0 0 0.5rem;
+}
+
+.visitor-guide #motion-note,
+.visitor-guide #sound-note {
   margin: 0 0 0.5rem;
   font-size: 0.85em;
   opacity: 0.85;
 }
 
 .scene-toggle[aria-pressed='true'],
-.motion-toggle[aria-pressed='true'] {
+.motion-toggle[aria-pressed='true'],
+.sound-toggle[aria-pressed='true'] {
   background: var(--color-accent);
   color: var(--color-background);
 }
