@@ -85,8 +85,10 @@ describe('ring toss', () => {
   });
 
   it('gives higher shelves more points', () => {
-    const points = SHELVES.map((s) => s.points);
-    expect(points).toEqual([...points].sort((a, b) => b - a));
+    const topToBottom = [...SHELVES].sort((a, b) => a.y - b.y);
+    for (let i = 1; i < topToBottom.length; i++) {
+      expect(topToBottom[i - 1].points).toBeGreaterThan(topToBottom[i].points);
+    }
   });
 
   it('ends the round when the last ring lands', () => {
