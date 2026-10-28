@@ -365,6 +365,10 @@ describe('createCircuitHistory', () => {
       '{"runs":[],"best":"9"}',
       '{"runs":[{"startedAt":1,"completedAt":1e20,"legs":[],"total":0}]}',
       '{"runs":[{"startedAt":5,"completedAt":4,"legs":[],"total":0}]}',
+      '{"runs":[{"startedAt":1,"completedAt":2,"legs":[],"total":0}]}',
+      '{"runs":[{"startedAt":1,"completedAt":2,"legs":[{"gameId":"ring-toss","score":1}],"total":5}]}',
+      '{"runs":[{"startedAt":1,"completedAt":2,"legs":[{"gameId":"nope","score":1}],"total":1}]}',
+      '{"runs":[{"startedAt":1,"completedAt":2,"legs":[{"gameId":"ring-toss","score":1},{"gameId":"ring-toss","score":1}],"total":2}]}',
     ]) {
       const s = setup();
       s.storage.map.set(CIRCUIT_HISTORY_KEY, raw);
@@ -413,5 +417,29 @@ describe('createCircuitHistory', () => {
     expect(shown.total).toBe(6);
     expect(shown.completedAt).toBe(done.completedAt);
     expect(shown.finished).toBe(true);
+  });
+
+  it('never lets a saved run missing a leg finish the circuit in progress', () => {
+    const s = setup();
+    s.tick();
+    const startedAt = s.circuit.start()!;
+    s.tick();
+    s.board.record('ring-toss', 4);
+    const progress = circuitProgress(games, startedAt, s.board.top);
+    const partial = {
+      runs: [
+        {
+          startedAt,
+          completedAt: startedAt + 1,
+          legs: [{ gameId: 'ring-toss', score: 4 }],
+          total: 4,
+        },
+      ],
+      best: 4,
+    };
+    const shown = savedProgress(progress, partial);
+    expect(shown).toEqual(progress);
+    expect(shown.finished).toBe(false);
+    expect(shown.next?.gameId).toBe('balloon-darts');
   });
 });

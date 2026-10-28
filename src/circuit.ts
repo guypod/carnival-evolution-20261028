@@ -187,13 +187,16 @@ function isRun(value: unknown): value is CircuitRun {
     (run.completedAt as number) >= (run.startedAt as number) &&
     isCount(run.total) &&
     Array.isArray(run.legs) &&
+    run.legs.length > 0 &&
     run.legs.every(
       (leg: unknown) =>
         typeof leg === 'object' &&
         leg !== null &&
-        typeof (leg as { gameId?: unknown }).gameId === 'string' &&
+        (CIRCUIT_GAME_IDS as readonly unknown[]).includes((leg as { gameId?: unknown }).gameId) &&
         isCount((leg as { score?: unknown }).score),
-    )
+    ) &&
+    new Set(run.legs.map((leg: { gameId: string }) => leg.gameId)).size === run.legs.length &&
+    run.legs.reduce((sum: number, leg: { score: number }) => sum + leg.score, 0) === run.total
   );
 }
 
@@ -267,7 +270,10 @@ export function savedProgress(
   history: CircuitHistory | undefined,
 ): CircuitProgress {
   const run = history?.runs.find((r) => r.startedAt === progress.startedAt);
-  if (!run) return progress;
+  // A saved run stands in for the scoreboard only when it has every leg.
+  if (!run || !progress.legs.every((leg) => run.legs.some((l) => l.gameId === leg.gameId))) {
+    return progress;
+  }
   const legs = progress.legs.map((leg) => {
     const score = run.legs.find((l) => l.gameId === leg.gameId)?.score;
     return { ...leg, latest: score, complete: score !== undefined };
