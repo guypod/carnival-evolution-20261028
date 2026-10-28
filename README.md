@@ -68,6 +68,11 @@ focus back on the button. The midway's keys never fire while a link, button or
 field has focus, so to walk again with the keyboard, Tab (or Shift+Tab) to the
 map, or click it. The map shows an outline while it has focus.
 
+The guide's **Souvenir Postcard** makes a card from your visit: the landmarks
+you found, your stamped booths, the current day or evening scene and an
+optional name. Download it as a PNG made in your browser. Nothing is uploaded,
+and the name is not kept.
+
 If your system asks for reduced motion, the midway goes quiet: the clouds,
 rides, flags, balloons and strolling visitors hold still. You still walk, click
 to travel and open booths at full speed, and the games themselves don't change.

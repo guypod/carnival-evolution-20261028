@@ -480,6 +480,7 @@ kbd {
 .trail-link,
 .circuit-link,
 .records-link,
+.postcard-link,
 .directory-link {
   display: block;
   padding: 10px 14px;
@@ -499,6 +500,8 @@ kbd {
 .circuit-link:focus-visible,
 .records-link:hover,
 .records-link:focus-visible,
+.postcard-link:hover,
+.postcard-link:focus-visible,
 .directory-link:hover,
 .directory-link:focus-visible {
   outline: 3px solid var(--color-text);
@@ -1160,4 +1163,78 @@ kbd {
   padding: 8px 14px;
   font-size: 14px;
   transform: translateX(-50%);
+}
+
+.postcard h1:focus {
+  outline: none;
+}
+
+.postcard-intro,
+.postcard .note {
+  color: var(--color-muted);
+}
+
+.postcard-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 16px 0;
+}
+
+.postcard-controls label {
+  flex-basis: 100%;
+}
+
+.postcard-controls input {
+  flex: 1 1 220px;
+  padding: 8px 12px;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.postcard-download {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.postcard-controls input:focus-visible,
+.postcard-download:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.postcard-status:empty {
+  display: none;
+}
+
+.postcard-preview {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+.postcard-preview[hidden] {
+  display: none;
+}
+
+.postcard-text h2 {
+  margin-bottom: 4px;
+}
+
+.postcard-heading,
+.postcard-greeting {
+  margin: 4px 0;
+  font-weight: bold;
 }
