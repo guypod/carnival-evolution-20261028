@@ -15,6 +15,7 @@ import {
   type MotionPreference,
 } from './motion';
 import { evening, palette } from './palette';
+import { DEFAULT_VIEW_SCALE, unproject, viewZoom } from './view';
 import { lanternGlow, type Scene } from './scene';
 import {
   archBounds,
@@ -92,6 +93,8 @@ export interface MidwayControls {
   setMotion(preference: MotionPreference): void;
   /** Stops a walk in progress and leaves the player where they are. */
   cancelWalk(): void;
+  /** Zooms the view by a step from `view.ts`, keeping the player centred. */
+  setViewScale(scale: number): void;
   stop(): void;
 }
 
@@ -184,6 +187,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   let slowFrames = 0;
   /** CSS pixels per world pixel. */
   let zoom = 2;
+  /** The player's zoom on top of the fitted size; 1 is the fitted size. */
+  let viewScale = DEFAULT_VIEW_SCALE;
   let view = { w: 0, h: 0 };
   let ground: GroundLayer | undefined;
   const camera = { x: 0, y: 0 };
@@ -196,10 +201,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr));
     canvas.height = Math.max(1, Math.round(canvas.clientHeight * dpr));
     // Fit most of the midway on screen, but never so small that people get lost.
-    zoom = Math.max(
-      1.3,
-      Math.min(3, Math.min(canvas.clientWidth / 720, canvas.clientHeight / 540)),
-    );
+    zoom = viewZoom(canvas.clientWidth, canvas.clientHeight, viewScale);
     view = { w: canvas.clientWidth / zoom, h: canvas.clientHeight / zoom };
     ground = drawGroundLayer(map, zoom * dpr);
   };
@@ -231,10 +233,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
   const toWorld = (event: PointerEvent): Point => {
     const box = canvas.getBoundingClientRect();
-    return {
-      x: (event.clientX - box.left) / zoom + camera.x,
-      y: (event.clientY - box.top) / zoom + camera.y,
-    };
+    return unproject({ x: event.clientX - box.left, y: event.clientY - box.top }, camera, zoom);
   };
   const boothAt = (point: Point) =>
     map.booths
@@ -579,6 +578,13 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       updateQuiet();
     },
     cancelWalk,
+    setViewScale(next) {
+      if (next === viewScale) return;
+      viewScale = next;
+      resize();
+      // Jump straight to the player at the new size, so they stay on screen.
+      cameraReady = false;
+    },
     stop() {
       cancelAnimationFrame(frame);
       stopWatchingMotion();

@@ -27,6 +27,10 @@ export const HELP_CONTROLS: HelpControl[] = [
     keys: ['Tab', 'Shift+Tab'],
     action: 'Return to the map from a button or link, or click the map. Keys only walk there.',
   },
+  {
+    keys: ['−', '+', 'Reset view'],
+    action: 'Zoom the map out, in, or back to its usual size. The wheel and pinch never zoom.',
+  },
   { keys: ['Esc'], action: 'Leave a game or a guide page and come back to the midway.' },
 ];
 

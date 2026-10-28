@@ -169,6 +169,34 @@ kbd {
   gap: 8px;
 }
 
+.midway-view {
+  display: flex;
+  gap: 6px;
+}
+
+.midway-view button {
+  min-width: 36px;
+  padding: 4px 10px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.midway-view button:hover:not(:disabled),
+.midway-view button:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.midway-view button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .help-toggle,
 .guide-toggle {
   padding: 8px 16px;
