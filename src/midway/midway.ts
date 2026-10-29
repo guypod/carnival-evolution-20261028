@@ -5,6 +5,7 @@ import {
   ferryButtons,
   ferryMessage,
   ferryPosition,
+  ferrySnapsCamera,
   onFarShore,
   requestFerry,
   sailFerry,
@@ -364,6 +365,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const setFerry = (next: FerryState) => {
     if (next === ferry) return;
     const wasRiding = ferry.riding;
+    // Quiet crossings land in one step, so the camera jumps with the player.
+    if (ferrySnapsCamera(ferry, next, quiet)) cameraReady = false;
     ferry = next;
     if (ferry.riding) {
       // Aboard: any walk stops, so no path or trail is left on the far bank.

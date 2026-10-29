@@ -110,6 +110,15 @@ export function sailFerry(ferry: FerryState, dt: number, quiet: boolean): FerryS
 }
 
 /**
+ * Whether the camera should jump to the player rather than ease after a ferry
+ * change. In quiet mode a ride moves the player across the river in one step,
+ * so a long eased pan would undo the stillness; animated crossings ease.
+ */
+export function ferrySnapsCamera(before: FerryState, after: FerryState, quiet: boolean): boolean {
+  return quiet && before !== after && (before.riding || after.riding);
+}
+
+/**
  * The crossing finished: the ferry ties up at the dock it was headed for and a
  * rider steps off onto that pier. Arriving, hurrying a crossing and leaving the
  * midway mid-ride all end this way, so a ride never leaves anyone on the water.

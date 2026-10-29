@@ -6,6 +6,7 @@ import {
   ferryButtons,
   ferryMessage,
   ferryPosition,
+  ferrySnapsCamera,
   onFarShore,
   requestFerry,
   sailFerry,
@@ -211,5 +212,36 @@ describe('what the ferry says', () => {
     const sailing = requestFerry(aboard, 'depart', undefined);
     const later = sailFerry(sailing, 2, false);
     expect(ferryMessage(map, later, undefined)).toBe(ferryMessage(map, sailing, undefined));
+  });
+});
+
+describe('the camera on a ferry ride', () => {
+  const aboard = requestFerry(START_FERRY, 'board', 'promenade');
+  const sailing = requestFerry(aboard, 'depart', undefined);
+
+  it('jumps with the player when a quiet crossing lands in one step', () => {
+    const landed = sailFerry(sailing, 0.016, true);
+    expect(landed.riding).toBe(false);
+    expect(ferrySnapsCamera(sailing, landed, true)).toBe(true);
+  });
+
+  it('jumps when quiet mode turns on mid-crossing', () => {
+    const halfway = sailFerry(sailing, CROSSING_SECONDS / 2, false);
+    expect(halfway.phase).toBe('sailing');
+    expect(ferrySnapsCamera(halfway, sailFerry(halfway, 0.016, true), true)).toBe(true);
+  });
+
+  it('eases through an ordinary animated crossing', () => {
+    const moving = sailFerry(sailing, 0.016, false);
+    expect(ferrySnapsCamera(sailing, moving, false)).toBe(false);
+    const landed = sailFerry(moving, CROSSING_SECONDS, false);
+    expect(ferrySnapsCamera(moving, landed, false)).toBe(false);
+  });
+
+  it('leaves the camera alone when nothing changes or nobody rides', () => {
+    expect(ferrySnapsCamera(sailing, sailing, true)).toBe(false);
+    const called = requestFerry(START_FERRY, 'call', 'far-shore');
+    expect(called.riding).toBe(false);
+    expect(ferrySnapsCamera(START_FERRY, called, true)).toBe(false);
   });
 });
