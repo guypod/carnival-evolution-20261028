@@ -7,12 +7,14 @@ import {
   attractions,
   connectedAttractions,
   createFairStore,
+  dropCarried,
   move,
   parseLayout,
   place,
   pushHistory,
   remaining,
   remove,
+  settleWalker,
   step,
   type Layout,
 } from './fair';
@@ -46,6 +48,15 @@ describe('placement and budget', () => {
     expect(remaining(layout)).toBe(FAIR_BUDGET - 280);
     const over = place(layout, { x: 1, y: 1 }, 'food');
     expect(over).toEqual({ ok: false, reason: expect.stringContaining('Not enough budget') });
+  });
+
+  it('refuses to drop a pickup after the layout changed', () => {
+    const carried = { from: { x: 3, y: 2 }, layout: STARTER };
+    const swapped = place(STARTER, { x: 3, y: 2 }, 'tree');
+    if (!swapped.ok) throw new Error(swapped.reason);
+    expect(dropCarried(swapped.layout, carried, { x: 6, y: 0 }).ok).toBe(false);
+    const moved = dropCarried(STARTER, carried, { x: 6, y: 0 });
+    expect(moved.ok && moved.layout['6,0']).toBe('game');
   });
 
   it('moves and removes pieces', () => {
@@ -82,6 +93,21 @@ describe('connectivity', () => {
     expect(step({}, ENTRANCE, -1, 0)).toEqual(ENTRANCE);
     expect(step({}, ENTRANCE, 1, 0)).toEqual(ENTRANCE);
     expect(step(STARTER, ENTRANCE, 1, 0)).toEqual({ x: 1, y: 3 });
+  });
+
+  it('never steps onto a path island cut off from the entrance', () => {
+    const island: Layout = { ...STARTER, '1,1': 'path', '1,0': 'path' };
+    expect(step(island, { x: 1, y: 0 }, 0, 1)).toEqual({ x: 1, y: 0 });
+  });
+
+  it('keeps a walker in place while reachable and sends them to the entrance otherwise', () => {
+    const joined: Layout = { ...STARTER, '1,1': 'path', '1,0': 'path', '1,2': 'path' };
+    expect(settleWalker(joined, { x: 1, y: 0 })).toEqual({ x: 1, y: 0 });
+    const cut = Object.fromEntries(Object.entries(joined).filter(([k]) => k !== '1,2'));
+    expect(settleWalker(cut, { x: 1, y: 0 })).toEqual(ENTRANCE);
+    expect(settleWalker(STARTER, { x: 1, y: 0 })).toEqual(ENTRANCE);
+    expect(settleWalker({}, { x: 2, y: 3 })).toEqual(ENTRANCE);
+    expect(settleWalker(STARTER, undefined)).toBeUndefined();
   });
 });
 
@@ -121,6 +147,21 @@ describe('storage', () => {
   it('rejects an over-budget save', () => {
     const cells = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`${i},0`, 'game']));
     expect(parseLayout({ version: 1, cells })).toBeUndefined();
+  });
+
+  it('rejects noncanonical cell keys so every piece is visible and editable', () => {
+    expect(parseLayout({ version: 1, cells: { '01,1': 'game' } })).toBeUndefined();
+    expect(parseLayout({ version: 1, cells: { '1,1': 'game', '1,01': 'game' } })).toBeUndefined();
+    expect(parseLayout({ version: 1, cells: { '0,0': 'tree', '7,5': 'bench' } })).toEqual({
+      '0,0': 'tree',
+      '7,5': 'bench',
+    });
+  });
+
+  it('says saving is unavailable when there is no storage at all', () => {
+    const result = createFairStore(undefined).load();
+    expect(result.layout).toBe(STARTER);
+    expect(result.note).toMatch(/unavailable/);
   });
 
   it('reports failure when storage throws', () => {

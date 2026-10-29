@@ -9,13 +9,15 @@ import {
   STARTER,
   attractions,
   createFairStore,
+  dropCarried,
   key,
-  move,
   place,
   pushHistory,
   remove,
+  settleWalker,
   step,
   summary,
+  type Carried,
   type Cell,
   type Layout,
   type Piece,
@@ -51,7 +53,7 @@ export function startFair(
   let history: Layout[] = [];
   let cursor: Cell = { x: 1, y: 3 };
   let piece: Piece = 'path';
-  let carrying: Cell | undefined;
+  let carrying: Carried | undefined;
   let walker: Cell | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
@@ -84,10 +86,17 @@ export function startFair(
     return `${where}: ${PIECE_NAME[here]}${info && !info.connected ? ', not connected to the entrance' : ''}.`;
   }
 
+  /** Every layout change goes through here, so a pickup or a walker never outlives the layout it was made on. */
+  function setLayout(next: Layout) {
+    layout = next;
+    carrying = undefined;
+    walker = settleWalker(layout, walker);
+  }
+
   function apply(result: PlaceResult, done: string) {
     if (!result.ok) return say(result.reason);
     history = pushHistory(history, layout);
-    layout = result.layout;
+    setLayout(result.layout);
     say(done);
     draw();
   }
@@ -103,7 +112,7 @@ export function startFair(
       const last = history.at(-1);
       if (!last) return say('Nothing to undo.');
       history = history.slice(0, -1);
-      layout = last;
+      setLayout(last);
       say('Undid the last edit.');
     } else if (name === 'walk') {
       walker = walker ? undefined : { ...ENTRANCE };
@@ -123,7 +132,7 @@ export function startFair(
     } else if (name === 'reload') {
       const result = store.load();
       history = pushHistory(history, layout);
-      layout = result.layout;
+      setLayout(result.layout);
       say(result.note ?? 'Reloaded your saved layout.');
     } else if (name === 'reset') {
       if (
@@ -133,7 +142,7 @@ export function startFair(
       )
         return;
       history = pushHistory(history, layout);
-      layout = STARTER;
+      setLayout(STARTER);
       say(
         store.reset()
           ? 'Plaza reset to the starter layout. Undo brings your layout back.'
@@ -192,14 +201,14 @@ export function startFair(
     } else if (k === 'm') {
       if (!carrying) {
         if (!layout[key(cursor)]) return say('Nothing to pick up here.');
-        carrying = cursor;
+        carrying = { from: cursor, layout };
         say(
           `Picked up the ${PIECE_NAME[layout[key(cursor)]].toLowerCase()}. Move the cursor and press M to drop it.`,
         );
       } else {
-        const from = carrying;
+        const carried = carrying;
         carrying = undefined;
-        apply(move(layout, from, cursor), 'Moved.');
+        apply(dropCarried(layout, carried, cursor), 'Moved.');
       }
       draw();
     }

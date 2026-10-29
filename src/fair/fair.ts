@@ -152,7 +152,23 @@ export function summary(layout: Layout): string {
 /** Moves the walking visitor one step if the next cell is walkable and reachable. */
 export function step(layout: Layout, at: Cell, dx: number, dy: number): Cell {
   const next = { x: at.x + dx, y: at.y + dy };
-  return walkable(layout, next) ? next : at;
+  return walkable(layout, next) && reachable(layout).has(key(next)) ? next : at;
+}
+
+/** After the layout changes, keeps a walking visitor where they are if that is still reachable, or sends them back to the entrance. */
+export function settleWalker(layout: Layout, at: Cell | undefined): Cell | undefined {
+  if (!at) return undefined;
+  return reachable(layout).has(key(at)) ? at : { ...ENTRANCE };
+}
+
+/** A piece picked up to move, tied to the layout it was picked up from. */
+export type Carried = { from: Cell; layout: Layout };
+
+/** Drops a carried piece, refusing when the layout changed since it was picked up. */
+export function dropCarried(layout: Layout, carried: Carried, to: Cell): PlaceResult {
+  if (layout !== carried.layout)
+    return { ok: false, reason: 'The plaza changed since you picked that up. Pick it up again.' };
+  return move(layout, carried.from, to);
 }
 
 export const STARTER: Layout = {
@@ -183,7 +199,7 @@ export function parseLayout(raw: unknown): Layout | undefined {
   const entries = Object.entries(data.cells as Record<string, unknown>);
   if (entries.length > FAIR_WIDTH * FAIR_HEIGHT) return undefined;
   for (const [k, piece] of entries) {
-    const m = /^(\d+),(\d+)$/.exec(k);
+    const m = /^(0|[1-9]\d*),(0|[1-9]\d*)$/.exec(k);
     if (!m || !PIECES.includes(piece as Piece)) return undefined;
     const cell = { x: Number(m[1]), y: Number(m[2]) };
     if (!inBounds(cell) || isEntrance(cell)) return undefined;
@@ -200,14 +216,16 @@ export type LoadResult = { layout: Layout; note?: string };
 export function createFairStore(storage: FairStorage | undefined) {
   /** The saved layout, or the starter with a note when nothing valid is saved. Never overwrites a bad save. */
   function load(): LoadResult {
+    const unavailable: LoadResult = {
+      layout: STARTER,
+      note: 'Saving is unavailable in this browser, so this is the starter plaza.',
+    };
+    if (!storage) return unavailable;
     let raw: string | null;
     try {
-      raw = storage ? storage.getItem(FAIR_KEY) : null;
+      raw = storage.getItem(FAIR_KEY);
     } catch {
-      return {
-        layout: STARTER,
-        note: 'Saving is unavailable in this browser, so this is the starter plaza.',
-      };
+      return unavailable;
     }
     if (raw === null) return { layout: STARTER };
     try {
