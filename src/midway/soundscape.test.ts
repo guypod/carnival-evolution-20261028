@@ -258,4 +258,42 @@ describe('chime notes', () => {
     sound.chime(tones, 0.7);
     expect(fake.oscillators).toHaveLength(before);
   });
+
+  it('rings nothing while a resume is still pending, then rings on time once it lands', async () => {
+    const fake = fakeContext();
+    let finishResume = () => {};
+    fake.context.resume.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finishResume = () => {
+            fake.context.state = 'running';
+            resolve(undefined);
+          };
+        }),
+    );
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.chime(tones, 0.7);
+    // No notes queue up on the suspended context to play late, out of step.
+    expect(chimeOscillators(fake)).toHaveLength(0);
+    finishResume();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sound.isPlaying()).toBe(true);
+    sound.chime(tones, 0.7);
+    expect(chimeOscillators(fake)).toHaveLength(tones.length);
+  });
+
+  it('stops the last call’s notes when a new call replaces it', () => {
+    const fake = fakeContext();
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    for (let i = 0; i < 3; i++) sound.chime(tones, 0.7, true);
+    const notes = chimeOscillators(fake);
+    const live = notes.filter((o) => vi.mocked(o.stop).mock.calls.length === 1);
+    expect(live).toEqual(notes.slice(-tones.length));
+    for (const note of notes.slice(0, -tones.length)) {
+      expect(note.stop).toHaveBeenLastCalledWith();
+    }
+  });
 });

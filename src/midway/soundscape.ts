@@ -75,9 +75,12 @@ export interface Soundscape {
   isPlaying(): boolean;
   /**
    * Rings soft notes, in hertz, `spacing` seconds apart. Only while the hum
-   * plays: with the sound off it does nothing and never starts audio.
+   * plays and the audio context is running: with the sound off, or before the
+   * browser has resumed audio, it does nothing and never starts audio. With
+   * `replace`, notes still sounding or waiting stop first, so a new call never
+   * overlaps the tail of the last.
    */
-  chime(tones: readonly number[], spacing: number): void;
+  chime(tones: readonly number[], spacing: number, replace?: boolean): void;
   /** Stops the hum and closes the audio context for good. */
   dispose(): void;
 }
@@ -160,9 +163,14 @@ export function createSoundscape(
       if (master) master.gain.value = soundscapeGain(volume);
     },
     isPlaying: () => oscillators.length > 0,
-    chime(tones, spacing) {
-      if (!context || !master || oscillators.length === 0) return;
+    chime(tones, spacing, replace = false) {
+      // A suspended context would hold the notes and play them late, out of step.
+      if (!context || !master || oscillators.length === 0 || context.state !== 'running') return;
       const now = context.currentTime ?? 0;
+      if (replace) {
+        notes.forEach(silence);
+        notes = [];
+      }
       notes = notes.filter((note) => {
         if (note.ends > now) return true;
         note.oscillator.disconnect();

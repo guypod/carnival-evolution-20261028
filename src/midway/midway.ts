@@ -166,8 +166,11 @@ export interface MidwayOptions {
    * they walk away.
    */
   onStones?(status: string | undefined): void;
-  /** Called with the notes, in hertz, a stone or the call rings. See soundscape.ts. */
-  onChime?(tones: number[], spacing: number): void;
+  /**
+   * Called with the notes, in hertz, a stone or the call rings, and whether
+   * they replace notes still ringing (a new call does). See soundscape.ts.
+   */
+  onChime?(tones: number[], spacing: number, replace: boolean): void;
 }
 
 export interface MidwayControls {
@@ -366,7 +369,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     const outcome = stoneInput(chimes, input, gustClock, quiet);
     chimes = outcome.stones;
     if (outcome.cancelWalk) cancelWalk();
-    if (outcome.tones.length > 0) options.onChime?.(outcome.tones, outcome.spacing);
+    if (outcome.tones.length > 0)
+      options.onChime?.(outcome.tones, outcome.spacing, outcome.replace);
     reportStones();
   };
   const reportStones = () => {

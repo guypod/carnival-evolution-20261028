@@ -114,6 +114,8 @@ export interface StoneOutcome {
   tones: number[];
   /** Seconds between one note and the next. */
   spacing: number;
+  /** Whether these notes replace any still ringing: true for a new call. */
+  replace: boolean;
   /**
    * Whether a walk in progress stops. Anything deliberate stops it, so the
    * footsteps of a walk the visitor no longer wants can't change their answer.
@@ -133,6 +135,7 @@ export function stoneInput(
     stones: next,
     tones: CALL_PATTERN.map((i) => STONE_TONES[i]),
     spacing: CALL_STEP,
+    replace: true,
     cancelWalk: true,
   });
   if (input.kind === 'call') return call(playCall(stones, now));
@@ -140,6 +143,7 @@ export function stoneInput(
     stones: next,
     tones: [STONE_TONES[input.stone]],
     spacing: 0,
+    replace: false,
     cancelWalk: input.kind !== 'step',
   });
   if (input.kind === 'tap') {

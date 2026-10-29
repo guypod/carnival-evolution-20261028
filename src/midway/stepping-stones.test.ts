@@ -154,6 +154,19 @@ describe('stone input', () => {
     expect(again.tones).toEqual([STONE_TONES[1]]);
   });
 
+  it('has a new call replace notes still ringing, while a stone adds to them', () => {
+    let stones = createStones({ x: 0, y: 0 });
+    const first = stoneInput(stones, { kind: 'call' }, 0);
+    expect(first.replace).toBe(true);
+    // Pressing C again at once restarts the call and its notes, not just the glow.
+    const again = stoneInput(first.stones, { kind: 'call' }, 0.1);
+    expect(again.replace).toBe(true);
+    expect(again.stones.calledAt).toBe(0.1);
+    stones = again.stones;
+    expect(stoneInput(stones, { kind: 'button', stone: 0 }, afterCall).replace).toBe(false);
+    expect(stoneInput(stones, { kind: 'step', stone: 0 }, afterCall).replace).toBe(false);
+  });
+
   it('stops a walk on a deliberate tap or press, but not on the walk’s own footsteps', () => {
     const stones = playCall(createStones({ x: 0, y: 0 }), 0);
     expect(stoneInput(stones, { kind: 'tap', stone: 0 }, afterCall).cancelWalk).toBe(true);

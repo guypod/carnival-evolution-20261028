@@ -645,7 +645,7 @@ function renderMidway() {
     onLocate: (message) => (locateStatus.textContent = message ?? ''),
     onFerry: (message, requests) => ferryPanel.show(message, requests),
     onStones: (status) => stonesPanel.show(status),
-    onChime: (tones, spacing) => sound.chime(tones, spacing),
+    onChime: (tones, spacing, replace) => sound.chime(tones, spacing, replace),
   });
   const ferryPanel = setUpFerry((request) => midway.ferry(request));
   const stonesPanel = setUpStones(midway.stones);
