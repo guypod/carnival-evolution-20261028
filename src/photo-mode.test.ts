@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PHOTO_FRAMES, frameRect, photoFilename, photoFrame } from './photo-mode';
+import {
+  PHOTO_FRAMES,
+  createCaptureGuard,
+  frameRect,
+  photoFilename,
+  photoFrame,
+} from './photo-mode';
 
 describe('frameRect', () => {
   it('takes the whole map for the full view', () => {
@@ -49,5 +55,35 @@ describe('photoFilename', () => {
     const name = photoFilename('square', new Date(2026, 9, 29, 4, 5, 6));
     expect(name).toBe('carnival-photo-square-20261029-040506.png');
     expect(photoFilename('../evil', new Date(2026, 0, 1))).toMatch(/^[a-z0-9-]+\.png$/);
+  });
+});
+
+describe('createCaptureGuard', () => {
+  it('allows one encode at a time within a session', () => {
+    const guard = createCaptureGuard();
+    expect(guard.start()).toBe(true);
+    expect(guard.start()).toBe(false);
+    expect(guard.finish(1, 1, true)).toBe(true);
+    expect(guard.start()).toBe(true);
+  });
+
+  it('keeps an old encode pending across exit and reopen, then drops its result', () => {
+    const guard = createCaptureGuard();
+    expect(guard.start()).toBe(true); // taken in session 1
+    // exit (session 2) and reopen (session 3) while it is still encoding
+    expect(guard.pending).toBe(true);
+    expect(guard.start()).toBe(false);
+    // the stale encode finishes: it frees the guard but does not publish
+    expect(guard.finish(1, 3, true)).toBe(false);
+    expect(guard.pending).toBe(false);
+    expect(guard.start()).toBe(true);
+    expect(guard.finish(3, 3, true)).toBe(true);
+  });
+
+  it('frees the guard but does not publish after teardown', () => {
+    const guard = createCaptureGuard();
+    guard.start();
+    expect(guard.finish(1, 2, false)).toBe(false);
+    expect(guard.pending).toBe(false);
   });
 });

@@ -330,7 +330,7 @@ import {
   tourMemory,
   type TourState,
 } from './welcome-tour';
-import { PHOTO_FRAMES, frameRect, photoFilename } from './photo-mode';
+import { PHOTO_FRAMES, createCaptureGuard, frameRect, photoFilename } from './photo-mode';
 
 applyTheme();
 
@@ -682,7 +682,7 @@ function setUpPhotoMode() {
   const preview = panel.querySelector<HTMLImageElement>('.photo-preview')!;
   let open = false;
   let session = 0;
-  let pending = false;
+  const capture = createCaptureGuard();
   let photoUrl: string | undefined;
   let photoName = '';
 
@@ -707,7 +707,7 @@ function setUpPhotoMode() {
     session += 1;
     // An encode from an earlier session still counts as pending, so exiting
     // and reopening cannot start a second one alongside it.
-    take.disabled = pending;
+    take.disabled = capture.pending;
     toggle.setAttribute('aria-expanded', String(open));
     panel.hidden = !open;
     outline.hidden = !open;
@@ -730,7 +730,7 @@ function setUpPhotoMode() {
     }
   };
   const snap = () => {
-    if (pending) return;
+    if (capture.pending) return;
     // The canvas is drawn at device pixels; the frame is worked out in them too.
     const rect = frameRect(frameId(), map.width, map.height);
     const shot = document.createElement('canvas');
@@ -744,12 +744,12 @@ function setUpPhotoMode() {
     ctx.drawImage(map, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
     const name = photoFilename(frameId(), new Date());
     const owner = session;
-    pending = true;
+    capture.start();
     take.disabled = true;
     shot.toBlob((blob) => {
-      pending = false;
+      const current = capture.finish(owner, session, open);
       take.disabled = false;
-      if (!open || owner !== session) return;
+      if (!current) return;
       if (!blob) {
         status.textContent = 'This browser could not make the photo.';
         return;

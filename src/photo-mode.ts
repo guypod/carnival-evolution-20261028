@@ -48,3 +48,24 @@ export function photoFilename(id: string, when: Date): string {
     `-${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}`;
   return `carnival-photo-${photoFrame(id).id}-${stamp}.png`;
 }
+
+// One photo encode at a time, across photo sessions. A capture belongs to the
+// session it started in; when its encode finishes it always frees the guard,
+// but only publishes if that session is still open.
+export function createCaptureGuard() {
+  let pending = false;
+  return {
+    get pending() {
+      return pending;
+    },
+    start(): boolean {
+      if (pending) return false;
+      pending = true;
+      return true;
+    },
+    finish(owner: number, session: number, open: boolean): boolean {
+      pending = false;
+      return open && owner === session;
+    },
+  };
+}
