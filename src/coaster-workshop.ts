@@ -222,6 +222,9 @@ export interface Workshop {
   dragging: boolean;
   /** The layout when a drag began, kept for undo once the drag changes it. */
   dragOrigin?: Point[];
+  /** The riders' reports for the finished test, worked out once per test. */
+  reports?: RiderReport[];
+  rides?: SpanRide[];
 }
 
 export function createWorkshop(points = starterLayout()): Workshop {
@@ -232,7 +235,17 @@ export function createWorkshop(points = starterLayout()): Workshop {
 function clearRun(w: Workshop) {
   w.run = undefined;
   w.samples = undefined;
+  w.reports = undefined;
+  w.rides = undefined;
   w.paused = false;
+}
+
+/** Once a test has ended, works out both riders' reports for this exact layout. */
+export function settleReports(w: Workshop) {
+  if (w.run?.outcome && !w.reports) {
+    w.rides = rideSpans(w.points);
+    w.reports = riderReports(w.points);
+  }
 }
 
 /** Moves the selected point, keeping the old layout for undo. Clears any test run. */
@@ -407,13 +420,163 @@ export function announcement(w: Workshop): string {
     const height = MAX_Y - w.points[w.selected].y;
     return `Point ${w.selected + 1} of ${POINT_COUNT} selected, height ${height}. Shape the track, then press T to test it.`;
   }
-  return `${describeOutcome(run)}${!run.outcome && w.paused ? ' (paused)' : ''}`;
+  const riders = run.outcome && w.reports ? ` ${w.reports.map((r) => r.summary).join(' ')}` : '';
+  return `${describeOutcome(run)}${!run.outcome && w.paused ? ' (paused)' : ''}${riders}`;
 }
 
 export function statusText(w: Workshop): string {
   const run = w.run;
   if (!run) return 'Shape the track, then press T to test it.';
-  return `${announcement(w)}  Speed ${Math.round(Math.abs(run.v))}`;
+  return `${describeOutcome(run)}${!run.outcome && w.paused ? ' (paused)' : ''}  Speed ${Math.round(Math.abs(run.v))}`;
+}
+
+export type RiderId = 'scenery' | 'thrill';
+export type Reaction = 'liked' | 'disliked' | 'neutral';
+
+/** Two made-up riders with opposite tastes. Toy preferences, not real rider data. */
+export const RIDERS: readonly { id: RiderId; name: string; likes: string }[] = [
+  { id: 'scenery', name: 'Gentle Gail', likes: 'high, slow views and soft drops' },
+  { id: 'thrill', name: 'Thrill Theo', likes: 'speed and steep drops' },
+];
+
+/** Above this toy speed Gail is uneasy, and Theo starts to enjoy it. */
+export const FAST = 300;
+/** Below this toy speed Theo is bored. */
+export const SLOW = 150;
+/** A drop steeper than this (sine of the angle) is steep. */
+export const STEEP = 0.6;
+/** A span that rises this high above the ground has a view. */
+export const VIEW_HEIGHT = 220;
+
+/** What the train actually did on one span between two control points. */
+export interface SpanRide {
+  /** The span from point `span + 1` to point `span + 2`, counted from 1 in words. */
+  span: number;
+  topSpeed: number;
+  /** The steepest downhill slope on the span, as the sine of its angle. */
+  steepest: number;
+  /** The highest the track gets on the span, above the ground line. */
+  height: number;
+  mid: Point;
+}
+
+/** Rides the layout once and measures every span the train reached. */
+export function rideSpans(points: readonly Point[]): SpanRide[] {
+  const path = trackPath(points);
+  const length = pathLength(path);
+  const spans: SpanRide[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const part = path.slice(i * SAMPLES_PER_SPAN, (i + 1) * SAMPLES_PER_SPAN + 1);
+    let steepest = 0;
+    for (let k = 1; k < part.length; k++) {
+      const len = Math.hypot(part[k].x - part[k - 1].x, part[k].y - part[k - 1].y);
+      if (len > 0) steepest = Math.max(steepest, (part[k].y - part[k - 1].y) / len);
+    }
+    const top = Math.min(...part.map((p) => p.y));
+    spans.push({
+      span: i,
+      topSpeed: 0,
+      steepest,
+      height: Math.round(MAX_Y - top),
+      mid: part[Math.floor(part.length / 2)],
+    });
+  }
+  const ends: number[] = [];
+  for (let i = 0; i < spans.length; i++) {
+    ends.push(pathLength(path.slice(0, (i + 1) * SAMPLES_PER_SPAN + 1)));
+  }
+  const reached = new Set<number>();
+  let run = createRun();
+  while (!run.outcome) {
+    run = stepRun(run, path, length);
+    const index = ends.findIndex((end) => run.s <= end);
+    const span = spans[index < 0 ? spans.length - 1 : index];
+    span.topSpeed = Math.max(span.topSpeed, Math.round(Math.abs(run.v)));
+    reached.add(span.span);
+  }
+  return spans.filter((s) => reached.has(s.span));
+}
+
+export interface RiderNote {
+  span: number;
+  reaction: Reaction;
+  why: string;
+}
+
+/** How one rider felt about one span, worked out from what the train did there. */
+export function react(rider: RiderId, ride: SpanRide): RiderNote {
+  const steep = ride.steepest >= STEEP;
+  const note = (reaction: Reaction, why: string) => ({ span: ride.span, reaction, why });
+  if (rider === 'scenery') {
+    if (ride.topSpeed > FAST) return note('disliked', `too fast at ${ride.topSpeed}`);
+    if (steep) return note('disliked', 'the drop was too steep');
+    if (ride.height >= VIEW_HEIGHT) return note('liked', `a calm view from height ${ride.height}`);
+    return note('neutral', 'calm but low');
+  }
+  if (ride.topSpeed > FAST && steep) return note('liked', `a steep drop at ${ride.topSpeed}`);
+  if (ride.topSpeed > FAST) return note('liked', `fast at ${ride.topSpeed}`);
+  if (ride.topSpeed < SLOW) return note('disliked', `slow at ${ride.topSpeed}`);
+  return note('neutral', `steady at ${ride.topSpeed}`);
+}
+
+/** Words for a span: the stretch from one numbered point to the next. */
+function spanName(span: number) {
+  return `points ${span + 1} to ${span + 2}`;
+}
+
+/** One concrete change for a span a rider disliked, naming the point to move. */
+function suggestion(rider: RiderId, ride: SpanRide): string {
+  const before = ride.span + 1;
+  if (rider === 'scenery') {
+    return `Lower point ${before} or raise point ${before + 1} so the drop is gentler.`;
+  }
+  return `Raise point ${before} or lower point ${before + 1} for a steeper, faster drop.`;
+}
+
+export interface RiderReport {
+  id: RiderId;
+  name: string;
+  notes: RiderNote[];
+  summary: string;
+}
+
+/** Both riders on the same track. Same layout, same report, every time. */
+export function riderReports(points: readonly Point[]): RiderReport[] {
+  const rides = rideSpans(points);
+  return RIDERS.map(({ id, name, likes }) => {
+    const notes = rides.map((ride) => react(id, ride));
+    const liked = notes.filter((n) => n.reaction === 'liked');
+    const disliked = notes.filter((n) => n.reaction === 'disliked');
+    const parts = [`${name} likes ${likes}.`];
+    if (liked.length)
+      parts.push(`Liked ${liked.map((n) => `${spanName(n.span)} (${n.why})`).join(', ')}.`);
+    if (disliked.length) {
+      parts.push(
+        `Disliked ${disliked.map((n) => `${spanName(n.span)} (${n.why})`).join(', ')}.`,
+        suggestion(
+          id,
+          rides.find((r) => r.span === disliked[0].span)!,
+        ),
+      );
+    } else if (!liked.length) parts.push('Nothing stood out either way.');
+    else parts.push('No complaints.');
+    return { id, name, notes, summary: parts.join(' ') };
+  });
+}
+
+/** Splits text into lines that fit `width`, measured by `measure`. */
+export function wrapText(text: string, width: number, measure: (s: string) => number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && measure(next) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 export function drawWorkshop(ctx: CanvasRenderingContext2D, w: Workshop, path: readonly Point[]) {
@@ -461,6 +624,21 @@ export function drawWorkshop(ctx: CanvasRenderingContext2D, w: Workshop, path: r
       ctx.fillStyle = colors.stripeA;
       ctx.fillRect(point.x - 12, point.y - 16, 24, 14);
     }
+    if (run.outcome && w.reports) {
+      // Each rider's reaction over the spans the train reached: G for Gail, T for Theo.
+      ctx.font = canvasFont('small', 'bold');
+      ctx.textAlign = 'center';
+      w.reports.forEach((report, r) => {
+        for (const note of report.notes) {
+          const mid = w.rides?.find((ride) => ride.span === note.span)?.mid;
+          if (!mid || note.reaction === 'neutral') continue;
+          ctx.fillStyle = note.reaction === 'liked' ? colors.accent : colors.danger;
+          const mark = `${report.id === 'scenery' ? 'G' : 'T'}${note.reaction === 'liked' ? '+' : '-'}`;
+          ctx.fillText(mark, mid.x, mid.y - 22 - r * 16);
+        }
+      });
+      ctx.textAlign = 'left';
+    }
     if (run.at) {
       ctx.strokeStyle = run.outcome === 'complete' ? colors.accent : colors.danger;
       ctx.lineWidth = 3;
@@ -475,7 +653,10 @@ export function drawWorkshop(ctx: CanvasRenderingContext2D, w: Workshop, path: r
   ctx.textAlign = 'left';
   ctx.fillText('Coaster Workshop', 20, 40);
   ctx.font = canvasFont('body');
-  ctx.fillText(statusText(w), 20, 66);
+  // Wrapped so a long outcome never runs off the right edge.
+  wrapText(statusText(w), WIDTH - 40, (t) => ctx.measureText(t).width).forEach((line, i) =>
+    ctx.fillText(line, 20, 66 + i * (theme.font.body + 4)),
+  );
   ctx.font = canvasFont('small');
   ctx.fillStyle = colors.muted;
   ctx.fillText(KEYS_HELP, 20, HEIGHT - 14);
@@ -535,6 +716,7 @@ export function startCoasterWorkshop(
   const quiet = () => isQuiet(preference(), systemReduces);
 
   const render = () => {
+    settleReports(w);
     if (ctx) drawWorkshop(ctx, w, path);
     onStatus?.(announcement(w), saved);
   };
