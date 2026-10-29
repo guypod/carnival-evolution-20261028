@@ -2789,7 +2789,7 @@ function renderSnack() {
     const target = event.target as HTMLElement | null;
     if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type === 'text') return;
     const key = event.key.toLowerCase();
-    if (key === 'enter' && target?.tagName === 'BUTTON') return;
+    if (key === 'enter' && (target?.tagName === 'BUTTON' || target?.tagName === 'A')) return;
     if (key === 'enter') form.requestSubmit();
     else if (key === 'b') cycle('base', BASES);
     else if (key === 't') cycle('topping', TOPPINGS);
