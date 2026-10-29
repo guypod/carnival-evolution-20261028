@@ -27,7 +27,8 @@ export interface Rect {
   h: number;
 }
 
-export type Ground = 'grass' | 'path';
+/** Water is always blocked; boards are the piers that reach into it. */
+export type Ground = 'grass' | 'path' | 'sand' | 'water' | 'boards';
 
 export interface BoothSlot extends Rect {
   index: number;
@@ -49,12 +50,42 @@ export type PropKind =
   | 'balloons'
   | 'bunting-pole'
   | 'billboard'
-  | 'fair-gate';
+  | 'fair-gate'
+  | 'lighthouse'
+  | 'lamp-post'
+  | 'ferry-sign';
 
 export interface Prop extends Rect {
   kind: PropKind;
   /** Picks a colour scheme, or which kind of cart. */
   variant: number;
+}
+
+export type DockId = 'promenade' | 'far-shore';
+
+/** A ferry dock: the pier the player boards from, and where the ferry ties up. */
+export interface Dock {
+  id: DockId;
+  name: string;
+  /** The pier's boards, reaching from the shore into the water. */
+  pier: Rect;
+  /** Where the player steps off: on the pier, clear of the water. */
+  landing: Point;
+  /** Where the ferry ties up beside the pier. */
+  berth: Point;
+}
+
+/**
+ * The waterside district east of the midway's hedge: a promenade on this bank,
+ * a river nobody can walk on, and a far shore the ferry carries the player to.
+ */
+export interface Waterside {
+  /** The gap in the midway's east hedge that leads onto the promenade. */
+  gap: Rect;
+  water: Rect;
+  /** The first x of the far shore. Only the ferry reaches it. */
+  farShoreX: number;
+  docks: [Dock, Dock];
 }
 
 export interface MidwayMap {
@@ -71,11 +102,20 @@ export interface MidwayMap {
   /** The first x of the two-tile avenue; the gate sits at its south end. */
   avenueX: number;
   spawn: Point;
+  /** The midway's own width, inside its east hedge; the waterside lies beyond. */
+  midwayWidth: number;
+  waterside: Waterside;
 }
 
 export const CART_KINDS = ['Popcorn', 'Cotton candy', 'Ice cream', 'Drinks'] as const;
 
 const MAP_WIDTH = 24;
+/** Columns east of the midway's hedge: promenade, river and far shore. */
+const WATERSIDE_WIDTH = 17;
+const PROMENADE_X = MAP_WIDTH;
+const WATER_X = MAP_WIDTH + 4;
+const WATER_W = 6;
+const FAR_SHORE_X = WATER_X + WATER_W;
 const AVENUE_X = 11;
 const FIRST_ROW_Y = 9;
 const ROW_SPACING = 3;
@@ -108,7 +148,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   const rows = Math.max(MIN_ROWS, Math.ceil(gameIds.length / 2));
   const avenueEnd = FIRST_ROW_Y + rows * ROW_SPACING;
   const entrance = avenueEnd + 2;
-  const width = MAP_WIDTH;
+  const width = MAP_WIDTH + WATERSIDE_WIDTH;
   const height = entrance + 6 + GARDEN_APRON;
   const ground: Ground[] = new Array(width * height).fill('grass');
   const blocked: boolean[] = new Array(width * height).fill(false);
@@ -124,12 +164,57 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   block({ x: 0, y: height - 1, w: width, h: 1 });
   block({ x: 0, y: 0, w: 1, h: height });
   block({ x: width - 1, y: 0, w: 1, h: height });
+  // The midway's own east hedge, with a gap at the back cross path onto the promenade.
+  const gap: Rect = { x: MAP_WIDTH - 1, y: 6, w: 1, h: 2 };
+  block({ x: MAP_WIDTH - 1, y: 0, w: 1, h: gap.y });
+  block({ x: MAP_WIDTH - 1, y: gap.y + gap.h, w: 1, h: height - gap.y - gap.h });
+
+  // The river: every tile of it is blocked, so nobody walks on water.
+  const water: Rect = { x: WATER_X, y: 1, w: WATER_W, h: height - 2 };
+  block(water);
+  const paint = (area: Rect, kind: Ground) => {
+    for (let y = area.y; y < area.y + area.h; y++) {
+      for (let x = area.x; x < area.x + area.w; x++) ground[y * width + x] = kind;
+    }
+  };
+  paint(water, 'water');
+  paint({ x: WATER_X - 1, y: 1, w: 1, h: height - 2 }, 'sand');
+  paint({ x: FAR_SHORE_X, y: 1, w: 1, h: height - 2 }, 'sand');
+  const docks: [Dock, Dock] = [
+    {
+      id: 'promenade',
+      name: 'the promenade dock',
+      pier: { x: WATER_X, y: 11, w: 1, h: 2 },
+      landing: { x: WATER_X + 0.45, y: 12 },
+      berth: { x: WATER_X + 2, y: 12 },
+    },
+    {
+      id: 'far-shore',
+      name: 'the far shore dock',
+      pier: { x: FAR_SHORE_X - 1, y: 23, w: 1, h: 2 },
+      landing: { x: FAR_SHORE_X - 0.45, y: 24 },
+      berth: { x: FAR_SHORE_X - 2, y: 24 },
+    },
+  ];
+  for (const dock of docks) {
+    paint(dock.pier, 'boards');
+    for (let y = dock.pier.y; y < dock.pier.y + dock.pier.h; y++) {
+      for (let x = dock.pier.x; x < dock.pier.x + dock.pier.w; x++) blocked[y * width + x] = false;
+    }
+  }
 
   const paths: Rect[] = [
     { x: AVENUE_X, y: 6, w: 2, h: height - 6 },
-    { x: 1, y: 6, w: width - 2, h: 2 },
-    { x: 1, y: avenueEnd, w: width - 2, h: 2 },
+    { x: 1, y: 6, w: MAP_WIDTH - 2, h: 2 },
+    { x: 1, y: avenueEnd, w: MAP_WIDTH - 2, h: 2 },
     { x: AVENUE_X - 3, y: height - 4, w: 8, h: 3 },
+    // Through the hedge gap and along the promenade.
+    { x: MAP_WIDTH - 1, y: gap.y, w: 2, h: gap.h },
+    { x: PROMENADE_X + 1, y: 2, w: 2, h: height - 4 },
+    { x: PROMENADE_X + 3, y: 11, w: 1, h: 2 },
+    // The far shore's boardwalk, from its pier up to the lighthouse and down.
+    { x: FAR_SHORE_X + 1, y: 4, w: 2, h: height - 9 },
+    { x: FAR_SHORE_X, y: 23, w: 1, h: 2 },
   ];
   for (const path of paths) {
     for (let y = path.y; y < path.y + path.h; y++) {
@@ -219,7 +304,25 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('planter', 15, entrance);
   add('planter', 1, height - 2);
   // The gateway to Run Your Own Fair, on the grass east of the gate's cross path.
-  add('fair-gate', width - 2, entrance);
+  add('fair-gate', MAP_WIDTH - 2, entrance);
+
+  // The promenade: lamps along the hedge, benches by the water, a sign at the dock.
+  for (let y = 3; y < height - 3; y += 5) add('lamp-post', PROMENADE_X, y);
+  add('ferry-sign', PROMENADE_X + 3, 9);
+  add('bench', PROMENADE_X + 3, 5);
+  add('bench', PROMENADE_X + 3, 16);
+  add('planter', PROMENADE_X + 3, 20);
+  add('balloons', PROMENADE_X, 15);
+  // The far shore: a lighthouse at the head of its boardwalk, and places to sit.
+  add('lighthouse', FAR_SHORE_X + 1, 2, 2, 2);
+  add('ferry-sign', FAR_SHORE_X, 21);
+  add('bench', FAR_SHORE_X + 4, 8);
+  add('bench', FAR_SHORE_X + 4, 15);
+  add('planter', FAR_SHORE_X + 4, 11);
+  add('planter', FAR_SHORE_X, 12);
+  add('lamp-post', FAR_SHORE_X + 3, 19);
+  add('lamp-post', FAR_SHORE_X + 3, 5);
+  add('balloons', FAR_SHORE_X + 4, 22);
 
   return {
     width,
@@ -233,6 +336,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
     avenueX: AVENUE_X,
     // Just inside the gate, off to the side so the arch doesn't hide the player.
     spawn: { x: AVENUE_X + 3.5, y: height - 3 },
+    midwayWidth: MAP_WIDTH,
+    waterside: { gap, water, farShoreX: FAR_SHORE_X, docks },
   };
 }
 
@@ -494,12 +599,15 @@ export interface Visitor extends Walker {
   look: number;
 }
 
-/** Tiles visitors like to stroll to: the avenue and the plazas. */
+/**
+ * Tiles visitors like to stroll to: the avenue, the plazas and the promenade.
+ * Never the far shore, which only the ferry reaches.
+ */
 export function strollTiles(map: MidwayMap): Point[] {
   const tiles: Point[] = [];
   for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
-      if (map.ground[y * map.width + x] !== 'grass' && !isBlocked(map, x, y)) tiles.push({ x, y });
+    for (let x = 0; x < map.waterside.water.x; x++) {
+      if (map.ground[y * map.width + x] === 'path' && !isBlocked(map, x, y)) tiles.push({ x, y });
     }
   }
   return tiles;

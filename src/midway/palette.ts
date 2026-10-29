@@ -87,3 +87,18 @@ export const locator = {
   ring: colors.stripeB,
   edge: colors.background,
 } as const;
+
+/** The waterside: the river, its sandy banks, the piers and the ferry. */
+export const waterside = {
+  water: colors.water,
+  waterDeep: '#3aa6d6',
+  ripple: 'rgba(255, 255, 255, 0.55)',
+  sand: '#f0d9a0',
+  sandShade: '#d9bd7a',
+  boards: '#c8955b',
+  boardsShade: '#9c6b3d',
+  hull: '#2b8ccc',
+  hullShade: '#1f6aa0',
+  deck: colors.stripeB,
+  rope: '#e3d9c2',
+} as const;

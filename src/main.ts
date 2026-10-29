@@ -133,6 +133,7 @@ import {
   type LanternColor,
   type LightGardenDesign,
 } from './midway/light-garden';
+import type { FerryRequest } from './midway/ferry';
 import { startMidway } from './midway/midway';
 import type { LandmarkDetail } from './midway/render';
 import {
@@ -544,6 +545,10 @@ function renderMidway() {
         <p class="message" role="status"></p>
         <button type="button" class="cancel" hidden>Cancel walk</button>
       </div>
+      <div class="midway-ferry" role="group" aria-label="Ferry" hidden>
+        <p class="message" role="status" aria-live="polite"></p>
+        <div class="actions"></div>
+      </div>
       <section class="mystery-card" aria-labelledby="mystery-card-title" hidden>
         <h2 id="mystery-card-title"></h2>
         <div class="mystery-card-body" aria-live="polite"></div>
@@ -629,7 +634,9 @@ function renderMidway() {
     motion: motionPreference.load(),
     onRoute: (route) => routeStatus.show(route),
     onLocate: (message) => (locateStatus.textContent = message ?? ''),
+    onFerry: (message, requests) => ferryPanel.show(message, requests),
   });
+  const ferryPanel = setUpFerry((request) => midway.ferry(request));
   const locateStatus = app.querySelector<HTMLElement>('.locate-status')!;
   // Escape hides the locate ring first, while it shows; then panels get the key.
   // Capture listeners on window run in the order they were added, so this one
@@ -839,6 +846,46 @@ function setUpRoute(cancelWalk: () => void) {
         timer = window.setTimeout(() => (box.hidden = true), 4000);
     },
     stop: () => window.clearTimeout(timer),
+  };
+}
+
+const FERRY_BUTTONS: Record<FerryRequest, string> = {
+  use: 'Use the ferry',
+  board: 'Board the ferry',
+  depart: 'Cast off',
+  call: 'Call the ferry',
+  skip: 'Skip to the dock',
+  'turn-back': 'Turn back',
+  'step-off': 'Step off',
+};
+
+// The ferry's line and buttons, by the waterside docks. Every button does what
+// a key or click on the map does, so the ride never needs the pointer or the
+// keys alone. Focus goes back to the map, so walking works straight after.
+function setUpFerry(request: (request: FerryRequest) => void) {
+  const box = app.querySelector<HTMLElement>('.midway-ferry')!;
+  const message = box.querySelector<HTMLElement>('.message')!;
+  const actions = box.querySelector<HTMLElement>('.actions')!;
+  return {
+    show(text: string, requests: FerryRequest[]) {
+      message.textContent = text;
+      box.hidden = text === '' && requests.length === 0;
+      const hadFocus = actions.contains(document.activeElement);
+      actions.replaceChildren(
+        ...requests.map((r) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = FERRY_BUTTONS[r];
+          button.addEventListener('click', () => {
+            app.querySelector<HTMLElement>('.midway-map')?.focus();
+            request(r);
+          });
+          return button;
+        }),
+      );
+      // A button that went away must not drop focus to the page.
+      if (hadFocus) app.querySelector<HTMLElement>('.midway-map')?.focus();
+    },
   };
 }
 
