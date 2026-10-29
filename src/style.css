@@ -2110,6 +2110,15 @@ kbd {
   margin-top: 0.75rem;
 }
 
+.coaster-scene {
+  display: block;
+  width: 800px;
+  max-width: 100%;
+  margin: 1rem 0;
+  border-radius: var(--radius);
+}
+
+.coaster-controls,
 .toy-controls {
   display: flex;
   flex-wrap: wrap;

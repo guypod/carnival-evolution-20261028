@@ -194,6 +194,7 @@ import { nextScene, scenePreference, sceneToggleState, type Scene } from './midw
 import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './midway/view';
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
+import { KEYS_HELP, coasterStore, startCoasterWorkshop } from './coaster-workshop';
 import {
   BALLOON_COLORS,
   BALLOON_COLOR_NAMES,
@@ -383,6 +384,7 @@ function renderMidway() {
             <a class="tune-link" href="#/tune">🎠 Carousel Tune Workshop</a>
             <a class="balloon-link" href="#/balloon">🎈 Wish Balloon</a>
             <a class="snack-link" href="#/snack">🍦 Snack Stand</a>
+            <a class="coaster-link" href="#/coaster">🎢 Coaster Workshop</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <a class="expedition-link" href="#/expedition">🪞 Mirror Maze Expedition</a>
@@ -2889,6 +2891,57 @@ function renderSnack() {
   };
 }
 
+function renderCoaster() {
+  document.body.dataset.view = 'coaster';
+  app.innerHTML = `
+    <section class="coaster" aria-labelledby="coaster-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="coaster-title" tabindex="-1">Coaster Workshop</h1>
+      </div>
+      <p>Shape a small side-view coaster track, then test it on a toy model with made-up gravity, drag and a speed limit. It says nothing about real coasters.</p>
+      <canvas class="coaster-scene" aria-hidden="true"></canvas>
+      <div class="coaster-controls">
+        <button type="button" data-action="previous">◀ Point</button>
+        <button type="button" data-action="next">Point ▶</button>
+        <button type="button" data-action="up">Raise</button>
+        <button type="button" data-action="down">Lower</button>
+        <button type="button" data-action="test">Test (T)</button>
+        <button type="button" data-action="pause">Pause (P)</button>
+        <button type="button" data-action="step">Step (S)</button>
+        <button type="button" data-action="undo">Undo (U)</button>
+        <button type="button" data-action="reset">Reset layout (R)</button>
+      </div>
+      <p class="coaster-status" role="status" aria-live="polite"></p>
+      <p class="note">${KEYS_HELP}. Escape stops a test, or goes back to the midway when nothing is running. With Quiet midway or reduced motion, a test shows its result at once with dots every half second. Not scored. Your layout is kept in this browser only.</p>
+    </section>
+  `;
+  const canvas = app.querySelector<HTMLCanvasElement>('.coaster-scene')!;
+  const status = app.querySelector<HTMLElement>('.coaster-status')!;
+  const controls = app.querySelector<HTMLElement>('.coaster-controls')!;
+  const session = startCoasterWorkshop(canvas, {
+    host: window,
+    store: coasterStore,
+    preference: () => motionPreference.load(),
+    onExit: () => (location.hash = '#/'),
+    onStatus: (text, saved) => {
+      const next = saved ? text : `${text} This browser would not save your layout.`;
+      if (status.textContent !== next) status.textContent = next;
+    },
+  });
+  const onClick = (event: Event) => {
+    const action = (event.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset
+      .action;
+    if (action) session.act(action as Parameters<typeof session.act>[0]);
+  };
+  controls.addEventListener('click', onClick);
+  app.querySelector<HTMLElement>('h1')!.focus();
+  stop = () => {
+    controls.removeEventListener('click', onClick);
+    session.stop();
+  };
+}
+
 function renderToy() {
   document.body.dataset.view = 'toy';
   const { name, demo } = pickToy(roomObjects(registry.all()));
@@ -3412,6 +3465,7 @@ function route() {
   else if (location.hash === '#/tune') renderTune();
   else if (location.hash === '#/balloon') renderBalloon();
   else if (location.hash === '#/snack') renderSnack();
+  else if (location.hash === '#/coaster') renderCoaster();
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
   else if (location.hash === '#/expedition') renderExpedition();
