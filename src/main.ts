@@ -2352,6 +2352,10 @@ function renderBalloon() {
     }
     const started = performance.now();
     const step = (now: number) => {
+      if (quiet) {
+        drawBalloonScene(ctx, balloon, RESTING_POSITION);
+        return;
+      }
       const t = (now - started) / RELEASE_MS;
       drawBalloonScene(ctx, balloon, balloonPosition(t));
       if (t < 1) frame = requestAnimationFrame(step);

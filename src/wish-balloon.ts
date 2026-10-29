@@ -101,17 +101,20 @@ export const keepsakeStore = createKeepsakeStore(browserStorage());
 export const BALLOON_SCENE = { width: 360, height: 300 } as const;
 /** How long a release takes, in milliseconds. */
 export const RELEASE_MS = 4000;
+/** How far below its centre the drawing reaches: string and wish text. */
+const DRAWING_BELOW = 120;
 
 /**
  * Where the balloon is at progress t (0 to 1): it rises from the stall in a
- * gentle arc and drifts off the top. Quiet uses a fixed resting spot instead.
+ * gentle arc and drifts off the top, wish and all. Quiet uses a fixed resting
+ * spot instead.
  */
 export function balloonPosition(t: number): { x: number; y: number } {
   const p = Math.min(1, Math.max(0, t));
   const { width, height } = BALLOON_SCENE;
   return {
     x: width / 2 + Math.sin(p * Math.PI) * 60,
-    y: height - 70 - p * (height + 20),
+    y: height - 70 - p * (height - 70 + DRAWING_BELOW),
   };
 }
 

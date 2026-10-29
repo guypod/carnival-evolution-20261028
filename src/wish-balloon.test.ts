@@ -67,5 +67,7 @@ describe('wish balloons', () => {
     expect(middle.y).toBeLessThan(start.y);
     expect(end.y).toBeLessThan(0);
     expect(start.y).toBeLessThan(BALLOON_SCENE.height);
+    // The wish is drawn 100px below the centre, so it must leave the canvas too.
+    expect(end.y + 100).toBeLessThan(0);
   });
 });
