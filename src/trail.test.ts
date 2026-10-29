@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CarnivalGame } from './carnival';
+import { registry } from './games';
+import { boothMaxScore } from './prize-pavilion';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 
 function game(id: string, name: string): CarnivalGame {
@@ -192,5 +194,40 @@ describe('progressText', () => {
     );
     expect(progressText(crowd)).toBe('2 of 2 booths');
     expect(progressText(trailMissions([cannon], scores({}))[0])).toBe('0 of 1 booth');
+  });
+});
+
+describe('bounded booths', () => {
+  const puppets = game('puppet-theatre', 'Puppet Theatre');
+
+  it('never asks a registered bounded booth for more than its best round', () => {
+    const missions = trailMissions(registry.all(), () => undefined);
+    for (const mission of missions) {
+      const match = mission.nextAction.match(/at (.+) to reach (\d+)\.$/);
+      if (!match) continue;
+      const booth = registry.all().find((g) => g.name === match[1]);
+      const max = booth && boothMaxScore(booth.id);
+      if (max !== undefined) expect(Number(match[2])).toBeLessThanOrEqual(max);
+    }
+  });
+
+  it('counts the Puppet Theatre at Best 2 for Midway Master, and asks for 2 at Best 1', () => {
+    const one = byId([cannon, puppets], { 'water-cannon': 100, 'puppet-theatre': 1 });
+    expect(one['midway-master']).toMatchObject({ progress: 1, target: 2, complete: false });
+    expect(one['midway-master'].nextAction).toBe(
+      'Score 1 more point at Puppet Theatre to reach 2.',
+    );
+    const two = byId([cannon, puppets], { 'water-cannon': 100, 'puppet-theatre': 2 });
+    expect(two['midway-master'].complete).toBe(true);
+  });
+
+  it('never recommends the Puppet Theatre for Crowd Pleaser or Headliner', () => {
+    const missions = byId([cannon, puppets, rings], { 'puppet-theatre': 2 });
+    for (const id of ['crowd-pleaser', 'headliner']) {
+      expect(missions[id].next?.gameId).not.toBe('puppet-theatre');
+      expect(missions[id].target).toBe(2);
+    }
+    const alone = byId([puppets], { 'puppet-theatre': 2 });
+    expect(alone['crowd-pleaser']).toMatchObject({ target: 0, complete: false });
   });
 });

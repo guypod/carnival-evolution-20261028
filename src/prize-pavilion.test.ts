@@ -3,11 +3,19 @@ import { createScoreBoard, type CarnivalGame } from './carnival';
 import {
   PAVILION_TIERS,
   PRIZE_MOTIFS,
+  boothMaxScore,
   boothTiers,
   collectorText,
   pavilionCollection,
   shelfText,
 } from './prize-pavilion';
+import { registry } from './games';
+
+const games = registry.all();
+
+function scores(map: Record<string, number>) {
+  return (gameId: string) => map[gameId];
+}
 
 function game(id: string, name: string): CarnivalGame {
   return { id, name, description: `${name}.`, start: () => () => {} };
@@ -189,5 +197,49 @@ describe('boothTiers', () => {
       const shelf = pavilionCollection([game(id, id)], () => 150).shelves[0];
       expect(shelf.unlocked.map((t) => t.id)).toContain('silver');
     }
+  });
+});
+
+describe('bounded booths', () => {
+  const puppets = game('puppet-theatre', 'Puppet Theatre');
+
+  it('gives every registered bounded booth only tiers a round can reach', () => {
+    for (const registered of games) {
+      const max = boothMaxScore(registered.id);
+      if (max === undefined) continue;
+      for (const tier of boothTiers(registered.id)) {
+        expect(tier.minScore).toBeLessThanOrEqual(max);
+      }
+    }
+    expect(boothMaxScore('puppet-theatre')).toBe(2);
+  });
+
+  it('keeps every bounded booth goal at or under the universal one, so no won prize is lost', () => {
+    for (const registered of games) {
+      boothTiers(registered.id).forEach((tier, i) => {
+        expect(tier.id).toBe(PAVILION_TIERS[i].id);
+        expect(tier.minScore).toBeLessThanOrEqual(PAVILION_TIERS[i].minScore);
+      });
+    }
+  });
+
+  it('wins Bronze at Best 1 and every Puppet Theatre prize at Best 2', () => {
+    const one = pavilionCollection([puppets], scores({ 'puppet-theatre': 1 })).shelves[0];
+    expect(one.top?.id).toBe('bronze');
+    expect(shelfText(one).next).toBe('1 point to Silver: Curtain Call Medal');
+    const two = pavilionCollection([puppets], scores({ 'puppet-theatre': 2 }));
+    expect(two.shelves[0].tiers.map((tier) => tier.id)).toEqual(['bronze', 'silver']);
+    expect(two.shelves[0].top?.id).toBe('silver');
+    expect(shelfText(two.shelves[0]).next).toBe('Every prize won!');
+    expect(two.collector).toBe(true);
+  });
+
+  it('lets Carnival Collector unlock with the Puppet Theatre at Best 1', () => {
+    const cannon = game('water-cannon', 'Water Cannon');
+    const collection = pavilionCollection(
+      [cannon, puppets],
+      scores({ 'water-cannon': 50, 'puppet-theatre': 1 }),
+    );
+    expect(collection.collector).toBe(true);
   });
 });

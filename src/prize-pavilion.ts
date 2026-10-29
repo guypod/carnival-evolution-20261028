@@ -58,7 +58,8 @@ export const PAVILION_TIERS: readonly PavilionTier[] = [
 ];
 
 type Goal = [minScore: number, prize: string, motif: PrizeMotif];
-type TierGoals = readonly [bronze: Goal, silver: Goal, gold: Goal];
+type TierGoals =
+  readonly [bronze: Goal, silver: Goal, gold: Goal] | readonly [bronze: Goal, silver: Goal];
 
 /**
  * Each booth's own goals and prizes, checked against the booth's scoring rules
@@ -115,6 +116,11 @@ const BOOTH_GOALS: Readonly<Record<string, TierGoals>> = {
     [150, 'Burrowing Mole Plush', 'mole'],
     [300, 'Crowned Mole Statue', 'mole-statue'],
   ],
+  // 1 or 2 per performance: one point per ending seen. Two endings, so no Gold.
+  'puppet-theatre': [
+    [1, 'Theatre Ticket Stubs', 'tickets'],
+    [2, 'Curtain Call Medal', 'medal'],
+  ],
   // Up to 90 a hit on a streak, so the universal goals fit.
   'water-cannon': [
     [50, 'Splash Bucket Hat', 'bucket-hat'],
@@ -130,12 +136,25 @@ const BOOTH_GOALS: Readonly<Record<string, TierGoals>> = {
 export function boothTiers(gameId: string): readonly PavilionTier[] {
   if (!Object.hasOwn(BOOTH_GOALS, gameId)) return PAVILION_TIERS;
   const goals = BOOTH_GOALS[gameId];
-  return PAVILION_TIERS.map((tier, i) => ({
+  return PAVILION_TIERS.slice(0, goals.length).map((tier, i) => ({
     ...tier,
     minScore: goals[i][0],
     prize: goals[i][1],
     motif: goals[i][2],
   }));
+}
+
+/**
+ * The best score a round can reach at booths whose score is bounded low enough
+ * that generic goals would be out of reach, read from the booth's README.
+ */
+const BOOTH_MAX_SCORES: Readonly<Record<string, number>> = {
+  'puppet-theatre': 2,
+};
+
+/** A booth's best possible round, or undefined when its score has no low bound. */
+export function boothMaxScore(gameId: string): number | undefined {
+  return Object.hasOwn(BOOTH_MAX_SCORES, gameId) ? BOOTH_MAX_SCORES[gameId] : undefined;
 }
 
 /** The grand reward for reaching at least Bronze at every registered booth. */
@@ -152,9 +171,9 @@ export interface PavilionShelf {
   unlocked: PavilionTier[];
   /** The highest tier reached, or undefined below Bronze. */
   top: PavilionTier | undefined;
-  /** The next tier to win, or undefined once Gold is won. */
+  /** The next tier to win, or undefined once the booth's top tier is won. */
   next: PavilionTier | undefined;
-  /** Points still needed for `next`, or 0 once Gold is won. */
+  /** Points still needed for `next`, or 0 once the top tier is won. */
   pointsToNext: number;
   playHref: string;
 }
