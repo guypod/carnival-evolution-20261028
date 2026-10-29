@@ -62,6 +62,8 @@ export interface Theatre {
   sceneStart: StageState;
   /** True once the finished performance's score has been handed out. */
   scoreTaken: boolean;
+  /** True while the finished performance's score write keeps failing. */
+  scoreFailed: boolean;
 }
 
 export type Action =
@@ -73,7 +75,8 @@ export type Action =
   | { type: 'grab'; id: ItemId }
   | { type: 'undo' }
   | { type: 'rehearse' }
-  | { type: 'replay' };
+  | { type: 'replay' }
+  | { type: 'discard' };
 
 const isActor = (id: ItemId): id is ActorId => (ACTORS as readonly string[]).includes(id);
 const isProp = (id: ItemId): id is PropId => (PROPS as readonly string[]).includes(id);
@@ -110,6 +113,7 @@ export function createTheatre(
     sceneStart: cloneStage(sceneStart),
     // A restored finished performance was scored before it was saved.
     scoreTaken: stage.scene === 'curtain',
+    scoreFailed: false,
   };
 }
 
@@ -239,7 +243,7 @@ export function act(theatre: Theatre, action: Action): Theatre {
       stage: { ...cloneStage(theatre.sceneStart), endingsSeen: [...stage.endingsSeen] },
     };
   }
-  if (action.type === 'replay') {
+  if (action.type === 'replay' || action.type === 'discard') {
     if (stage.scene !== 'curtain') return theatre;
     return createTheatre(createStage(stage.endingsSeen));
   }
@@ -261,7 +265,10 @@ export function act(theatre: Theatre, action: Action): Theatre {
 
 /** True for the actions that rewind the stage, which end any drag in progress. */
 export const rewinds = (action: Action) =>
-  action.type === 'undo' || action.type === 'rehearse' || action.type === 'replay';
+  action.type === 'undo' ||
+  action.type === 'rehearse' ||
+  action.type === 'replay' ||
+  action.type === 'discard';
 
 /** The performance's score once the curtain falls: one point per ending seen so far. */
 export function takeFinalScore(theatre: Theatre): number | null {
@@ -279,12 +286,35 @@ export function recordFinalScore(theatre: Theatre, record: (score: number) => vo
   if (score === null) return true;
   try {
     record(score);
+    theatre.scoreFailed = false;
     return true;
   } catch (error) {
     theatre.scoreTaken = false;
+    theatre.scoreFailed = true;
     console.error('Puppet Theatre could not save the score', error);
     return false;
   }
+}
+
+/**
+ * Runs one player action: retries a failed score first, applies the action,
+ * saves the stage with `save`, then records a new score. While the retry fails,
+ * a replay keeps the curtain so the unrecorded performance is not overwritten.
+ * Discard starts a new performance without recording the pending score.
+ */
+export function perform(
+  theatre: Theatre,
+  action: Action,
+  record: (score: number) => void,
+  save: (theatre: Theatre) => void,
+): Theatre {
+  if (action.type !== 'discard' && !recordFinalScore(theatre, record) && action.type === 'replay') {
+    return theatre;
+  }
+  const next = act(theatre, action);
+  save(next);
+  recordFinalScore(next, record);
+  return next;
 }
 
 /** What the save slot keeps: the stage, and the stage as its scene began. */
@@ -379,13 +409,25 @@ export const POSE_BUTTONS = POSES.map((pose, i) => ({
 }));
 export const UNDO_BUTTON = { x: 600, y: 440, w: 80, h: 34 };
 export const REHEARSE_BUTTON = { x: 690, y: 440, w: 100, h: 34 };
+export const RETRY_BUTTON = { x: 230, y: 420, w: 140, h: 34 };
+export const DISCARD_BUTTON = { x: 390, y: 420, w: 220, h: 34 };
 
 type Box = { x: number; y: number; w: number; h: number };
 const inBox = (b: Box, x: number, y: number) =>
   x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 
 /** The button action at a canvas point, if a button is there. */
-export function buttonAction(stage: StageState, x: number, y: number): Action | undefined {
+export function buttonAction(
+  stage: StageState,
+  x: number,
+  y: number,
+  scoreFailed = false,
+): Action | undefined {
+  if (stage.scene === 'curtain' && scoreFailed) {
+    if (inBox(RETRY_BUTTON, x, y)) return { type: 'replay' };
+    if (inBox(DISCARD_BUTTON, x, y)) return { type: 'discard' };
+    return undefined;
+  }
   if (stage.scene === 'curtain') return { type: 'replay' };
   if (inBox(UNDO_BUTTON, x, y)) return { type: 'undo' };
   if (inBox(REHEARSE_BUTTON, x, y)) return { type: 'rehearse' };
@@ -396,7 +438,12 @@ export function buttonAction(stage: StageState, x: number, y: number): Action | 
 }
 
 /** The action for a key press, or undefined when the theatre ignores the key. */
-export function keyAction(stage: StageState, code: string): Action | undefined {
+export function keyAction(
+  stage: StageState,
+  code: string,
+  scoreFailed = false,
+): Action | undefined {
+  if (stage.scene === 'curtain' && scoreFailed && code === 'KeyN') return { type: 'discard' };
   if (stage.scene === 'curtain') {
     return code === 'Enter' || code === 'Space' ? { type: 'replay' } : undefined;
   }
@@ -582,7 +629,7 @@ function drawTableau(ctx: CanvasRenderingContext2D, stage: StageState, tableau: 
   }
 }
 
-function draw(ctx: CanvasRenderingContext2D, stage: StageState) {
+function draw(ctx: CanvasRenderingContext2D, stage: StageState, scoreFailed: boolean) {
   const { colors } = theme;
   ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -631,6 +678,17 @@ function draw(ctx: CanvasRenderingContext2D, stage: StageState) {
     ctx.fillText('The End!', CENTRE, 180);
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('body');
+    if (scoreFailed) {
+      ctx.fillStyle = colors.danger;
+      ctx.font = canvasFont('body', 'bold');
+      ctx.fillText('Your score could not be saved.', CENTRE, 388);
+      ctx.fillStyle = colors.text;
+      ctx.font = canvasFont('small');
+      ctx.fillText('Retry (Enter), or play on without saving it (N).', CENTRE, 410);
+      drawButton(ctx, RETRY_BUTTON, 'Retry saving', false);
+      drawButton(ctx, DISCARD_BUTTON, 'Play on without saving', false);
+      return;
+    }
     ctx.fillText('Click or press Enter to perform it again', CENTRE, 460);
     return;
   }
@@ -664,12 +722,9 @@ export const puppetTheatre: CarnivalGame = {
     const record = (score: number) => recordScore(puppetTheatre.id, score);
     const run = (action: Action) => {
       if (rewinds(action)) dragging = undefined;
-      // Retries a score whose write failed. While it still fails, a replay keeps
-      // the curtain, so the unrecorded performance is not overwritten.
-      if (!recordFinalScore(theatre, record) && action.type === 'replay') return;
-      theatre = act(theatre, action);
-      slot.save({ stage: theatre.stage, sceneStart: theatre.sceneStart });
-      recordFinalScore(theatre, record);
+      theatre = perform(theatre, action, record, (next) =>
+        slot.save({ stage: next.stage, sceneStart: next.sceneStart }),
+      );
     };
     const toCanvas = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -680,7 +735,7 @@ export const puppetTheatre: CarnivalGame = {
     };
     const onDown = (event: PointerEvent) => {
       const { x, y } = toCanvas(event);
-      const button = buttonAction(theatre.stage, x, y);
+      const button = buttonAction(theatre.stage, x, y, theatre.scoreFailed);
       if (button) return run(button);
       const id = itemAt(theatre.stage, x, y);
       if (!id) return;
@@ -710,7 +765,7 @@ export const puppetTheatre: CarnivalGame = {
         target?.tagName === 'TEXTAREA'
       )
         return;
-      const action = keyAction(theatre.stage, event.code);
+      const action = keyAction(theatre.stage, event.code, theatre.scoreFailed);
       if (!action) return;
       event.preventDefault();
       run(action);
@@ -723,7 +778,7 @@ export const puppetTheatre: CarnivalGame = {
 
     let frame = 0;
     const loop = () => {
-      draw(ctx, theatre.stage);
+      draw(ctx, theatre.stage, theatre.scoreFailed);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);

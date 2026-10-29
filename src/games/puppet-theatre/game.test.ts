@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CENTRE,
+  DISCARD_BUTTON,
+  RETRY_BUTTON,
   ENDINGS,
   finalTableau,
   act,
@@ -11,6 +13,7 @@ import {
   keyAction,
   parseSavedTheatre,
   parseStage,
+  perform,
   recordFinalScore,
   rewinds,
   stageSaveSlot,
@@ -32,14 +35,14 @@ const toSceneTwo = (): Theatre =>
 const toSceneThree = (gift: Gift): Theatre =>
   run(toSceneTwo(), { type: 'move', id: gift, x: 620 }, { type: 'drop', id: gift });
 
-const toCurtain = (gift: Gift): Theatre =>
-  run(
-    toSceneThree(gift),
-    { type: 'move', id: 'knight', x: CENTRE - 40 },
-    { type: 'move', id: 'dragon', x: CENTRE + 40 },
-    { type: 'pose', id: 'knight', pose: 'bow' },
-    { type: 'pose', id: 'dragon', pose: 'bow' },
-  );
+const toCentre: Action[] = [
+  { type: 'move', id: 'knight', x: CENTRE - 40 },
+  { type: 'move', id: 'dragon', x: CENTRE + 40 },
+  { type: 'pose', id: 'knight', pose: 'bow' },
+];
+const bothBow: Action[] = [...toCentre, { type: 'pose', id: 'dragon', pose: 'bow' }];
+
+const toCurtain = (gift: Gift): Theatre => run(toSceneThree(gift), ...bothBow);
 
 describe('scene transitions', () => {
   it('starts in scene 1 with its goal as the caption', () => {
@@ -214,6 +217,70 @@ describe('replay and scoring', () => {
     expect(recordFinalScore(curtain, (score) => scores.push(score))).toBe(true);
     expect(recordFinalScore(curtain, (score) => scores.push(score))).toBe(true);
     expect(scores).toEqual([1]);
+  });
+
+  it('keeps the curtain and the failure shown while a replay retry fails, then records once', () => {
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      const failing = () => {
+        throw new Error('storage full');
+      };
+      const saves: Theatre[] = [];
+      const save = (next: Theatre) => saves.push(next);
+      let theatre = perform(run(toSceneThree('cake'), ...toCentre), bothBow[3], failing, save);
+      expect(theatre.stage.scene).toBe('curtain');
+      expect(theatre.scoreFailed).toBe(true);
+      expect(buttonAction(theatre.stage, 10, 10, true)).toBeUndefined();
+
+      theatre = perform(theatre, { type: 'replay' }, failing, save);
+      expect(theatre.stage.scene).toBe('curtain');
+      expect(theatre.scoreFailed).toBe(true);
+      expect(theatre.scoreTaken).toBe(false);
+
+      const scores: number[] = [];
+      const ok = (score: number) => scores.push(score);
+      theatre = perform(theatre, { type: 'replay' }, ok, save);
+      expect(scores).toEqual([1]);
+      expect(theatre.stage.scene).toBe(1);
+      expect(theatre.scoreFailed).toBe(false);
+      expect(theatre.stage.endingsSeen).toEqual(['cake']);
+    } finally {
+      console.error = quiet;
+    }
+  });
+
+  it('lets the player play on without saving a failed score, never recording it', () => {
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      const scores: number[] = [];
+      const failing = () => {
+        throw new Error('storage full');
+      };
+      const curtain = toCurtain('umbrella');
+      expect(recordFinalScore(curtain, failing)).toBe(false);
+      expect(keyAction(curtain.stage, 'KeyN', true)).toEqual({ type: 'discard' });
+      expect(keyAction(curtain.stage, 'KeyN', false)).toBeUndefined();
+      expect(buttonAction(curtain.stage, DISCARD_BUTTON.x + 5, DISCARD_BUTTON.y + 5, true)).toEqual(
+        { type: 'discard' },
+      );
+      expect(buttonAction(curtain.stage, RETRY_BUTTON.x + 5, RETRY_BUTTON.y + 5, true)).toEqual({
+        type: 'replay',
+      });
+      const next = perform(
+        curtain,
+        { type: 'discard' },
+        (score) => scores.push(score),
+        () => {},
+      );
+      expect(scores).toEqual([]);
+      expect(next.stage.scene).toBe(1);
+      expect(next.scoreFailed).toBe(false);
+      expect(act(createTheatre(), { type: 'discard' }).stage.scene).toBe(1);
+    } finally {
+      console.error = quiet;
+    }
   });
 
   it('has no score before the curtain', () => {

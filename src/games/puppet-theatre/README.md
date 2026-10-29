@@ -41,6 +41,12 @@ When the curtain falls, the performance records a score of how many of the two
 endings you have found so far (1 or 2). Endings found are remembered with the
 saved stage.
 
+If the score cannot be saved, the curtain stays down and says so, with two
+buttons. **Retry saving** (or `Space`/`Enter`) tries again, and once the save
+works it records the score once and starts a new performance. **Play on
+without saving** (or `N`) starts a new performance and drops that score, so it
+is never recorded.
+
 ## Saved stage
 
 The stage (scene, positions, poses, gift and endings found), and the stage as
