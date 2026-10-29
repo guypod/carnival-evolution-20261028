@@ -9,6 +9,10 @@ import {
   cleanNickname,
   createPartyStore,
   eraseNicknames,
+  eraseSavedNicknames,
+  forgetNotice,
+  guardControlKeys,
+  isControlKey,
   leaveTurn,
   legComparison,
   makePartyId,
@@ -18,6 +22,7 @@ import {
   playTurn,
   playerName,
   recordTurn,
+  saveWarning,
   startTurn,
   summarize,
   type Party,
@@ -210,6 +215,142 @@ describe('createPartyStore', () => {
       removeItem: () => {},
     });
     expect(store.save(party())).toBe(false);
+  });
+});
+
+function throwingStorage(initial: Record<string, string> = {}) {
+  const storage = memoryStorage(initial);
+  return {
+    ...storage,
+    setItem: () => {
+      throw new Error('QuotaExceededError');
+    },
+    removeItem: () => {
+      throw new Error('SecurityError');
+    },
+  };
+}
+
+/** Storage that accepts writes and removals but quietly keeps the old value. */
+function ignoringStorage(initial: Record<string, string> = {}) {
+  return { ...memoryStorage(initial), setItem: () => {}, removeItem: () => {} };
+}
+
+describe('storage failures', () => {
+  const saved = party('competitive', ['Ada', 'Bo']);
+  const initial = () => ({ [PARTY_KEY]: JSON.stringify(saved) });
+
+  it('reports a save the browser quietly dropped', () => {
+    const store = createPartyStore(ignoringStorage());
+    expect(store.save(saved)).toBe(false);
+  });
+
+  it('reports a clear that threw or left the party behind', () => {
+    for (const storage of [throwingStorage(initial()), ignoringStorage(initial())]) {
+      const store = createPartyStore(storage);
+      expect(store.clear()).toBe(false);
+      expect(store.read()?.names).toEqual(['Ada', 'Bo']);
+    }
+  });
+
+  it('treats a browser with no storage as having nothing left to clear', () => {
+    expect(createPartyStore(undefined).clear()).toBe(true);
+  });
+
+  it('keeps the saved nicknames on screen when erasing them cannot be saved', () => {
+    for (const storage of [throwingStorage(initial()), ignoringStorage(initial())]) {
+      const store = createPartyStore(storage);
+      const result = eraseSavedNicknames(store, saved);
+      expect(result.erased).toBe(false);
+      expect(result.party).toBe(saved);
+      // The names really are still saved, which is what the page now says.
+      expect(store.read()?.names).toEqual(['Ada', 'Bo']);
+    }
+  });
+
+  it('erases the nicknames durably when the save works', () => {
+    const storage = memoryStorage(initial());
+    const store = createPartyStore(storage);
+    const result = eraseSavedNicknames(store, saved);
+    expect(result.erased).toBe(true);
+    expect(result.party.names).toEqual(['', '']);
+    expect(createPartyStore(storage).read()?.names).toEqual(['', '']);
+  });
+
+  it('never announces an erase, quit or new party that did not happen', () => {
+    expect(forgetNotice('erase', true)).toBe('Nicknames erased. Scores are kept.');
+    expect(forgetNotice('erase', false)).toMatch(/could not be erased.*still saved/);
+    expect(forgetNotice('quit', true)).toBe('');
+    expect(forgetNotice('quit', false)).toMatch(
+      /could not be quit.*scores and nicknames are still saved/,
+    );
+    expect(forgetNotice('new', false)).toMatch(/new party could not be started.*still saved/);
+  });
+
+  it('names the unsaved score and says a reload would replay the turn', () => {
+    expect(saveWarning({ name: 'Ada', score: 120 })).toMatch(
+      /Ada's score of 120 could not be saved.*Try saving again.*played again/,
+    );
+    expect(saveWarning()).toMatch(/reload goes back to the party as it was last saved/);
+  });
+});
+
+describe('party controls during a turn', () => {
+  it('claims Space and Enter only on a focused page control', () => {
+    expect(isControlKey('Space', ' ', 'BUTTON')).toBe(true);
+    expect(isControlKey('Enter', 'Enter', 'button')).toBe(true);
+    expect(isControlKey('Space', ' ', 'A')).toBe(true);
+    expect(isControlKey('Space', ' ', 'CANVAS')).toBe(false);
+    expect(isControlKey('Space', ' ', 'BODY')).toBe(false);
+    expect(isControlKey('Space', ' ', undefined)).toBe(false);
+    expect(isControlKey('ArrowLeft', 'ArrowLeft', 'BUTTON')).toBe(false);
+    expect(isControlKey('Escape', 'Escape', 'BUTTON')).toBe(false);
+  });
+
+  /** A page root inside a window: keydown bubbles from the root to the window. */
+  function page() {
+    const win = new EventTarget();
+    const root = new EventTarget();
+    const thrown: string[] = [];
+    // A game like Ring Toss: Space anywhere on the window plays it.
+    win.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).code === 'Space') {
+        event.preventDefault();
+        thrown.push('ring');
+      }
+    });
+    const press = (code: string, tagName: string) => {
+      const event = Object.assign(new Event('keydown', { cancelable: true }), {
+        code,
+        key: code === 'Space' ? ' ' : code,
+      });
+      Object.defineProperty(event, 'target', { value: { tagName } });
+      root.dispatchEvent(event);
+      // Bubble on to the window unless something on the page stopped it.
+      if (!event.cancelBubble) win.dispatchEvent(event);
+      return event;
+    };
+    return { root, thrown, press };
+  }
+
+  it('keeps Space on Leave turn and Back to the party away from the game', () => {
+    const { root, thrown, press } = page();
+    const unguard = guardControlKeys(root);
+    const onButton = press('Space', 'BUTTON');
+    expect(thrown).toEqual([]);
+    // Nothing cancelled it, so the browser still clicks the focused button.
+    expect(onButton.defaultPrevented).toBe(false);
+    unguard();
+    press('Space', 'BUTTON');
+    expect(thrown).toEqual(['ring']);
+  });
+
+  it('still lets Space on the game itself throw a ring', () => {
+    const { root, thrown, press } = page();
+    guardControlKeys(root);
+    press('Space', 'CANVAS');
+    press('Space', 'BODY');
+    expect(thrown).toEqual(['ring', 'ring']);
   });
 });
 

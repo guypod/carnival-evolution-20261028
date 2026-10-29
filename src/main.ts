@@ -80,7 +80,9 @@ import {
   DEFAULT_NAMES,
   NICKNAME_MAX,
   PARTY_GAME_IDS,
-  eraseNicknames,
+  eraseSavedNicknames,
+  forgetNotice,
+  guardControlKeys,
   leaveTurn,
   legComparison,
   makePartyId,
@@ -90,6 +92,7 @@ import {
   playTurn,
   playerName,
   recordTurn,
+  saveWarning,
   startTurn,
   summarize,
   type Party,
@@ -1384,12 +1387,27 @@ function renderParty() {
   document.body.dataset.view = 'party';
   let party = partyStore.read();
   let saveFailed = false;
+  /** A turn's score that is in this page but not yet saved in the browser. */
+  let unsaved: { name: string; score: number } | undefined;
   /** Said once on the next party page, e.g. the score a turn just got. */
   let notice = '';
 
+  const saved = () => {
+    saveFailed = false;
+    unsaved = undefined;
+  };
+  /** Shows or hides the save warning on the page now, not on the next render. */
+  const showWarning = () => {
+    const box = app.querySelector<HTMLElement>('.party-save-error');
+    if (!box) return;
+    box.hidden = !saveFailed;
+    box.querySelector('.party-save-text')!.textContent = saveFailed ? saveWarning(unsaved) : '';
+  };
   const save = (next: Party) => {
     party = next;
-    saveFailed = !partyStore.save(next);
+    if (partyStore.save(next)) saved();
+    else saveFailed = true;
+    showWarning();
   };
   const leave = () => {
     stop?.();
@@ -1405,10 +1423,16 @@ function renderParty() {
           <h1 id="party-title" tabindex="-1">Two-Player Party</h1>
         </div>
         ${body}
-        <p class="circuit-error" role="alert" hidden>The party could not be saved in this browser. You can keep playing, but a reload will lose it.</p>
+        <div class="circuit-error party-save-error" hidden>
+          <p class="party-save-text" role="alert"></p>
+          <div class="circuit-actions"><button type="button" class="circuit-start party-retry">Try saving again</button></div>
+        </div>
         <p class="note">Party scores stay with the party: they never change single-player bests, the Hall of Records or the Carnival Circuit. The party and its nicknames are kept in this browser only.</p>
       </section>`;
-    app.querySelector<HTMLElement>('.circuit-error')!.hidden = !saveFailed;
+    showWarning();
+    app.querySelector('.party-retry')!.addEventListener('click', () => {
+      if (party) save(party);
+    });
   }
 
   function showSetup() {
@@ -1516,14 +1540,23 @@ function renderParty() {
 
     const newButton = app.querySelector<HTMLButtonElement>('.party-new')!;
     newButton.hidden = !summary.finished;
-    newButton.addEventListener('click', () => {
-      partyStore.clear();
-      party = undefined;
-      showSetup();
-    });
+    /** Forgets the saved party, or says plainly that it is still saved. */
+    const forget = (action: 'quit' | 'new') => {
+      if (partyStore.clear()) {
+        party = undefined;
+        saved();
+        showSetup();
+      } else {
+        notice = forgetNotice(action, false);
+        showParty();
+      }
+    };
+    newButton.addEventListener('click', () => forget('new'));
     app.querySelector('.party-erase')!.addEventListener('click', () => {
-      save(eraseNicknames(current));
-      notice = 'Nicknames erased. Scores are kept.';
+      const result = eraseSavedNicknames(partyStore, current);
+      party = result.party;
+      if (result.erased) saved();
+      notice = forgetNotice('erase', result.erased);
       showParty();
     });
     const confirm = app.querySelector<HTMLElement>('.party-confirm')!;
@@ -1537,11 +1570,7 @@ function renderParty() {
       confirm.hidden = true;
       quit.focus();
     });
-    app.querySelector('.party-confirm-yes')!.addEventListener('click', () => {
-      partyStore.clear();
-      party = undefined;
-      showSetup();
-    });
+    app.querySelector('.party-confirm-yes')!.addEventListener('click', () => forget('quit'));
 
     if (next) play.focus();
     else app.querySelector<HTMLElement>('h1')!.focus();
@@ -1575,8 +1604,12 @@ function renderParty() {
     const leaveButton = app.querySelector<HTMLButtonElement>('.party-leave')!;
     let scored = false;
 
+    // Space and Enter on Leave turn, Back to the party or Try saving again work
+    // those buttons, and never reach a game listening on the window.
+    const unguard = guardControlKeys(app);
     const stopTurn = playTurn(game, app.querySelector('canvas')!, beginScopedRound, (score) => {
       if (!party) return;
+      unsaved = { name, score };
       save(recordTurn(party, partyId, turn, score));
       scored = true;
       notice = `${name} scored ${score} at ${game.name}.`;
@@ -1597,6 +1630,7 @@ function renderParty() {
     stop = () => {
       stopEscape();
       stopTurn();
+      unguard();
     };
   }
 

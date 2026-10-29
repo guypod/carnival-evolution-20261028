@@ -260,29 +260,104 @@ export function createPartyStore(storage: PartyStorage | undefined) {
     }
   }
 
-  /** Returns false when the browser would not save it. */
+  /**
+   * Returns true only when the party reads back as saved, so a browser that
+   * throws or quietly drops the write is reported as a failed save.
+   */
   function save(party: Party): boolean {
     try {
       if (!storage) return false;
-      storage.setItem(PARTY_KEY, JSON.stringify(party));
-      return true;
+      const value = JSON.stringify(party);
+      storage.setItem(PARTY_KEY, value);
+      return storage.getItem(PARTY_KEY) === value;
     } catch {
       return false;
     }
   }
 
-  /** Forgets the party, nicknames included. Returns false when it could not. */
+  /**
+   * Forgets the party, nicknames included. Returns true only when nothing is
+   * left under the key afterwards. With no storage nothing was ever kept.
+   */
   function clear(): boolean {
     try {
-      if (!storage) return false;
+      if (!storage) return true;
       storage.removeItem(PARTY_KEY);
-      return true;
+      return storage.getItem(PARTY_KEY) === null;
     } catch {
       return false;
     }
   }
 
   return { read, save, clear };
+}
+
+export type PartyStore = ReturnType<typeof createPartyStore>;
+
+/**
+ * Erases both nicknames from the saved party. When the browser will not save
+ * the change the party comes back unchanged, so the page never shows the
+ * names as gone while they are still saved.
+ */
+export function eraseSavedNicknames(
+  store: Pick<PartyStore, 'save'>,
+  party: Party,
+): { party: Party; erased: boolean } {
+  const next = eraseNicknames(party);
+  return store.save(next) ? { party: next, erased: true } : { party, erased: false };
+}
+
+/** What the page says after erasing nicknames, quitting or starting over. */
+export function forgetNotice(action: 'erase' | 'quit' | 'new', done: boolean): string {
+  if (action === 'erase') {
+    return done
+      ? 'Nicknames erased. Scores are kept.'
+      : "The nicknames could not be erased: this browser would not save the change, so any nicknames already saved here are still saved. Try again, or clear this site's data in your browser.";
+  }
+  if (done) return '';
+  const what =
+    action === 'quit' ? 'The party could not be quit' : 'A new party could not be started';
+  return `${what}: this browser would not delete the saved party, so its scores and nicknames are still saved here. Try again, or clear this site's data in your browser.`;
+}
+
+/**
+ * The warning shown as soon as a save fails. A scored turn says which score is
+ * not saved yet, because leaving or reloading would mean playing it again.
+ */
+export function saveWarning(unsaved?: { name: string; score: number }): string {
+  if (unsaved) {
+    return `${unsaved.name}'s score of ${unsaved.score} could not be saved in this browser. Try saving again before you leave or reload, or this turn will have to be played again.`;
+  }
+  return 'The party could not be saved in this browser. You can keep playing on this page, but a reload goes back to the party as it was last saved.';
+}
+
+const CONTROL_TAGS = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
+
+/**
+ * Whether a key press belongs to a focused page control rather than the game:
+ * Space or Enter on a button, link or field.
+ */
+export function isControlKey(code: string, key: string, focusedTag: string | undefined): boolean {
+  if (focusedTag === undefined || !CONTROL_TAGS.includes(focusedTag.toUpperCase())) return false;
+  return code === 'Space' || key === ' ' || key === 'Enter';
+}
+
+/**
+ * Keeps Space and Enter on the party's own buttons away from the game while a
+ * turn runs. Added on an element inside the page, it stops those presses
+ * before they bubble to the window listeners games use, so the game cannot
+ * cancel the button's native activation. Returns the cleanup.
+ */
+export function guardControlKeys(root: EventTarget): () => void {
+  const onKeyDown = (event: Event) => {
+    const { code, key, target } = event as KeyboardEvent;
+    const tag = (target as { tagName?: unknown } | null)?.tagName;
+    if (isControlKey(code, key, typeof tag === 'string' ? tag : undefined)) {
+      event.stopPropagation();
+    }
+  };
+  root.addEventListener('keydown', onKeyDown);
+  return () => root.removeEventListener('keydown', onKeyDown);
 }
 
 interface ScopedTurn {
