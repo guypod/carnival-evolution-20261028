@@ -654,14 +654,29 @@ function hedge(ctx: Ctx, area: Rect) {
   );
 }
 
+/**
+ * The tiles of the midway's own east hedge, either side of its gap onto the
+ * promenade. People walk on both sides of it, so each tile is drawn in depth
+ * order with them rather than over everything.
+ */
+export function innerHedgeTiles(map: MidwayMap): Point[] {
+  const { gap } = map.waterside;
+  const tiles: Point[] = [];
+  for (let y = 1; y < map.height - 1; y++) {
+    if (y < gap.y || y >= gap.y + gap.h) tiles.push({ x: gap.x, y });
+  }
+  return tiles;
+}
+
+/** One tile of the midway's east hedge. */
+export function drawHedgeTile(ctx: Ctx, tile: Point) {
+  hedge(ctx, { x: tile.x, y: tile.y, w: 1, h: 1 });
+}
+
 /** The hedge's front two sides, which can stand in front of anything. */
 export function drawFrontHedge(ctx: Ctx, map: MidwayMap) {
   const h = map.height - 1;
   hedge(ctx, { x: map.width - 1, y: 1, w: 1, h: map.height - 1 });
-  // The midway's own east hedge, with its gap onto the promenade.
-  const { gap } = map.waterside;
-  hedge(ctx, { x: gap.x, y: 1, w: 1, h: gap.y - 1 });
-  hedge(ctx, { x: gap.x, y: gap.y + gap.h, w: 1, h: h - gap.y - gap.h });
   hedge(ctx, { x: 1, y: h, w: map.avenueX - 1, h: 1 });
   hedge(ctx, { x: map.avenueX + 2, y: h, w: map.midwayWidth - map.avenueX - 3, h: 1 });
   const { water } = map.waterside;

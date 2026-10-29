@@ -75,6 +75,7 @@ import {
   drawFerry,
   drawFloaters,
   drawFrontHedge,
+  drawHedgeTile,
   drawField,
   drawGroundLayer,
   drawPinwheel,
@@ -82,6 +83,7 @@ import {
   drawWalker,
   ferryBounds,
   groundBounds,
+  innerHedgeTiles,
   HORIZON,
   label,
   PLAYER_LOOK,
@@ -234,6 +236,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     })),
   ];
   const strolls = strollTiles(map);
+  const hedgeTiles = innerHedgeTiles(map);
   const visitors = createVisitors(map, 9, Math.random);
   const clouds: Cloud[] = Array.from({ length: 9 }, (_, i) => ({
     x: i / 9 + Math.random() * 0.08,
@@ -897,6 +900,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         draw: () => drawFerry(ctx, boat, ferryBob),
       },
     ];
+    for (const tile of hedgeTiles) {
+      const p = toScreen(tile.x + 0.5, tile.y + 0.5);
+      const box = { left: p.x - 16, right: p.x + 16, top: p.y - 17, bottom: p.y + 8 };
+      const depth = tile.x + tile.y + 1;
+      drawables.push({ depth, box, draw: () => faded(box, depth, () => drawHedgeTile(ctx, tile)) });
+    }
     for (const item of scenery) {
       if (!onScreen(item.box)) continue;
       const { depth, box, booth, prop, name } = item;
