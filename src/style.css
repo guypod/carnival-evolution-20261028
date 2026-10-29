@@ -1714,3 +1714,26 @@ kbd {
   margin: 8px 0;
   font-size: 1.1rem;
 }
+
+.parade-add,
+.parade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.parade-actions button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.parade-order li {
+  margin: 4px 0;
+}
+
+.parade-route {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius);
+}

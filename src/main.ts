@@ -3,6 +3,7 @@ import { applyTheme, bestScore, onScoreRecorded, type CarnivalGame } from './car
 import { registry } from './games';
 import { startFair } from './fair/view';
 import { browserFairStorage } from './fair/fair';
+import { startParade } from './parade/view';
 import { onEscapeKey } from './escape';
 import {
   CLOSED_GUIDE,
@@ -200,6 +201,7 @@ function renderMidway() {
             <a class="records-link" href="#/records">📜 Hall of Records</a>
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
+            <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </nav>
           <section class="midway-visit" aria-label="Choose my visit" data-guide-section="visit">
@@ -1456,6 +1458,36 @@ function renderFair() {
   };
 }
 
+function renderParade() {
+  document.body.dataset.view = 'parade';
+  app.innerHTML = `
+    <section class="fair" aria-labelledby="parade-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="parade-title" tabindex="-1">Parade Composer</h1>
+      </div>
+      <div class="fair-body"></div>
+      <p class="note">Your parade is kept in this browser only. It never changes scores or other progress.</p>
+    </section>`;
+  const stamped = new Set(
+    registry
+      .all()
+      .filter((game) => bestScore(game.id) !== undefined)
+      .map((game) => game.id),
+  );
+  const stopParade = startParade(
+    app.querySelector<HTMLElement>('.fair-body')!,
+    browserFairStorage(),
+    stamped,
+  );
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    stopParade();
+  };
+}
+
 function route() {
   stop?.();
   stop = undefined;
@@ -1473,6 +1505,7 @@ function route() {
   else if (location.hash === '#/booths') renderBooths();
   else if (location.hash === '#/postcard') renderPostcard();
   else if (location.hash === '#/fair') renderFair();
+  else if (location.hash === '#/parade') renderParade();
   else renderMidway();
 }
 
