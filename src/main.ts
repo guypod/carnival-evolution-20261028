@@ -263,6 +263,18 @@ import {
   type RoomAction,
 } from './prize-room';
 import {
+  DESK_SCENE,
+  MAX_WINDS,
+  RESTING_TOY,
+  applyToy,
+  describeToy,
+  drawDesk,
+  pickToy,
+  toyPosition,
+  walkDuration,
+  type ToyAction,
+} from './desk-toy';
+import {
   CLOSED_TOUR,
   TOUR_STEPS,
   isLastStep,
@@ -1280,6 +1292,7 @@ function renderPrizes() {
         </div>
       </div>
       <p><a class="pavilion-link room-link" href="#/room">🪴 Arrange your Prize Room</a></p>
+      <p><a class="pavilion-link toy-link" href="#/toy">🦆 Wind up a desk toy</a></p>
       <ul class="pavilion-shelves"></ul>
       <p class="note">Prizes come from your best scores in this browser. Nothing to buy, and nothing is spent.</p>
     </section>`;
@@ -2661,6 +2674,105 @@ function renderBalloon() {
   };
 }
 
+function renderToy() {
+  document.body.dataset.view = 'toy';
+  const { name, demo } = pickToy(roomObjects(registry.all()));
+  app.innerHTML = `
+    <section class="toy" aria-labelledby="toy-title">
+      <div class="game-header">
+        <a href="#/prizes">← Back to the Prize Pavilion</a>
+        <h1 id="toy-title" tabindex="-1">Wind-up Desk Toy</h1>
+      </div>
+      <p class="toy-intro"></p>
+      <canvas class="toy-scene" aria-hidden="true"></canvas>
+      <div class="toy-controls">
+        <button type="button" class="toy-wind">Wind the key (W)</button>
+        <button type="button" class="toy-release">Let it go (Space)</button>
+        <button type="button" class="toy-reset">Reset (R)</button>
+      </div>
+      <p class="toy-status" role="status" aria-live="polite"></p>
+      <p class="note">Up to ${MAX_WINDS} turns of the key. Nothing is scored, saved or earned here. Escape goes back to the Prize Pavilion.</p>
+    </section>
+  `;
+  app.querySelector<HTMLElement>('.toy-intro')!.textContent = demo
+    ? `${name}: a starter demonstration. Win a rubber duck prize to wind your own.`
+    : `${name}: your prize, ready to wind.`;
+  const status = app.querySelector<HTMLElement>('.toy-status')!;
+  const windButton = app.querySelector<HTMLButtonElement>('.toy-wind')!;
+  const releaseButton = app.querySelector<HTMLButtonElement>('.toy-release')!;
+  const resetButton = app.querySelector<HTMLButtonElement>('.toy-reset')!;
+  const canvas = app.querySelector<HTMLCanvasElement>('.toy-scene')!;
+  canvas.width = DESK_SCENE.width;
+  canvas.height = DESK_SCENE.height;
+  const ctx = canvas.getContext('2d');
+  let toy = RESTING_TOY;
+  let frame = 0;
+  let timer = 0;
+  let quiet = false;
+
+  function show() {
+    status.textContent = describeToy(toy, name);
+    windButton.disabled = toy.phase === 'walking' || toy.winds >= MAX_WINDS;
+    releaseButton.disabled = toy.phase !== 'wound';
+    if (ctx && toy.phase !== 'walking') drawDesk(ctx, toyPosition(0, 0), toy.winds, demo);
+  }
+
+  // Quiet mode skips the animation: the toy stays staged at rest, the words
+  // say it walked, and the walk still takes its time before it is done.
+  function walk() {
+    const duration = walkDuration(toy);
+    const winds = toy.winds;
+    const started = performance.now();
+    const step = (now: number) => {
+      const t = (now - started) / duration;
+      if (ctx && !quiet) drawDesk(ctx, toyPosition(t, winds), winds * (1 - Math.min(t, 1)), demo);
+      if (t < 1) frame = requestAnimationFrame(step);
+      else act('finish');
+    };
+    if (quiet) timer = window.setTimeout(() => act('finish'), duration);
+    else frame = requestAnimationFrame(step);
+  }
+
+  function act(action: ToyAction) {
+    const before = toy;
+    toy = applyToy(toy, action);
+    if (toy === before) return;
+    if (action === 'reset' || action === 'finish') {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    }
+    show();
+    if (toy.phase === 'walking') walk();
+  }
+
+  windButton.addEventListener('click', () => act('wind'));
+  releaseButton.addEventListener('click', () => act('release'));
+  resetButton.addEventListener('click', () => act('reset'));
+  const onKey = (event: KeyboardEvent) => {
+    if (event.target instanceof HTMLButtonElement && event.key === ' ') return;
+    if (event.key === 'w' || event.key === 'W') act('wind');
+    else if (event.key === ' ') {
+      event.preventDefault();
+      act('release');
+    } else if (event.key === 'r' || event.key === 'R') act('reset');
+  };
+  window.addEventListener('keydown', onKey);
+  const stopWatching = watchReducedMotion(window, (systemReduces) => {
+    quiet = isQuiet(motionPreference.load(), systemReduces);
+  });
+  if (!ctx) canvas.hidden = true;
+  show();
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/prizes'));
+  stop = () => {
+    stopEscape();
+    stopWatching();
+    window.removeEventListener('keydown', onKey);
+    cancelAnimationFrame(frame);
+    clearTimeout(timer);
+  };
+}
+
 function renderBooths() {
   document.body.dataset.view = 'booths';
   let entries = directoryEntries(registry.all(), bestScore, favorites.load());
@@ -3072,6 +3184,7 @@ function route() {
   if (game) renderGame(game);
   else if (location.hash === '#/prizes') renderPrizes();
   else if (location.hash === '#/room') renderRoom();
+  else if (location.hash === '#/toy') renderToy();
   else if (location.hash === '#/trail') renderTrail();
   else if (location.hash === '#/circuit') renderCircuit();
   else if (location.hash === '#/party') renderParty();
