@@ -54,6 +54,16 @@ import {
   wheelState,
   type PinwheelGarden,
 } from './pinwheels';
+import {
+  createStones,
+  playCall,
+  stoneGlow,
+  stoneUnder,
+  stonesInReach,
+  stonesPrompt,
+  touchStone,
+  type ChimeStones,
+} from './stepping-stones';
 import { DEFAULT_VIEW_SCALE, fitCamera, unproject, viewZoom } from './view';
 import {
   HIDDEN_LOCATE,
@@ -79,6 +89,7 @@ import {
   drawHedgeTile,
   drawField,
   drawGroundLayer,
+  drawChimeStone,
   drawPinwheel,
   drawProp,
   drawWalker,
@@ -333,6 +344,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const gust = () => {
     garden = raiseGust(garden, gustClock);
   };
+  /** The chime stones on the promenade, south of the ferry dock. See stepping-stones.ts. */
+  let chimes: ChimeStones = createStones({ x: map.midwayWidth + 1.5, y: 17.5 });
+  let nearChimes = false;
+  let stoneUnderfoot: number | undefined;
   let located: LocateState = HIDDEN_LOCATE;
   const locate = () => {
     located = showLocate();
@@ -424,6 +439,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       event.preventDefault();
       // A held key repeats; only a fresh press restarts the gust.
       if (!event.repeat) gust();
+    } else if (event.code === 'KeyC' && nearChimes) {
+      event.preventDefault();
+      if (!event.repeat) chimes = playCall(chimes, gustClock);
     } else if (isLocateKey(event)) {
       event.preventDefault();
       if (!event.repeat) locate();
@@ -622,6 +640,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     walkNamed('the ferry', () => undefined);
   };
 
+  /** The chime stone under a screen point, or -1. */
+  const chimeAt = (point: Point) =>
+    chimes.stones.findIndex((s) => {
+      const p = toScreen(s.x, s.y);
+      return Math.abs(point.x - p.x) <= 12 && Math.abs(point.y - p.y) <= 7;
+    });
   const gardenAt = (point: Point) =>
     garden.wheels.some((w) => {
       const p = toScreen(w.x, w.y);
@@ -651,6 +675,11 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     const booth = boothAt(point);
     if (!booth && gardenAt(point)) {
       gust();
+      return;
+    }
+    const stone = booth ? -1 : chimeAt(point);
+    if (stone >= 0) {
+      chimes = touchStone(chimes, stone, gustClock);
       return;
     }
     if (!booth && billboardAt(point)) {
@@ -688,7 +717,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       return;
     }
     canvas.style.cursor =
-      boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point) || ferryAt(point)
+      boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point) || chimeAt(point) >= 0 || ferryAt(point)
         ? 'pointer'
         : 'default';
   };
@@ -876,6 +905,15 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         box: walkerBox(v),
         draw: () => drawWalker(ctx, v, visitorLook(v.look)),
       })),
+      ...chimes.stones.map((s, i) => {
+        const p = toScreen(s.x, s.y);
+        return {
+          // Flat on the ground, so anyone standing on a stone draws over it.
+          depth: s.x + s.y - 0.6,
+          box: { left: p.x - 12, right: p.x + 12, top: p.y - 7, bottom: p.y + 7 },
+          draw: () => drawChimeStone(ctx, p, stoneGlow(chimes, i, gustClock)),
+        };
+      }),
       ...garden.wheels.map((w, i) => {
         const p = toScreen(w.x, w.y);
         return {
@@ -956,6 +994,11 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
               ? 'Press E to board'
               : 'Press E to call the ferry';
       label(ctx, text, (c.x - cam.x) * zoom, (c.y - 62 - cam.y) * zoom);
+    } else if (nearChimes) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const first = chimes.stones[0];
+      const c = toScreen(first.x, first.y);
+      label(ctx, stonesPrompt(chimes, gustClock), (c.x - cam.x) * zoom, (c.y - 40 - cam.y) * zoom);
     } else if (nearGarden) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const mid = garden.wheels[Math.floor(garden.wheels.length / 2)];
@@ -1025,6 +1068,13 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
     nearGarden = !inReach && !nearGate && gardenInReach(garden, player);
     nearDock = ferry.riding ? undefined : dockInReach(map, player)?.id;
+    nearChimes = !inReach && !nearGate && !nearDock && !ferry.riding && stonesInReach(chimes, player);
+    const underfoot = ferry.riding ? undefined : stoneUnder(chimes, player);
+    // Only stepping onto a stone rings it; standing still on one doesn't.
+    if (underfoot !== undefined && underfoot !== stoneUnderfoot) {
+      chimes = touchStone(chimes, underfoot, gustClock);
+    }
+    stoneUnderfoot = underfoot;
     reportFerry();
     gustClock += dt;
     wheelAngles = turnWheels(wheelAngles, garden, gustClock, dt, quiet);
