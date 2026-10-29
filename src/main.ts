@@ -330,6 +330,7 @@ import {
   tourMemory,
   type TourState,
 } from './welcome-tour';
+import { PHOTO_FRAMES, createCaptureGuard, frameRect, photoFilename } from './photo-mode';
 
 applyTheme();
 
@@ -348,6 +349,7 @@ function renderMidway() {
   app.innerHTML = `
     <section class="midway">
       <canvas class="midway-map" tabindex="0" aria-label="The carnival midway. Focus the map, then walk with WASD or the arrow keys, and press E at a booth to play."></canvas>
+      <div class="photo-frame-outline" aria-hidden="true" hidden></div>
       <p class="midway-help">
         Welcome to Guy's Carnival!<br />
         <kbd>WASD</kbd> or <kbd>arrows</kbd> to walk, or click where you want to go.
@@ -368,6 +370,7 @@ function renderMidway() {
             🗺️ Guide
           </button>
           <button type="button" class="tour-start" aria-controls="welcome-tour" hidden>👋 Start tour</button>
+          <button type="button" class="photo-toggle" aria-expanded="false" aria-controls="photo-mode">📷 Photo</button>
         </div>
         <div class="midway-view" role="group" aria-label="Map view">
           <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
@@ -390,6 +393,24 @@ function renderMidway() {
             <button type="button" class="tour-next">Next</button>
             <button type="button" class="tour-skip">Skip tour</button>
           </div>
+        </section>
+        <section class="photo-mode" id="photo-mode" aria-labelledby="photo-mode-title" hidden>
+          <h2 id="photo-mode-title">Photo mode</h2>
+          <p>Frame the midway as it looks right now. Walk or zoom to compose, then take the photo. It stays in this browser.</p>
+          <fieldset class="photo-frames">
+            <legend>Frame</legend>
+            ${PHOTO_FRAMES.map(
+              (frame, i) =>
+                `<label><input type="radio" name="photo-frame" value="${frame.id}"${i === 0 ? ' checked' : ''} /> ${frame.label}</label>`,
+            ).join('')}
+          </fieldset>
+          <div class="photo-actions">
+            <button type="button" class="photo-take">Take photo (P)</button>
+            <button type="button" class="photo-download" disabled>Download PNG</button>
+            <button type="button" class="photo-exit">Exit photo mode (Esc)</button>
+          </div>
+          <p class="photo-status" role="status"></p>
+          <img class="photo-preview" alt="" hidden />
         </section>
         <div class="light-garden-editing" role="status" hidden>
           <span>Editing the light garden. Click a cell on the patch by the entrance.</span>
@@ -612,6 +633,7 @@ function renderMidway() {
   setUpPocket();
   setUpSceneToggle(midway.setScene);
   const stopLightGarden = setUpLightGarden(midway.setLightGarden, midway.editLightGarden);
+  const stopPhoto = setUpPhotoMode();
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   const stopSound = setUpSound();
@@ -639,7 +661,146 @@ function renderMidway() {
     stopHelp();
     stopGuide();
     stopLightGarden();
+    stopPhoto();
     midway.stop();
+  };
+}
+
+// Photo mode: hides the midway's panels on purpose, outlines a frame on the
+// live map and copies that part of the canvas into a preview. Walking and
+// zooming still work, so the photo is the real scene. Nothing is uploaded, no
+// camera is asked for, and scores and saves are untouched. Esc or Exit brings
+// the panels back and focus returns to the map.
+function setUpPhotoMode() {
+  const map = app.querySelector<HTMLCanvasElement>('.midway-map')!;
+  const toggle = app.querySelector<HTMLButtonElement>('.photo-toggle')!;
+  const panel = app.querySelector<HTMLElement>('.photo-mode')!;
+  const outline = app.querySelector<HTMLElement>('.photo-frame-outline')!;
+  const take = panel.querySelector<HTMLButtonElement>('.photo-take')!;
+  const download = panel.querySelector<HTMLButtonElement>('.photo-download')!;
+  const status = panel.querySelector<HTMLElement>('.photo-status')!;
+  const preview = panel.querySelector<HTMLImageElement>('.photo-preview')!;
+  let open = false;
+  let session = 0;
+  const capture = createCaptureGuard();
+  let photoUrl: string | undefined;
+  let photoName = '';
+
+  const frameId = () =>
+    panel.querySelector<HTMLInputElement>('input[name="photo-frame"]:checked')?.value ?? 'full';
+  const placeOutline = () => {
+    const rect = frameRect(frameId(), map.clientWidth, map.clientHeight);
+    outline.style.left = `${map.offsetLeft + rect.x}px`;
+    outline.style.top = `${map.offsetTop + rect.y}px`;
+    outline.style.width = `${rect.width}px`;
+    outline.style.height = `${rect.height}px`;
+  };
+  const clearPhoto = () => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    photoUrl = undefined;
+    preview.hidden = true;
+    preview.removeAttribute('src');
+    download.disabled = true;
+  };
+  const setOpen = (next: boolean) => {
+    open = next;
+    session += 1;
+    // An encode from an earlier session still counts as pending, so exiting
+    // and reopening cannot start a second one alongside it.
+    take.disabled = capture.pending;
+    toggle.setAttribute('aria-expanded', String(open));
+    panel.hidden = !open;
+    outline.hidden = !open;
+    if (open) {
+      // Finish any light garden editing first, so hidden editing cannot
+      // change the saved garden or catch the Esc meant for photo mode.
+      const gardenBanner = app.querySelector<HTMLElement>('.light-garden-editing');
+      if (gardenBanner && !gardenBanner.hidden) {
+        gardenBanner.querySelector<HTMLButtonElement>('.light-garden-done')?.click();
+      }
+      document.body.dataset.photo = 'on';
+      placeOutline();
+      status.textContent = 'Photo mode is on. The other panels are hidden until you exit.';
+      take.focus();
+    } else {
+      delete document.body.dataset.photo;
+      status.textContent = '';
+      clearPhoto();
+      map.focus();
+    }
+  };
+  const snap = () => {
+    if (capture.pending) return;
+    // The canvas is drawn at device pixels; the frame is worked out in them too.
+    const rect = frameRect(frameId(), map.width, map.height);
+    const shot = document.createElement('canvas');
+    shot.width = rect.width;
+    shot.height = rect.height;
+    const ctx = shot.getContext('2d');
+    if (!ctx) {
+      status.textContent = 'This browser could not make the photo.';
+      return;
+    }
+    ctx.drawImage(map, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+    const name = photoFilename(frameId(), new Date());
+    const owner = session;
+    capture.start();
+    take.disabled = true;
+    shot.toBlob((blob) => {
+      const current = capture.finish(owner, session, open);
+      take.disabled = false;
+      if (!current) return;
+      if (!blob) {
+        status.textContent = 'This browser could not make the photo.';
+        return;
+      }
+      clearPhoto();
+      photoUrl = URL.createObjectURL(blob);
+      photoName = name;
+      preview.src = photoUrl;
+      preview.alt = 'Your photo of the midway';
+      preview.hidden = false;
+      download.disabled = false;
+      status.textContent = 'Photo taken. Download it, take another, or exit.';
+    }, 'image/png');
+  };
+
+  toggle.addEventListener('click', () => setOpen(!open));
+  take.addEventListener('click', snap);
+  panel.querySelector('.photo-exit')!.addEventListener('click', () => setOpen(false));
+  panel.querySelector('.photo-frames')!.addEventListener('change', placeOutline);
+  download.addEventListener('click', () => {
+    if (!photoUrl) return;
+    const link = document.createElement('a');
+    link.href = photoUrl;
+    link.download = photoName;
+    link.click();
+    status.textContent = `Download started as ${photoName}.`;
+  });
+  // Esc leaves photo mode before the guide or any panel sees the key; P takes
+  // a photo unless the key is meant for a field.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!open) return;
+    if (event.key === 'Escape') {
+      event.stopImmediatePropagation();
+      setOpen(false);
+    } else if (
+      (event.key === 'p' || event.key === 'P') &&
+      !(event.target instanceof HTMLInputElement && event.target.type === 'text')
+    ) {
+      event.preventDefault();
+      snap();
+    }
+  };
+  window.addEventListener('keydown', onKeyDown, true);
+  window.addEventListener('resize', placeOutline);
+  return () => {
+    window.removeEventListener('keydown', onKeyDown, true);
+    window.removeEventListener('resize', placeOutline);
+    open = false;
+    session += 1;
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    delete document.body.dataset.photo;
   };
 }
 
