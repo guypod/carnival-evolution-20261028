@@ -106,6 +106,7 @@ body[data-view='midway'] main {
 .midway-credit,
 .discovery-toast,
 .midway-route,
+.midway-ferry,
 .mystery-card,
 .booth-card {
   position: absolute;
@@ -175,7 +176,8 @@ kbd {
   gap: 6px;
 }
 
-.midway-view button {
+.midway-view button,
+.midway-ferry button {
   min-width: 36px;
   padding: 4px 10px;
   border: 2px solid var(--color-accent);
@@ -188,7 +190,9 @@ kbd {
 }
 
 .midway-view button:hover:not(:disabled),
-.midway-view button:focus-visible {
+.midway-view button:focus-visible,
+.midway-ferry button:hover,
+.midway-ferry button:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
@@ -1469,6 +1473,34 @@ kbd {
 
 .midway-route .message {
   margin: 0;
+}
+
+/* The docks are far from every booth, so the booth card never opens under this. */
+.midway-ferry {
+  bottom: 16px;
+  left: 50%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  justify-content: center;
+  max-width: min(460px, calc(100% - 32px));
+  padding: 6px 10px;
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+
+.midway-ferry[hidden] {
+  display: none;
+}
+
+.midway-ferry .message {
+  margin: 0;
+}
+
+.midway-ferry .actions {
+  display: flex;
+  gap: 6px;
 }
 
 @media (max-width: 720px) {

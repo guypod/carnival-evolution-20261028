@@ -1,5 +1,20 @@
 import { isControl } from './controls';
 import {
+  dockById,
+  dockInReach,
+  ferryButtons,
+  ferryMessage,
+  ferryPosition,
+  ferrySnapsCamera,
+  onFarShore,
+  requestFerry,
+  sailFerry,
+  settleFerry,
+  START_FERRY,
+  type FerryRequest,
+  type FerryState,
+} from './ferry';
+import {
   arriveRoute,
   cancelRoute,
   IDLE_ROUTE,
@@ -58,14 +73,18 @@ import {
   drawBooth,
   drawBunting,
   drawCloud,
+  drawFerry,
   drawFloaters,
   drawFrontHedge,
+  drawHedgeTile,
   drawField,
   drawGroundLayer,
   drawPinwheel,
   drawProp,
   drawWalker,
+  ferryBounds,
   groundBounds,
+  innerHedgeTiles,
   HORIZON,
   label,
   PLAYER_LOOK,
@@ -95,6 +114,7 @@ import {
   updateVisitor,
   walk,
   type BoothSlot,
+  type DockId,
   type Point,
   type Prop,
 } from './world';
@@ -121,6 +141,11 @@ export interface MidwayOptions {
   detail?: LandmarkDetail;
   /** Called with a status line when the locate marker goes up, and undefined when it goes. */
   onLocate?(message: string | undefined): void;
+  /**
+   * Called when the ferry's status changes: the line to show (empty for
+   * nothing) and the requests that make sense right now, for buttons.
+   */
+  onFerry?(message: string, requests: FerryRequest[]): void;
 }
 
 export interface MidwayControls {
@@ -163,6 +188,8 @@ export interface MidwayControls {
   locate(): void;
   /** Hides the locate marker. Returns false when it was not showing. */
   hideLocate(): boolean;
+  /** Asks the ferry for something, as a key or click would. See ferry.ts. */
+  ferry(request: FerryRequest): void;
   stop(): void;
 }
 
@@ -182,6 +209,8 @@ const MIN_QUALITY = 0.5;
 
 /** Where the player stood when they last left the midway, for this page load. */
 let returnTo: Point | undefined;
+/** Which dock the ferry waits at, for this page load. Never mid-crossing. */
+let ferryReturn: FerryState = START_FERRY;
 
 export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): MidwayControls {
   const ctx = canvas.getContext('2d');
@@ -208,6 +237,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     })),
   ];
   const strolls = strollTiles(map);
+  const hedgeTiles = innerHedgeTiles(map);
   const visitors = createVisitors(map, 9, Math.random);
   const clouds: Cloud[] = Array.from({ length: 9 }, (_, i) => ({
     x: i / 9 + Math.random() * 0.08,
@@ -316,6 +346,48 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     options.onLocate?.(undefined);
     return true;
   };
+  /**
+   * The ferry, and the dock whose pier the player stands by. While the player
+   * rides, they stand on deck and move only with the ferry; every way a ride
+   * ends sets them down on a pier. See ferry.ts.
+   */
+  let ferry: FerryState = ferryReturn;
+  let nearDock: DockId | undefined;
+  let ferryReport = '';
+  const reportFerry = () => {
+    const message = ferryMessage(map, ferry, nearDock, !ferry.riding && onFarShore(map, player));
+    const requests = ferryButtons(ferry, nearDock);
+    const report = `${message}|${requests.join()}`;
+    if (report === ferryReport) return;
+    ferryReport = report;
+    options.onFerry?.(message, requests);
+  };
+  const setFerry = (next: FerryState) => {
+    if (next === ferry) return;
+    const wasRiding = ferry.riding;
+    // Quiet crossings land in one step, so the camera jumps with the player.
+    if (ferrySnapsCamera(ferry, next, quiet)) cameraReady = false;
+    ferry = next;
+    if (ferry.riding) {
+      // Aboard: any walk stops, so no path or trail is left on the far bank.
+      player.path = [];
+      destination = undefined;
+      setRoute(cancelRoute(route));
+      keys.clear();
+      const deck = ferryPosition(map, ferry);
+      player.x = deck.x;
+      player.y = deck.y;
+      player.walking = false;
+    } else if (wasRiding) {
+      const landing = dockById(map, ferry.dock).landing;
+      player.x = landing.x;
+      player.y = landing.y;
+      nearDock = ferry.dock;
+    }
+    reportFerry();
+  };
+  const useFerry = (request: FerryRequest) => setFerry(requestFerry(ferry, request, nearDock));
+
   const enterFair = () => {
     if (!options.onFairGate) return;
     returnTo = { x: player.x, y: player.y };
@@ -326,7 +398,19 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (isControl(event.target)) return;
-    if (event.code in MOVE_KEYS) {
+    const ferryKey = ['KeyE', 'Enter', 'Space'].includes(event.code);
+    if (ferry.riding && event.code in MOVE_KEYS) {
+      event.preventDefault();
+      // Walking off a docked ferry steps onto the pier; mid-crossing the keys wait.
+      if (ferry.phase === 'docked') {
+        useFerry('step-off');
+        keys.add(event.code);
+      }
+    } else if (ferryKey && (ferry.riding || (nearDock && !inReach && !nearGate))) {
+      event.preventDefault();
+      // A held key repeats; only a fresh press asks the ferry for something.
+      if (!event.repeat) useFerry('use');
+    } else if (event.code in MOVE_KEYS) {
       keys.add(event.code);
       cancelWalk();
       event.preventDefault();
@@ -374,7 +458,13 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   };
 
   /** Starts a named walk, or stops the old one and says there is no way there. */
-  const walkNamed = (name: string, found: Point[] | undefined) => {
+  const walkNamed = (name: string, find: () => Point[] | undefined) => {
+    // A rider asked to walk somewhere lands first (mid-crossing, at the dock
+    // ahead) and walks from the pier, so no walk ever starts on the water.
+    if (ferry.riding) {
+      setFerry(requestFerry(ferry, ferry.phase === 'sailing' ? 'skip' : 'step-off', undefined));
+    }
+    const found = find();
     const request = requestRoute(name, found);
     player.path = request.path;
     destination = request.path.at(-1);
@@ -384,11 +474,11 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
   const walkToBooth = (booth: BoothSlot) => {
     const name = booth.gameId ? names.get(booth.gameId) : undefined;
-    walkNamed(name ?? 'the empty booth', pathToBooth(map, player, booth));
+    walkNamed(name ?? 'the empty booth', () => pathToBooth(map, player, booth));
   };
 
   const walkToLandmark = (landmark: Landmark) =>
-    walkNamed(landmark.name, pathToLandmark(map, player, landmark));
+    walkNamed(landmark.name, () => pathToLandmark(map, player, landmark));
 
   // Landmark artwork stands on blocked tiles, so a click on it walks to a spot
   // beside it instead.
@@ -510,6 +600,28 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     ctx!.lineWidth = 1;
   }
 
+  const ferryAt = (point: Point) => {
+    const b = ferryBounds(ferryPosition(map, ferry));
+    return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+  };
+
+  /** A click on the ferry: use it from its pier or deck, or walk to a dock first. */
+  const clickFerry = () => {
+    if (ferry.riding || nearDock !== undefined) {
+      useFerry('use');
+      return;
+    }
+    const docks = [dockById(map, ferry.dock), ...map.waterside.docks];
+    for (const dock of docks) {
+      const path = findPath(map, player, dock.landing);
+      if (path) {
+        walkNamed(dock.name, () => path);
+        return;
+      }
+    }
+    walkNamed('the ferry', () => undefined);
+  };
+
   const gardenAt = (point: Point) =>
     garden.wheels.some((w) => {
       const p = toScreen(w.x, w.y);
@@ -526,6 +638,15 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       const cell = gardenCellAt(point);
       if (cell) onGardenPick(cell.col, cell.row);
       return;
+    }
+    if (ferryAt(point)) {
+      clickFerry();
+      return;
+    }
+    if (ferry.riding) {
+      // Mid-crossing a click elsewhere waits; at a dock it steps off and walks on.
+      if (ferry.phase === 'sailing') return;
+      useFerry('step-off');
     }
     const booth = boothAt(point);
     if (!booth && gardenAt(point)) {
@@ -544,8 +665,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (gate && gateAt(point)) {
       if (nearGate) enterFair();
       else {
-        walkNamed(
-          'Run Your Own Fair',
+        walkNamed('Run Your Own Fair', () =>
           pathToLandmark(map, player, { id: 'entrance', name: '', clue: '', area: gate }, 1),
         );
       }
@@ -568,7 +688,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       return;
     }
     canvas.style.cursor =
-      boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point)
+      boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point) || ferryAt(point)
         ? 'pointer'
         : 'default';
   };
@@ -718,6 +838,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       ctx.stroke();
     }
 
+    const boat = ferryPosition(map, ferry);
+    // A gentle bob on the water, still in quiet mode.
+    const ferryBob = quiet ? 0 : Math.sin(t * 2) * 1;
+
     // Anything drawn in front of the player fades, so they never get lost.
     const feet = toScreen(player.x, player.y);
     const playerDepth = player.x + player.y;
@@ -762,11 +886,29 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         };
       }),
       {
-        depth: playerDepth,
+        // A rider stands on deck, so they draw just after the ferry and a little raised.
+        depth: playerDepth + (ferry.riding ? 0.01 : 0),
         box: walkerBox(player),
-        draw: () => drawWalker(ctx, player, PLAYER_LOOK, true, t),
+        draw: () => {
+          if (!ferry.riding) return drawWalker(ctx, player, PLAYER_LOOK, true, t);
+          ctx.save();
+          ctx.translate(0, -6 - ferryBob);
+          drawWalker(ctx, player, PLAYER_LOOK, true, t);
+          ctx.restore();
+        },
+      },
+      {
+        depth: boat.x + boat.y,
+        box: ferryBounds(boat),
+        draw: () => drawFerry(ctx, boat, ferryBob),
       },
     ];
+    for (const tile of hedgeTiles) {
+      const p = toScreen(tile.x + 0.5, tile.y + 0.5);
+      const box = { left: p.x - 16, right: p.x + 16, top: p.y - 17, bottom: p.y + 8 };
+      const depth = tile.x + tile.y + 1;
+      drawables.push({ depth, box, draw: () => faded(box, depth, () => drawHedgeTile(ctx, tile)) });
+    }
     for (const item of scenery) {
       if (!onScreen(item.box)) continue;
       const { depth, box, booth, prop, name } = item;
@@ -800,6 +942,20 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const c = toScreen(gate.x + 0.5, gate.y + 0.5);
       label(ctx, 'Press E to run your fair', (c.x - cam.x) * zoom, (c.y - 76 - cam.y) * zoom);
+    } else if (ferry.riding || nearDock) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = toScreen(boat.x, boat.y);
+      const text =
+        ferry.phase === 'sailing'
+          ? ferry.riding
+            ? 'Press E to hurry to the dock'
+            : 'Press E to hurry the ferry'
+          : ferry.riding
+            ? 'Press E to cast off'
+            : nearDock === ferry.dock
+              ? 'Press E to board'
+              : 'Press E to call the ferry';
+      label(ctx, text, (c.x - cam.x) * zoom, (c.y - 62 - cam.y) * zoom);
     } else if (nearGarden) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const mid = garden.wheels[Math.floor(garden.wheels.length / 2)];
@@ -833,7 +989,14 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       down += MOVE_KEYS[code][1];
     }
     const direction = inputDirection(Math.sign(right), Math.sign(down));
-    if (direction.x !== 0 || direction.y !== 0) walk(map, player, direction, dt);
+    setFerry(sailFerry(ferry, dt, quiet));
+    if (ferry.riding) {
+      // On deck, the player goes where the ferry goes.
+      const deck = ferryPosition(map, ferry);
+      player.x = deck.x;
+      player.y = deck.y;
+      player.walking = false;
+    } else if (direction.x !== 0 || direction.y !== 0) walk(map, player, direction, dt);
     else if (player.path.length > 0) {
       followPath(player, dt);
       if (player.path.length === 0) setRoute(arriveRoute(route));
@@ -861,6 +1024,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     }
 
     nearGarden = !inReach && !nearGate && gardenInReach(garden, player);
+    nearDock = ferry.riding ? undefined : dockInReach(map, player)?.id;
+    reportFerry();
     gustClock += dt;
     wheelAngles = turnWheels(wheelAngles, garden, gustClock, dt, quiet);
 
@@ -907,6 +1072,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     },
     cancelWalk,
     enterFair,
+    ferry(request) {
+      useFerry(request);
+    },
     locate,
     hideLocate,
     setViewScale(next) {
@@ -917,6 +1085,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       cameraReady = false;
     },
     stop() {
+      // Leaving mid-crossing finishes the trip: next time the ferry is tied up
+      // at the dock it was headed for, and nobody is left on the water.
+      if (ferry.riding) returnTo = { ...dockById(map, ferry.dock).landing };
+      ferryReturn = settleFerry(ferry);
       cancelAnimationFrame(frame);
       stopWatchingMotion();
       observer.disconnect();

@@ -1,5 +1,5 @@
 import { canvasFont, theme } from '../carnival';
-import { palette } from './palette';
+import { palette, waterside } from './palette';
 import {
   CART_KINDS,
   toScreen,
@@ -353,6 +353,7 @@ export function drawGroundLayer(map: MidwayMap, wanted: number): GroundLayer {
   poly(ctx, rectPoints({ x: 0, y: 0, w: map.width, h: map.height }), palette.grassLight);
   for (const path of map.paths) poly(ctx, rectPoints(path, 3), palette.grassEdge);
   for (const path of map.paths) poly(ctx, rectPoints(path), palette.path);
+  drawWaterside(ctx, map);
 
   // Tufts of grass.
   ctx.strokeStyle = palette.grassDark;
@@ -373,9 +374,251 @@ export function drawGroundLayer(map: MidwayMap, wanted: number): GroundLayer {
   for (let i = 0; i < map.width; i += 2) tree(ctx, i + 0.5 + hash(i, 1) * 0.6, -1.4 - hash(i, 2));
   for (let i = 2; i < map.height; i += 2) tree(ctx, -1.4 - hash(1, i), i + 0.5 + hash(2, i) * 0.6);
 
-  hedge(ctx, { x: 0, y: 0, w: map.width, h: 1 });
+  // The back hedge stops at the river's banks rather than running over the water.
+  const { water } = map.waterside;
+  hedge(ctx, { x: 0, y: 0, w: water.x, h: 1 });
+  hedge(ctx, { x: water.x + water.w, y: 0, w: map.width - water.x - water.w, h: 1 });
   hedge(ctx, { x: 0, y: 0, w: 1, h: map.height });
   return { canvas, scale };
+}
+
+/** The river, its sandy banks and the two piers, drawn once with the ground. */
+function drawWaterside(ctx: Ctx, map: MidwayMap) {
+  const { water } = map.waterside;
+  for (let y = 1; y < map.height - 1; y++) {
+    for (let x = water.x - 1; x < map.width - 1; x++) {
+      const kind = map.ground[y * map.width + x];
+      if (kind === 'sand') poly(ctx, rectPoints({ x, y, w: 1, h: 1 }), waterside.sand);
+    }
+  }
+  // The water sits a little below the banks, with a darker channel down the middle.
+  poly(ctx, rectPoints(water, -3), waterside.water);
+  poly(
+    ctx,
+    rectPoints({ x: water.x + 1.5, y: water.y, w: water.w - 3, h: water.h }, -3),
+    waterside.waterDeep,
+  );
+  ctx.strokeStyle = waterside.ripple;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = water.y; y < water.y + water.h; y++) {
+    for (let x = water.x; x < water.x + water.w; x++) {
+      if (hash(x, y, 7) > 0.35) continue;
+      const [px, py] = at(x + hash(x, y, 8), y + hash(x, y, 9), -3);
+      ctx.moveTo(px - 4, py);
+      ctx.quadraticCurveTo(px, py - 2, px + 4, py);
+    }
+  }
+  ctx.stroke();
+  for (const dock of map.waterside.docks) {
+    const { pier } = dock;
+    // Posts down into the water, then the boards on top.
+    for (const [px, py] of [
+      [pier.x + 0.15, pier.y + 0.1],
+      [pier.x + 0.85, pier.y + 0.1],
+      [pier.x + 0.15, pier.y + pier.h - 0.1],
+      [pier.x + 0.85, pier.y + pier.h - 0.1],
+    ]) {
+      const [sx, sy] = at(px, py);
+      poly(
+        ctx,
+        [
+          [sx - 1.5, sy - 3],
+          [sx + 1.5, sy - 3],
+          [sx + 1.5, sy + 6],
+          [sx - 1.5, sy + 6],
+        ],
+        waterside.boardsShade,
+      );
+    }
+    box(
+      ctx,
+      pier.x,
+      pier.y,
+      pier.w,
+      pier.h,
+      -1,
+      3,
+      waterside.boards,
+      waterside.boardsShade,
+      waterside.boardsShade,
+    );
+    ctx.strokeStyle = waterside.boardsShade;
+    ctx.beginPath();
+    for (let i = 1; i < 4; i++) {
+      const [ax, ay] = at(pier.x, pier.y + (pier.h * i) / 4, 2);
+      const [bx, by] = at(pier.x + pier.w, pier.y + (pier.h * i) / 4, 2);
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+    }
+    ctx.stroke();
+  }
+}
+
+/**
+ * The ferry: a small flat boat with a striped awning, at a tile position on
+ * the water. `bob` lifts it a pixel or two; pass 0 to hold it still.
+ */
+export function drawFerry(ctx: Ctx, p: Point, bob: number) {
+  const z = bob;
+  oval(ctx, at(p.x, p.y)[0], at(p.x, p.y)[1] + 1, 26, 11, palette.shadow);
+  const x = p.x - 0.9;
+  const y = p.y - 0.65;
+  box(ctx, x, y, 1.8, 1.3, z - 2, 7, waterside.hullShade, waterside.hull, waterside.hullShade);
+  box(ctx, x + 0.1, y + 0.1, 1.6, 1.1, z + 5, 1, waterside.deck, waterside.deck, waterside.deck);
+  // Rails at the corners holding up the awning.
+  for (const [cx, cy] of [
+    [x + 0.2, y + 0.2],
+    [x + 1.6, y + 0.2],
+    [x + 0.2, y + 1.1],
+    [x + 1.6, y + 1.1],
+  ]) {
+    stroke(ctx, [at(cx, cy, z + 6), at(cx, cy, z + 26)], palette.woodDark, 1.2);
+  }
+  poly(
+    ctx,
+    [
+      at(x + 0.1, y + 0.1, z + 26),
+      at(x + 1.7, y + 0.1, z + 26),
+      at(x + 1.7, y + 1.2, z + 26),
+      at(x + 0.1, y + 1.2, z + 26),
+    ],
+    palette.red,
+  );
+  for (let i = 0; i < 4; i++) {
+    const a = x + 0.1 + i * 0.4;
+    poly(
+      ctx,
+      [
+        at(a, y + 0.1, z + 26.5),
+        at(a + 0.2, y + 0.1, z + 26.5),
+        at(a + 0.2, y + 1.2, z + 26.5),
+        at(a, y + 1.2, z + 26.5),
+      ],
+      palette.cream,
+    );
+  }
+  stroke(ctx, [at(x + 1.8, y + 0.65, z + 2), at(x + 1.8, y + 0.65, z + 4)], waterside.rope, 2);
+}
+
+/** The screen box the ferry is drawn in, at a tile position. */
+export function ferryBounds(p: Point): Box {
+  const c = toScreen(p.x, p.y);
+  return { left: c.x - 34, right: c.x + 34, top: c.y - 48, bottom: c.y + 16 };
+}
+
+function lighthouse(ctx: Ctx, prop: Prop, t: number) {
+  const c = at(prop.x + 1, prop.y + 1);
+  oval(ctx, c[0] + 6, c[1] + 2, 26, 11, palette.shadow);
+  box(
+    ctx,
+    prop.x + 0.2,
+    prop.y + 0.2,
+    1.6,
+    1.6,
+    0,
+    8,
+    palette.creamShade,
+    palette.cream,
+    palette.creamShade,
+  );
+  const bands = [palette.red, palette.cream, palette.red, palette.cream, palette.red];
+  bands.forEach((color, i) => {
+    const r = 11 - i * 1.2;
+    poly(
+      ctx,
+      [
+        [c[0] - r, c[1] - 8 - i * 14],
+        [c[0] + r, c[1] - 8 - i * 14],
+        [c[0] + r - 1.2, c[1] - 22 - i * 14],
+        [c[0] - r + 1.2, c[1] - 22 - i * 14],
+      ],
+      color,
+    );
+  });
+  const top = c[1] - 78;
+  poly(
+    ctx,
+    [
+      [c[0] - 7, top + 8],
+      [c[0] + 7, top + 8],
+      [c[0] + 7, top - 4],
+      [c[0] - 7, top - 4],
+    ],
+    palette.metal,
+  );
+  oval(ctx, c[0], top + 2, 4, 4, palette.gold);
+  poly(
+    ctx,
+    [
+      [c[0] - 9, top - 4],
+      [c[0] + 9, top - 4],
+      [c[0], top - 14],
+    ],
+    palette.redShade,
+  );
+  // A soft, slow sweep of light; steady when `t` stands still in quiet mode.
+  ctx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 0.8);
+  oval(ctx, c[0], top + 2, 10, 10, palette.gold);
+  ctx.globalAlpha = 1;
+}
+
+function lampPost(ctx: Ctx, prop: Prop) {
+  const c = at(prop.x + 0.5, prop.y + 0.5);
+  oval(ctx, c[0] + 2, c[1] + 1, 5, 2, palette.shadow);
+  stroke(
+    ctx,
+    [
+      [c[0], c[1]],
+      [c[0], c[1] - 30],
+    ],
+    palette.ink,
+    2,
+  );
+  stroke(
+    ctx,
+    [
+      [c[0], c[1] - 30],
+      [c[0] + 5, c[1] - 30],
+    ],
+    palette.ink,
+    1.5,
+  );
+  lamp(ctx, [c[0] + 5, c[1] - 22], true);
+}
+
+function ferrySign(ctx: Ctx, prop: Prop) {
+  const c = at(prop.x + 0.5, prop.y + 0.5);
+  oval(ctx, c[0] + 2, c[1] + 1, 6, 2, palette.shadow);
+  stroke(
+    ctx,
+    [
+      [c[0], c[1]],
+      [c[0], c[1] - 18],
+    ],
+    palette.woodDark,
+    2,
+  );
+  poly(
+    ctx,
+    [
+      [c[0] - 13, c[1] - 30],
+      [c[0] + 13, c[1] - 30],
+      [c[0] + 13, c[1] - 17],
+      [c[0] - 13, c[1] - 17],
+    ],
+    palette.blue,
+  );
+  ctx.save();
+  ctx.font = canvasFont('small', 'bold');
+  const fit = Math.min(9 / theme.font.small, 22 / ctx.measureText('FERRY').width);
+  ctx.translate(c[0], c[1] - 23.5);
+  ctx.scale(fit, fit);
+  ctx.fillStyle = palette.white;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('FERRY', 0, 1);
+  ctx.restore();
 }
 
 function tree(ctx: Ctx, x: number, y: number) {
@@ -411,12 +654,34 @@ function hedge(ctx: Ctx, area: Rect) {
   );
 }
 
+/**
+ * The tiles of the midway's own east hedge, either side of its gap onto the
+ * promenade. People walk on both sides of it, so each tile is drawn in depth
+ * order with them rather than over everything.
+ */
+export function innerHedgeTiles(map: MidwayMap): Point[] {
+  const { gap } = map.waterside;
+  const tiles: Point[] = [];
+  for (let y = 1; y < map.height - 1; y++) {
+    if (y < gap.y || y >= gap.y + gap.h) tiles.push({ x: gap.x, y });
+  }
+  return tiles;
+}
+
+/** One tile of the midway's east hedge. */
+export function drawHedgeTile(ctx: Ctx, tile: Point) {
+  hedge(ctx, { x: tile.x, y: tile.y, w: 1, h: 1 });
+}
+
 /** The hedge's front two sides, which can stand in front of anything. */
 export function drawFrontHedge(ctx: Ctx, map: MidwayMap) {
   const h = map.height - 1;
   hedge(ctx, { x: map.width - 1, y: 1, w: 1, h: map.height - 1 });
   hedge(ctx, { x: 1, y: h, w: map.avenueX - 1, h: 1 });
-  hedge(ctx, { x: map.avenueX + 2, y: h, w: map.width - map.avenueX - 3, h: 1 });
+  hedge(ctx, { x: map.avenueX + 2, y: h, w: map.midwayWidth - map.avenueX - 3, h: 1 });
+  const { water } = map.waterside;
+  hedge(ctx, { x: map.midwayWidth - 1, y: h, w: water.x - map.midwayWidth + 1, h: 1 });
+  hedge(ctx, { x: water.x + water.w, y: h, w: map.width - water.x - water.w - 1, h: 1 });
 }
 
 // ── Round things: tents, the big top, the carousel ────────────────────────
@@ -1680,6 +1945,9 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
   'fair-gate': 64,
+  lighthouse: 100,
+  'lamp-post': 36,
+  'ferry-sign': 34,
 };
 
 /** Roughly the screen box a prop is drawn in. */
@@ -1921,6 +2189,12 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number, detail?: LandmarkDetai
       return billboard(ctx, prop, t);
     case 'fair-gate':
       return fairGate(ctx, prop, t);
+    case 'lighthouse':
+      return lighthouse(ctx, prop, t);
+    case 'lamp-post':
+      return lampPost(ctx, prop);
+    case 'ferry-sign':
+      return ferrySign(ctx, prop);
   }
 }
 

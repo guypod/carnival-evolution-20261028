@@ -36,6 +36,11 @@ export const HELP_CONTROLS: HelpControl[] = [
     action:
       'Ring yourself on the map for a few seconds and centre the view on you. Esc hides the ring.',
   },
+  {
+    keys: ['E', 'Ferry buttons'],
+    action:
+      'At a waterside dock: board the ferry, cast off, call it over, or hurry a crossing to its dock. Walking steps off at a dock.',
+  },
   { keys: ['Esc'], action: 'Leave a game or a guide page and come back to the midway.' },
 ];
 
