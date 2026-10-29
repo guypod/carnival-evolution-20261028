@@ -43,6 +43,32 @@ export const ENDINGS: Record<Gift, string> = {
     'The dragon opens the umbrella, a fiery sneeze turns it inside out, and it rains confetti.',
 };
 
+export type Mood = 'patient' | 'surprised' | 'amused';
+/** The stage events the audience reacts to. Nothing else moves them. */
+export type AudienceEvent = 'reunion' | 'handoff' | 'fall';
+export const AUDIENCE_EVENTS: readonly AudienceEvent[] = ['reunion', 'handoff', 'fall'];
+
+/** Each event's fixed reaction: the audience's mood and the caption that says it in words. */
+export const REACTIONS: Record<AudienceEvent, { mood: Mood; caption: string }> = {
+  reunion: { mood: 'surprised', caption: 'The audience gasps: the knight and dragon meet!' },
+  handoff: { mood: 'amused', caption: 'The audience cheers the gift.' },
+  fall: { mood: 'amused', caption: 'The audience laughs at the tumble.' },
+};
+export const PATIENT_CAPTION = 'The audience waits patiently.';
+
+export interface Audience {
+  mood: Mood;
+  caption: string;
+  /** Events already reacted to in this performance, so none is cheered twice. */
+  reacted: AudienceEvent[];
+}
+
+export const patientAudience = (): Audience => ({
+  mood: 'patient',
+  caption: PATIENT_CAPTION,
+  reacted: [],
+});
+
 export interface StageState {
   scene: Scene;
   positions: Record<ItemId, number>;
@@ -52,6 +78,7 @@ export interface StageState {
   caption: string;
   /** Endings this player has performed, kept between visits. */
   endingsSeen: Gift[];
+  audience: Audience;
 }
 
 export interface Theatre {
@@ -87,6 +114,7 @@ function cloneStage(stage: StageState): StageState {
     positions: { ...stage.positions },
     poses: { ...stage.poses },
     endingsSeen: [...stage.endingsSeen],
+    audience: { ...stage.audience, reacted: [...stage.audience.reacted] },
   };
 }
 
@@ -100,6 +128,7 @@ export function createStage(endingsSeen: Gift[] = []): StageState {
     selected: 'knight',
     caption: SCENE_GOALS[1],
     endingsSeen: [...endingsSeen],
+    audience: patientAudience(),
   };
 }
 
@@ -198,6 +227,24 @@ export function dropProp(stage: StageState, id: PropId): StageState {
   return { ...stage, scene: 3, gift: id, caption: `The dragon hugs the ${id}. ${SCENE_GOALS[3]}` };
 }
 
+/**
+ * The stage event a change performed, if any: the knight and dragon meeting
+ * (scene 1 ends), the gift handed over (scene 2 ends), or a puppet dropping
+ * into its hide pose, which reads as a comic fall.
+ */
+export function stageEvent(before: StageState, after: StageState): AudienceEvent | null {
+  if (before.scene === 1 && after.scene === 2) return 'reunion';
+  if (before.scene === 2 && after.scene === 3) return 'handoff';
+  if (ACTORS.some((id) => before.poses[id] !== 'hide' && after.poses[id] === 'hide')) return 'fall';
+  return null;
+}
+
+/** The audience after an event: its fixed reaction, once per performance. Otherwise unchanged. */
+export function react(audience: Audience, event: AudienceEvent | null): Audience {
+  if (!event || audience.reacted.includes(event)) return audience;
+  return { ...REACTIONS[event], reacted: [...audience.reacted, event] };
+}
+
 function apply(stage: StageState, action: Action): StageState {
   const next = cloneStage(stage);
   switch (action.type) {
@@ -248,7 +295,8 @@ export function act(theatre: Theatre, action: Action): Theatre {
     return createTheatre(createStage(stage.endingsSeen));
   }
   if (stage.scene === 'curtain') return theatre;
-  const next = apply(stage, action);
+  const changed = apply(stage, action);
+  const next = { ...changed, audience: react(changed.audience, stageEvent(stage, changed)) };
   const record =
     action.type === 'move' || action.type === 'drop'
       ? action.record !== false
@@ -365,6 +413,8 @@ export function parseStage(value: unknown): StageState | undefined {
   const seen = v.endingsSeen;
   if (!Array.isArray(seen) || seen.some((g) => g !== 'cake' && g !== 'umbrella')) return undefined;
   const endingsSeen = [...new Set(seen as Gift[])];
+  const audience = parseAudience(v.audience);
+  if (!audience) return undefined;
   const caption =
     scene === 'curtain' ? ENDINGS[gift as Gift] : SCENE_GOALS[scene as Exclude<Scene, 'curtain'>];
   return {
@@ -375,7 +425,21 @@ export function parseStage(value: unknown): StageState | undefined {
     selected: selected as ItemId,
     caption,
     endingsSeen,
+    audience,
   };
+}
+
+/** A saved audience: its reacted events are kept, its mood comes back from the last one. */
+function parseAudience(value: unknown): Audience | undefined {
+  if (value === undefined) return patientAudience();
+  if (typeof value !== 'object' || value === null) return undefined;
+  const reacted = (value as Record<string, unknown>).reacted;
+  if (!Array.isArray(reacted) || reacted.some((e) => !AUDIENCE_EVENTS.includes(e))) {
+    return undefined;
+  }
+  const events = [...new Set(reacted as AudienceEvent[])];
+  const last = events.at(-1);
+  return last ? { ...REACTIONS[last], reacted: events } : patientAudience();
 }
 
 export function stageSaveSlot(storage: SaveStorage | undefined) {
@@ -587,6 +651,32 @@ function drawProp(ctx: CanvasRenderingContext2D, stage: StageState, id: PropId) 
   }
 }
 
+/** Three small spectators in the front row, all wearing the audience's mood. Never animated. */
+function drawAudience(ctx: CanvasRenderingContext2D, audience: Audience) {
+  const { colors } = theme;
+  const lift = audience.mood === 'surprised' ? 6 : 0;
+  for (const [i, x] of [30, 70, 110].entries()) {
+    const y = 418 - lift;
+    ctx.fillStyle = i % 2 ? colors.muted : colors.stripeB;
+    ctx.beginPath();
+    ctx.arc(x, y, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = colors.background;
+    ctx.fillRect(x - 6, y - 5, 3, audience.mood === 'surprised' ? 5 : 3);
+    ctx.fillRect(x + 3, y - 5, 3, audience.mood === 'surprised' ? 5 : 3);
+    ctx.strokeStyle = colors.background;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (audience.mood === 'amused') ctx.arc(x, y + 2, 6, 0.2, Math.PI - 0.2);
+    else if (audience.mood === 'surprised') ctx.arc(x, y + 6, 3, 0, Math.PI * 2);
+    else {
+      ctx.moveTo(x - 5, y + 6);
+      ctx.lineTo(x + 5, y + 6);
+    }
+    ctx.stroke();
+  }
+}
+
 function wrap(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, max: number) {
   const words = text.split(' ');
   let line = '';
@@ -670,6 +760,10 @@ function draw(ctx: CanvasRenderingContext2D, stage: StageState, scoreFailed: boo
   ctx.textAlign = 'left';
   const label = stage.scene === 'curtain' ? 'Curtain' : `Scene ${stage.scene} of 3`;
   ctx.fillText(`${label}  ·  Endings found ${stage.endingsSeen.length}/2`, 16, 24);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = colors.text;
+  ctx.fillText(stage.audience.caption, WIDTH - 16, 24);
+  drawAudience(ctx, stage.audience);
 
   if (stage.scene === 'curtain') {
     ctx.fillStyle = colors.accent;

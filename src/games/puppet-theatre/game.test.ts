@@ -4,6 +4,10 @@ import {
   DISCARD_BUTTON,
   RETRY_BUTTON,
   ENDINGS,
+  PATIENT_CAPTION,
+  REACTIONS,
+  react,
+  patientAudience,
   finalTableau,
   act,
   buttonAction,
@@ -392,5 +396,80 @@ describe('restored curtain', () => {
     const scores: number[] = [];
     recordFinalScore(theatre, (score) => scores.push(score));
     expect(scores).toEqual([]);
+  });
+});
+
+describe('audience', () => {
+  it('waits patiently however long the player takes', () => {
+    const theatre = run(
+      createTheatre(),
+      { type: 'move', id: 'knight', x: 200 },
+      { type: 'pose', id: 'knight', pose: 'bow' },
+      { type: 'move', id: 'knight', x: 300 },
+    );
+    expect(theatre.stage.audience.mood).toBe('patient');
+    expect(theatre.stage.audience.caption).toBe(PATIENT_CAPTION);
+  });
+
+  it('reacts differently to a reunion, a gift handoff and a comic fall', () => {
+    const reunion = toSceneTwo().stage.audience;
+    expect(reunion.mood).toBe('surprised');
+    expect(reunion.caption).toBe(REACTIONS.reunion.caption);
+    const handoff = toSceneThree('cake').stage.audience;
+    expect(handoff.mood).toBe('amused');
+    expect(handoff.caption).toBe(REACTIONS.handoff.caption);
+    const fall = act(createTheatre(), { type: 'pose', id: 'dragon', pose: 'hide' }).stage.audience;
+    expect(fall.mood).toBe('amused');
+    expect(fall.caption).toBe(REACTIONS.fall.caption);
+    expect(new Set([reunion.caption, handoff.caption, fall.caption]).size).toBe(3);
+  });
+
+  it('does not react to a refused gift or a prop dropped away from the dragon', () => {
+    const bell = run(
+      toSceneTwo(),
+      { type: 'move', id: 'bell', x: 620 },
+      { type: 'drop', id: 'bell' },
+    );
+    expect(bell.stage.audience).toEqual(toSceneTwo().stage.audience);
+    const missed = run(
+      toSceneTwo(),
+      { type: 'move', id: 'cake', x: 300 },
+      { type: 'drop', id: 'cake' },
+    );
+    expect(missed.stage.audience).toEqual(toSceneTwo().stage.audience);
+  });
+
+  it('reacts to each event once per performance', () => {
+    const twice = run(
+      createTheatre(),
+      { type: 'pose', id: 'knight', pose: 'hide' },
+      { type: 'move', id: 'knight', x: 580 },
+      { type: 'pose', id: 'knight', pose: 'wave' },
+      { type: 'pose', id: 'dragon', pose: 'hide' },
+    );
+    expect(twice.stage.audience.caption).toBe(REACTIONS.reunion.caption);
+    expect(twice.stage.audience.reacted).toEqual(['fall', 'reunion']);
+    expect(react(twice.stage.audience, 'fall')).toBe(twice.stage.audience);
+    expect(react(patientAudience(), null)).toEqual(patientAudience());
+  });
+
+  it('forgets a reaction when undo takes back the event that earned it', () => {
+    const undone = act(toSceneTwo(), { type: 'undo' });
+    expect(undone.stage.audience.mood).toBe('patient');
+  });
+
+  it('starts each new performance patient', () => {
+    const replayed = act(toCurtain('umbrella'), { type: 'replay' });
+    expect(replayed.stage.audience).toEqual(patientAudience());
+  });
+
+  it('restores the audience from a save, and accepts saves from before it existed', () => {
+    const { stage } = toSceneThree('cake');
+    const saved = JSON.parse(JSON.stringify(stage));
+    expect(parseStage(saved)?.audience).toEqual(stage.audience);
+    const older = { ...saved };
+    delete older.audience;
+    expect(parseStage(older)?.audience).toEqual(patientAudience());
+    expect(parseStage({ ...saved, audience: { reacted: ['boo'] } })).toBeUndefined();
   });
 });
