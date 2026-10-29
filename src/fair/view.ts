@@ -36,6 +36,7 @@ import {
 } from './visitors';
 import {
   GOALS_TEXT,
+  OPENING_BUDGET,
   createPennantStore,
   atmosphere,
   debrief,
@@ -60,6 +61,28 @@ import {
   viewState,
   type ViewMode,
 } from './preview';
+import {
+  STOPS,
+  chooseStop,
+  complete as tourComplete,
+  createCampaignStore,
+  fitProblem,
+  isBlocked,
+  layoutProblem,
+  NEW_CAMPAIGN,
+  pack,
+  packedCount,
+  placeAtStop,
+  openStop,
+  recordDay,
+  stopById,
+  unpack,
+  waitsForGates,
+  withCapacity,
+  type Campaign,
+  type Stop,
+  type StopId,
+} from './campaign';
 
 const CELL = 64;
 
@@ -94,6 +117,12 @@ function quietNow(): boolean {
   }
   return isQuiet(motionPreference.load(), systemReduces);
 }
+/** How each stop's blocked ground looks on the grid, so the three sites read differently at a glance. */
+const GROUND: Record<StopId, { mark: string; word: string }> = {
+  riverside: { mark: '≈', word: 'river water' },
+  market: { mark: '⛺', word: 'a market stall' },
+  hilltop: { mark: '▲', word: 'rock' },
+};
 const ICON: Record<Piece, string> = { path: '', game: '🎯', food: '🍿', bench: '🪑', tree: '🌳' };
 /** The corner mark for each forecast cue on the grid. */
 const CUE_MARK: Record<Cue['cue'], string> = { wet: '💧', sheltered: '☂', sun: '☀', shade: '◐' };
@@ -116,7 +145,7 @@ export function startFair(
     <canvas class="fair-grid" tabindex="0" role="application" aria-label="Fair plaza grid. Arrow keys move the cursor."></canvas>
     <canvas class="fair-grid fair-preview" tabindex="0" role="img" hidden></canvas>
     <p class="fair-preview-note" aria-live="polite" hidden></p>
-    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, V switches between the grid and the visitor-eye preview, G selects a visitor group, P pauses visitors. The Opening Day buttons below the grid start an optional challenge.</p>
+    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, V switches between the grid and the visitor-eye preview, G selects a visitor group, P pauses visitors. The Opening Day buttons below the grid start an optional challenge, and Travelling fair campaign takes a fair on an optional three-stop tour while your plaza waits untouched.</p>
     <div class="fair-actions">
       <button type="button" data-act="view" aria-pressed="false">Visitor-eye preview (V)</button>
       <button type="button" data-act="undo">Undo</button>
@@ -137,6 +166,20 @@ export function startFair(
       <button type="button" data-act="day-finish" hidden>Finish the day now</button>
       <button type="button" data-act="day-end" hidden>End early</button>
     </div>
+    <div class="fair-actions" role="group" aria-label="Travelling fair campaign">
+      <button type="button" data-act="tour" aria-pressed="false">Travelling fair campaign</button>
+      <button type="button" data-act="tour-reset" hidden>Reset campaign</button>
+    </div>
+    <section class="fair-tour" aria-label="Travelling fair" hidden>
+      <p class="fair-tour-status"></p>
+      <div class="fair-actions" role="group" aria-label="Choose the next stop">${STOPS.map(
+        (s) => `<button type="button" data-act="go-${s.id}">Travel to ${s.name}</button>`,
+      ).join('')}</div>
+      <div class="fair-actions" role="group" aria-label="Pack the wagons">${PIECES.map(
+        (p) =>
+          `<button type="button" data-act="pack-${p}">Pack ${PIECE_NAME[p].toLowerCase()}</button><button type="button" data-act="unpack-${p}">Leave one at home</button>`,
+      ).join('')}</div>
+    </section>
     <section class="fair-day" aria-label="Opening Day" aria-live="polite" hidden></section>
     <p class="fair-visitor" aria-live="polite"></p>
     <p class="fair-status" role="status" aria-live="polite"></p>
@@ -162,6 +205,16 @@ export function startFair(
     | undefined;
   /** The forecast the player opted into for Opening Day, if any. */
   let forecast: Weather | undefined;
+  const tourStore = createCampaignStore(storage);
+  /** The travelling fair campaign while it is being played; undefined in the sandbox. */
+  let tour: Campaign | undefined;
+  /** The campaign set aside on the way back to the plaza, so unsaved progress survives the switch. */
+  let parkedTour: Campaign | undefined;
+  /** Whether the campaign in memory is also in storage. */
+  let tourSaved = true;
+  const UNSAVED = 'This browser could not save the campaign. It is kept until you leave the page.';
+  /** The sandbox plaza set aside while the campaign is played, restored as it was on return. */
+  let sandbox: { layout: Layout; history: Layout[]; day: typeof day } | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   canvas.width = FAIR_WIDTH * CELL;
@@ -181,6 +234,9 @@ export function startFair(
   const dayPanel = root.querySelector<HTMLElement>('.fair-day')!;
   const dayButton = root.querySelector<HTMLButtonElement>('[data-act="day"]')!;
   const dayOnly = (act: string) => root.querySelector<HTMLButtonElement>(`[data-act="${act}"]`)!;
+  const tourPanel = root.querySelector<HTMLElement>('.fair-tour')!;
+  const tourStatus = root.querySelector<HTMLElement>('.fair-tour-status')!;
+  const [goGroup, packGroup] = tourPanel.querySelectorAll<HTMLElement>('.fair-actions');
   const tools = root.querySelector('.fair-tools')!;
   const toolButtons = PIECES.map((p, i) => {
     const b = document.createElement('button');
@@ -192,13 +248,16 @@ export function startFair(
   });
 
   function say(text: string) {
-    status.textContent = text;
+    status.textContent = tour && !tourSaved ? `${text} ${UNSAVED}` : text;
   }
 
   function describe(cell: Cell): string {
     const here = layout[key(cell)];
     const where = `Column ${cell.x + 1}, row ${cell.y + 1}`;
     if (cell.x === ENTRANCE.x && cell.y === ENTRANCE.y) return `${where}: the entrance.`;
+    const stop = tourStop();
+    if (stop && isBlocked(stop, cell))
+      return `${where}: ${GROUND[stop.id].word}, nothing can be built here.`;
     if (!here) return `${where}: empty.`;
     const info = attractions(layout).find((a) => a.x === cell.x && a.y === cell.y);
     const cue = atmosphere(layout, shownForecast()).find((a) => a.x === cell.x && a.y === cell.y);
@@ -211,10 +270,40 @@ export function startFair(
     carrying = undefined;
     walker = settleWalker(layout, walker);
     sim = relayout(sim, layout);
+    if (tour && tour.layout !== next) saveTour({ ...tour, layout: next });
+  }
+
+  /** The stop being played, with reputation's extra wagon capacity, or undefined in the sandbox or between stops. */
+  function tourStop(): Stop | undefined {
+    return tour?.at ? withCapacity(stopById(tour.at), tour) : undefined;
+  }
+
+  function saveTour(next: Campaign) {
+    tour = next;
+    tourSaved = tourStore.save(next);
+    if (!tourSaved) status.textContent = UNSAVED;
+  }
+
+  /** Placing on the grid: the sandbox's budget rules, or the stop's ground and packed wagons. */
+  function placeHere(cell: Cell): PlaceResult {
+    if (!tour) return place(layout, cell, piece);
+    const stop = tourStop();
+    if (!stop) return { ok: false, reason: 'Choose the next stop before building.' };
+    const r = placeAtStop(stop, tour.packing, layout, cell, piece);
+    return r.ok ? { ok: true, layout: r.value } : r;
+  }
+
+  /** Refuses a layout the stop cannot hold, so undo and moves keep to the ground and the wagons. */
+  function fits(result: PlaceResult): PlaceResult {
+    const stop = tourStop();
+    if (!result.ok || !tour || !stop) return result;
+    const problem = fitProblem(stop, tour.packing, result.layout);
+    return problem ? { ok: false, reason: problem } : result;
   }
 
   function apply(result: PlaceResult, done: string) {
     if (gatesOpen()) return say(GATES_OPEN);
+    result = fits(result);
     if (!result.ok) return say(result.reason);
     history = pushHistory(history, layout);
     setLayout(result.layout);
@@ -230,6 +319,7 @@ export function startFair(
   function closeDay(complete: boolean) {
     if (day?.phase !== 'open') return;
     const outcome = measure(sim, complete);
+    if (tour) return closeTourDay(day.freeSim, outcome);
     const award = pennants.award(outcome);
     const note = award.earned
       ? award.saved
@@ -247,13 +337,170 @@ export function startFair(
     );
   }
 
+  /** Ends a campaign day: a win travels on with reputation and a keepsake, anything else stays for a retry. */
+  function closeTourDay(freeSim: Sim, outcome: Outcome) {
+    if (!tour) return;
+    const stop = tourStop()!;
+    const ran = layout;
+    const before = tour;
+    saveTour(recordDay(tour, outcome));
+    const earned = tour.reputation - before.reputation;
+    sim = freeSim;
+    selected = undefined;
+    const note = earned
+      ? `${stop.name} loved it: reputation +${earned}, and a ${stop.name} keepsake. ${
+          tourComplete(tour)
+            ? 'The tour is complete!'
+            : 'Choose the next stop. Reputation lets the wagons carry more.'
+        }`
+      : `${stop.name} is not won yet. Your packing and layout are kept: change them and retry.`;
+    day = { phase: 'build', last: outcome, ran, previous: earned ? undefined : day?.last, note };
+    if (earned) {
+      history = [];
+      setLayout(tour.layout);
+    }
+    setPauseButton();
+    say(`${debrief(ran, outcome).headline} ${note}`);
+  }
+
+  function renderTour() {
+    dayOnly('tour').setAttribute('aria-pressed', String(Boolean(tour)));
+    dayOnly('tour').textContent = tour ? 'Back to my plaza' : 'Travelling fair campaign';
+    dayOnly('tour-reset').hidden = !tour;
+    tourPanel.hidden = !tour;
+    if (!tour) return;
+    const stop = tourStop();
+    const kept = tour.keepsakes.map((id) => stopById(id).name).join(', ') || 'none yet';
+    const text = tourComplete(tour)
+      ? `Tour complete! All three stops played. Reputation ${tour.reputation}. Keepsakes: ${kept}. Reset the campaign to tour again, or go back to your plaza.`
+      : stop
+        ? `Stop ${tour.stop + 1} of ${STOPS.length}: ${stop.name}. ${stop.priority} Wagons: ${packedCount(tour.packing)} of ${stop.capacity} packed. Reputation ${tour.reputation}. Keepsakes: ${kept}. Pack, arrange on the open ground, then open the gates. Each stop spends at most ${OPENING_BUDGET}.`
+        : `Stop ${tour.stop + 1} of ${STOPS.length}: choose where the fair travels next. Reputation ${tour.reputation}. Keepsakes: ${kept}.`;
+    if (tourStatus.textContent !== text) tourStatus.textContent = text;
+    goGroup.hidden = Boolean(stop) || tourComplete(tour);
+    packGroup.hidden = !stop;
+    for (const s of STOPS) {
+      const b = dayOnly(`go-${s.id}`);
+      b.disabled = tour.keepsakes.includes(s.id);
+      b.textContent = `${b.disabled ? '✓ ' : ''}Travel to ${s.name} (wagons carry ${withCapacity(s, tour).capacity})`;
+    }
+    for (const p of PIECES) {
+      dayOnly(`pack-${p}`).textContent = `Pack ${PIECE_NAME[p].toLowerCase()} (${tour.packing[p]})`;
+      dayOnly(`unpack-${p}`).disabled = tour.packing[p] === 0;
+    }
+  }
+
+  function enterTour() {
+    if (gatesOpen()) closeDay(false);
+    sandbox = { layout, history, day };
+    if (!parkedTour) tourSaved = true;
+    tour = parkedTour ?? tourStore.load();
+    history = [];
+    day = tour.at ? { phase: 'build' } : undefined;
+    setLayout(tour.layout);
+    say(
+      tourComplete(tour)
+        ? 'Your travelling fair has played all three stops.'
+        : tour.at
+          ? `Resuming the tour at ${stopById(tour.at).name}.`
+          : 'The travelling fair is ready to roll. Choose the first stop: each site has different ground and visitors.',
+    );
+  }
+
+  function leaveTour() {
+    if (gatesOpen()) closeDay(false);
+    const back = sandbox!;
+    const saved = tourSaved;
+    parkedTour = tour;
+    tour = undefined;
+    sandbox = undefined;
+    history = back.history;
+    day = back.day;
+    setLayout(back.layout);
+    say(
+      `Back to your plaza, exactly as you left it. ${saved ? 'The campaign is saved.' : 'The campaign is kept until you leave the page, but this browser could not save it.'}`,
+    );
+  }
+
+  function tourAct(name: string): boolean {
+    if (name === 'tour') {
+      if (tour) leaveTour();
+      else enterTour();
+      return true;
+    }
+    if (!tour) return false;
+    if (name === 'tour-reset') {
+      if (
+        !window.confirm(
+          'Reset the travelling fair campaign? Your plaza and scores are not touched.',
+        )
+      )
+        return true;
+      if (gatesOpen()) closeDay(false);
+      tourSaved = tourStore.reset();
+      tour = NEW_CAMPAIGN;
+      history = [];
+      day = undefined;
+      setLayout(tour.layout);
+      say(
+        tourSaved
+          ? 'Campaign reset. Choose the first stop. Your plaza and scores are untouched.'
+          : 'Campaign reset for this visit, but this browser could not clear the saved campaign, so it may return after a reload. Choose the first stop.',
+      );
+      return true;
+    }
+    if (gatesOpen()) {
+      // Pause, finish and end early still reach the day; only the campaign's own buttons wait.
+      const own = waitsForGates(name);
+      if (own) say(GATES_OPEN);
+      return own;
+    }
+    const go = STOPS.find((s) => name === `go-${s.id}`);
+    if (go) {
+      const r = chooseStop(tour, go.id);
+      if (!r.ok) {
+        say(r.reason);
+        return true;
+      }
+      saveTour(r.value);
+      history = [];
+      day = { phase: 'build' };
+      setLayout(tour.layout);
+      // The travel buttons hide once a stop is chosen, so focus moves to the site.
+      canvas.focus();
+      say(
+        `The wagons roll to ${go.name}. ${go.priority} Pack up to ${tourStop()!.capacity} pieces.`,
+      );
+      return true;
+    }
+    const stop = tourStop();
+    const packed = PIECES.find((p) => name === `pack-${p}`);
+    const left = PIECES.find((p) => name === `unpack-${p}`);
+    if (stop && (packed || left)) {
+      const r = packed ? pack(stop, tour.packing, packed) : unpack(tour.packing, left!, layout);
+      if (!r.ok) {
+        say(r.reason);
+        return true;
+      }
+      saveTour({ ...tour, packing: r.value });
+      say(
+        `${packed ? 'Packed' : 'Left at home'}: ${PIECE_NAME[(packed ?? left)!].toLowerCase()}. Wagons ${packedCount(tour.packing)} of ${stop.capacity}.`,
+      );
+      return true;
+    }
+    return false;
+  }
+
   function renderDay() {
+    renderTour();
+    dayButton.hidden = Boolean(tour);
     dayButton.setAttribute('aria-pressed', String(Boolean(day)));
     dayButton.textContent = day ? 'Back to free build' : 'Opening Day challenge';
-    dayOnly('day-open').hidden = day?.phase !== 'build';
+    dayOnly('day-open').hidden = day?.phase !== 'build' || (Boolean(tour) && !tourStop());
     dayOnly('day-open').textContent =
       day?.phase === 'build' && day.last ? 'Retry: open the gates again' : 'Open the gates';
-    dayOnly('day-forecast').hidden = day?.phase !== 'build';
+    // Forecasts belong to the sandbox challenge: the campaign is about sites and wagons.
+    dayOnly('day-forecast').hidden = day?.phase !== 'build' || Boolean(tour);
     dayOnly('day-forecast').textContent = `Forecast: ${forecastName(forecast)}`;
     dayOnly('day-finish').hidden = !gatesOpen();
     dayOnly('day-end').hidden = !gatesOpen();
@@ -266,8 +513,14 @@ export function startFair(
         `<p>Gates open: ${sim.spawned} of ${sim.spawns} groups have arrived, ${sim.left.length} have left. Pause with P, or finish or end the day below.</p>`,
       );
     } else {
-      parts.push(`<p>${GOALS_TEXT}${held}</p>`);
-      if (forecast) parts.push(`<p><strong>Forecast.</strong> ${FORECASTS[forecast].rule}</p>`);
+      parts.push(`<p>${GOALS_TEXT}${tour ? '' : held}</p>`);
+      if (forecast && !tour)
+        parts.push(`<p><strong>Forecast.</strong> ${FORECASTS[forecast].rule}</p>`);
+      const stop = tourStop();
+      if (stop)
+        parts.push(
+          `<p><strong>Visitors at ${stop.name}.</strong> These are this stop's own visitors, not your plaza's, so a layout that wins at one stop can lose at another. The same groups come on every retry here.</p>`,
+        );
       if (day.last) {
         // The debrief belongs to the layout the day ran on, not to edits made since.
         const d = debrief(day.ran ?? layout, day.last, day.previous);
@@ -295,7 +548,13 @@ export function startFair(
 
   function act(name: string) {
     const locked = ['undo', 'reload', 'reset', 'reset-visitors'];
-    if (gatesOpen() && locked.includes(name)) {
+    if (tourAct(name)) {
+      // Handled by the campaign.
+    } else if (tour && ['save', 'reload', 'reset'].includes(name)) {
+      say(
+        'These buttons are for your own plaza. The campaign saves itself; Reset campaign starts the tour again.',
+      );
+    } else if (gatesOpen() && locked.includes(name)) {
       say(GATES_OPEN);
     } else if (name === 'day') {
       if (gatesOpen()) closeDay(false);
@@ -309,10 +568,15 @@ export function startFair(
           : 'Forecast: clear skies. The day runs with no weather rules.',
       );
     } else if (name === 'day-open' && day?.phase === 'build') {
-      const saved = store.save(layout);
+      const stop = tourStop();
+      const problem = tour && (stop ? layoutProblem(stop, tour.packing, layout) : 'Choose a stop.');
+      if (problem) return (say(`The gates cannot open yet: ${problem}`), draw());
+      // The campaign keeps its own save, so opening its gates never writes the sandbox plaza.
+      const saved = tour ? (tourSaved = tourStore.save(tour)) : store.save(layout);
       day = { phase: 'open', freeSim: sim, last: day.last };
       carrying = undefined;
-      sim = { ...openGates(layout, forecast), paused: quiet };
+      // A campaign day has the stop's own crowd and always clear skies: forecasts belong to the sandbox.
+      sim = { ...(stop ? openStop(stop, layout) : openGates(layout, forecast)), paused: quiet };
       selected = undefined;
       setPauseButton();
       say(
@@ -326,6 +590,8 @@ export function startFair(
     } else if (name === 'undo') {
       const last = history.at(-1);
       if (!last) return say('Nothing to undo.');
+      const undone = fits({ ok: true, layout: last });
+      if (!undone.ok) return (say(`Cannot undo: ${undone.reason}`), draw());
       history = history.slice(0, -1);
       setLayout(last);
       say('Undid the last edit.');
@@ -438,7 +704,7 @@ export function startFair(
     if (walker) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      apply(place(layout, cursor, piece), `Placed a ${PIECE_NAME[piece].toLowerCase()}.`);
+      apply(placeHere(cursor), `Placed a ${PIECE_NAME[piece].toLowerCase()}.`);
     } else if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
       apply(remove(layout, cursor), 'Removed.');
@@ -452,7 +718,13 @@ export function startFair(
       } else {
         const carried = carrying;
         carrying = undefined;
-        apply(dropCarried(layout, carried, cursor), 'Moved.');
+        const stop = tourStop();
+        apply(
+          stop && isBlocked(stop, cursor)
+            ? { ok: false, reason: `Nothing can be built there at ${stop.name}.` }
+            : dropCarried(layout, carried, cursor),
+          'Moved.',
+        );
       }
       draw();
     }
@@ -465,7 +737,7 @@ export function startFair(
       x: Math.floor(((event.clientX - rect.left) / rect.width) * FAIR_WIDTH),
       y: Math.floor(((event.clientY - rect.top) / rect.height) * FAIR_HEIGHT),
     };
-    apply(place(layout, cursor, piece), `Placed a ${PIECE_NAME[piece].toLowerCase()}.`);
+    apply(placeHere(cursor), `Placed a ${PIECE_NAME[piece].toLowerCase()}.`);
   }
 
   function describeVisitors(): string {
@@ -493,7 +765,7 @@ export function startFair(
   /** The forecast the grid shows: the one the gates opened under, or the one picked for the next try. */
   function shownForecast(): Weather | undefined {
     if (!day) return undefined;
-    return day.phase === 'open' ? sim.weather : forecast;
+    return day.phase === 'open' ? sim.weather : tour ? undefined : forecast;
   }
 
   /**
@@ -523,7 +795,14 @@ export function startFair(
     renderDay();
     const card = describeVisitors();
     if (visitorCard.textContent !== card) visitorCard.textContent = card;
-    toolButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(PIECES[i] === piece)));
+    toolButtons.forEach((b, i) => {
+      const p = PIECES[i];
+      b.setAttribute('aria-pressed', String(p === piece));
+      const used = Object.values(layout).filter((x) => x === p).length;
+      b.textContent = tour
+        ? `${i + 1}. ${PIECE_NAME[p]} (${used} of ${tour.packing[p]} placed, costs ${PIECE_COST[p]})`
+        : `${i + 1}. ${PIECE_NAME[p]} (${PIECE_COST[p]})`;
+    });
     if (!ctx) return;
     const c = theme.colors;
     const cut = new Set(
@@ -544,7 +823,15 @@ export function startFair(
         ctx.globalAlpha = 0.3;
         ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
         ctx.globalAlpha = 1;
-        if (x === ENTRANCE.x && y === ENTRANCE.y) {
+        const stop = tourStop();
+        if (stop && isBlocked(stop, { x, y })) {
+          ctx.fillStyle =
+            stop.id === 'riverside' ? c.water : stop.id === 'market' ? c.stripeA : c.muted;
+          ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+          ctx.fillStyle = stop.id === 'market' ? c.stripeB : c.background;
+          ctx.font = canvasFont('title', 'bold');
+          ctx.fillText(GROUND[stop.id].mark, px + CELL / 2, py + CELL / 2);
+        } else if (x === ENTRANCE.x && y === ENTRANCE.y) {
           ctx.fillStyle = c.stripeA;
           ctx.fillRect(px + 4, py + 4, CELL - 8, CELL - 8);
           ctx.fillStyle = c.text;

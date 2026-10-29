@@ -45,6 +45,13 @@ const START: Record<Kind, Needs> = {
   family: { fun: 30, rest: 55, thirst: 45 },
 };
 
+/**
+ * Who comes through the gate: the share of family groups, and how each kind
+ * feels on arrival. A sim without one uses the plaza's own visitors: half
+ * families, with the starting needs above.
+ */
+export type Crowd = { family: number; start: Record<Kind, Needs> };
+
 export type Group = {
   id: number;
   kind: Kind;
@@ -77,6 +84,8 @@ export type Sim = {
   left: Group[];
   /** The forecast, when the player picked one. */
   weather?: Weather;
+  /** A different crowd from the plaza's own, such as a travelling fair stop's. */
+  crowd?: Crowd;
 };
 
 /** A small seeded random number generator (mulberry32), returning [value, next state]. */
@@ -95,9 +104,11 @@ export function createSim(
   paused = false,
   spawns = MAX_SPAWNS,
   weather?: Weather,
+  crowd?: Crowd,
 ): Sim {
   return {
     ...(weather ? { weather } : {}),
+    ...(crowd ? { crowd } : {}),
     layout,
     groups: [],
     tick: 0,
@@ -114,7 +125,7 @@ export function createSim(
 
 /** Resets only the visitors, with the same seed, so a rerun is identical. */
 export function resetSim(sim: Sim): Sim {
-  return createSim(sim.layout, sim.seed, sim.paused, sim.spawns, sim.weather);
+  return createSim(sim.layout, sim.seed, sim.paused, sim.spawns, sim.weather, sim.crowd);
 }
 
 const STEPS: readonly Cell[] = [
@@ -278,12 +289,12 @@ function stepGroup(sim: Sim, g: Group): Group {
 
 function spawn(sim: Sim): Sim {
   const [r, rng] = nextRandom(sim.rng);
-  const kind: Kind = r < 0.5 ? 'thrill' : 'family';
+  const kind: Kind = r < 1 - (sim.crowd?.family ?? 0.5) ? 'thrill' : 'family';
   const base: Group = {
     id: sim.spawned + 1,
     kind,
     at: { ...ENTRANCE },
-    needs: { ...START[kind] },
+    needs: { ...(sim.crowd?.start ?? START)[kind] },
     phase: 'walking',
     route: [],
     timer: 0,
