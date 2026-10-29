@@ -11,6 +11,7 @@ import {
   stopTest,
   wrapText,
   announcement,
+  pointX,
   type Point,
 } from './coaster-workshop';
 
@@ -25,6 +26,17 @@ describe('coaster riders', () => {
     expect(rides.length).toBeGreaterThan(0);
     expect(rides[0].steepest).toBeGreaterThan(0.6);
     expect(Math.max(...rides.map((r) => r.topSpeed))).toBeGreaterThan(FAST);
+  });
+
+  it('measures only the part of a span the train rode before it stalled', () => {
+    // A tall first hill the train cannot climb: it stalls a few pixels in.
+    const wall = [440, 80, 80, 80, 80, 80, 80].map((y, i) => ({ x: pointX(i), y }));
+    const rides = rideSpans(wall);
+    expect(rides).toHaveLength(1);
+    expect(rides[0].height).toBeLessThan(20);
+    expect(rides[0].mid.y).toBeGreaterThan(420);
+    const [gail] = riderReports(wall);
+    expect(gail.summary).not.toMatch(/calm view/);
   });
 
   it('gives the two riders different reactions to the same drop', () => {

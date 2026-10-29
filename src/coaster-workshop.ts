@@ -460,13 +460,42 @@ export interface SpanRide {
   mid: Point;
 }
 
-/** Rides the layout once and measures every span the train reached. */
+/**
+ * Rides the layout once and measures every span the train reached. Slope,
+ * height and the marker spot come only from the part of a span the train
+ * actually travelled, so a run that stops mid-span reports what it rode.
+ */
 export function rideSpans(points: readonly Point[]): SpanRide[] {
   const path = trackPath(points);
   const length = pathLength(path);
+  const starts = [0];
+  for (let i = 1; i < path.length; i++) {
+    starts.push(starts[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
+  }
+  const spanCount = points.length - 1;
+  const ends = Array.from({ length: spanCount }, (_, i) => starts[(i + 1) * SAMPLES_PER_SPAN]);
+  const topSpeeds = new Array<number>(spanCount).fill(0);
+  const reached = new Set<number>();
+  let far = 0;
+  let run = createRun();
+  while (!run.outcome) {
+    run = stepRun(run, path, length);
+    far = Math.max(far, run.s);
+    const index = ends.findIndex((end) => run.s <= end);
+    const span = index < 0 ? spanCount - 1 : index;
+    topSpeeds[span] = Math.max(topSpeeds[span], Math.round(Math.abs(run.v)));
+    reached.add(span);
+  }
   const spans: SpanRide[] = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const part = path.slice(i * SAMPLES_PER_SPAN, (i + 1) * SAMPLES_PER_SPAN + 1);
+  for (let i = 0; i < spanCount; i++) {
+    if (!reached.has(i)) continue;
+    const start = starts[i * SAMPLES_PER_SPAN];
+    const stop = Math.min(ends[i], far);
+    const part: Point[] = [];
+    for (let k = i * SAMPLES_PER_SPAN; k <= (i + 1) * SAMPLES_PER_SPAN; k++) {
+      if (starts[k] < stop) part.push(path[k]);
+    }
+    part.push(sampleAt(path, stop).point);
     let steepest = 0;
     for (let k = 1; k < part.length; k++) {
       const len = Math.hypot(part[k].x - part[k - 1].x, part[k].y - part[k - 1].y);
@@ -475,26 +504,13 @@ export function rideSpans(points: readonly Point[]): SpanRide[] {
     const top = Math.min(...part.map((p) => p.y));
     spans.push({
       span: i,
-      topSpeed: 0,
+      topSpeed: topSpeeds[i],
       steepest,
       height: Math.round(MAX_Y - top),
-      mid: part[Math.floor(part.length / 2)],
+      mid: sampleAt(path, (start + stop) / 2).point,
     });
   }
-  const ends: number[] = [];
-  for (let i = 0; i < spans.length; i++) {
-    ends.push(pathLength(path.slice(0, (i + 1) * SAMPLES_PER_SPAN + 1)));
-  }
-  const reached = new Set<number>();
-  let run = createRun();
-  while (!run.outcome) {
-    run = stepRun(run, path, length);
-    const index = ends.findIndex((end) => run.s <= end);
-    const span = spans[index < 0 ? spans.length - 1 : index];
-    span.topSpeed = Math.max(span.topSpeed, Math.round(Math.abs(run.v)));
-    reached.add(span.span);
-  }
-  return spans.filter((s) => reached.has(s.span));
+  return spans;
 }
 
 export interface RiderNote {
