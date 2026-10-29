@@ -33,6 +33,16 @@ import {
   resetSim,
   type Sim,
 } from './visitors';
+import {
+  GOALS_TEXT,
+  createPennantStore,
+  debrief,
+  finished,
+  measure,
+  openGates,
+  runToEnd,
+  type Outcome,
+} from './opening-day';
 
 const CELL = 64;
 
@@ -72,13 +82,13 @@ const ICON: Record<Piece, string> = { path: '', game: '🎯', food: '🍿', benc
 /** Mounts the plaza editor into `root`. Returns a cleanup that removes every listener. */
 export function startFair(
   root: HTMLElement,
-  storage: Parameters<typeof createFairStore>[0],
+  storage: Parameters<typeof createFairStore>[0] & Parameters<typeof createPennantStore>[0],
 ): () => void {
   root.innerHTML = `
     <p class="fair-intro">Lay paths from the entrance (the gate on the left), then place stalls and benches beside them. Visitors only reach a piece that touches a path connected to the entrance.</p>
     <div class="fair-tools" role="group" aria-label="Piece to place"></div>
     <canvas class="fair-grid" tabindex="0" role="application" aria-label="Fair plaza grid. Arrow keys move the cursor."></canvas>
-    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, G selects a visitor group, P pauses visitors.</p>
+    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, G selects a visitor group, P pauses visitors. The Opening Day buttons below the grid start an optional challenge.</p>
     <div class="fair-actions">
       <button type="button" data-act="undo">Undo</button>
       <button type="button" data-act="walk" aria-pressed="false">Walk my plaza</button>
@@ -91,6 +101,13 @@ export function startFair(
       <button type="button" data-act="next-group">Select next group (G)</button>
       <button type="button" data-act="reset-visitors">Restart visitors</button>
     </div>
+    <div class="fair-actions" role="group" aria-label="Opening Day challenge">
+      <button type="button" data-act="day" aria-pressed="false">Opening Day challenge</button>
+      <button type="button" data-act="day-open" hidden>Open the gates</button>
+      <button type="button" data-act="day-finish" hidden>Finish the day now</button>
+      <button type="button" data-act="day-end" hidden>End early</button>
+    </div>
+    <section class="fair-day" aria-label="Opening Day" aria-live="polite" hidden></section>
     <p class="fair-visitor" aria-live="polite"></p>
     <p class="fair-status" role="status" aria-live="polite"></p>
     <p class="fair-summary"></p>`;
@@ -106,6 +123,12 @@ export function startFair(
   const quiet = quietNow();
   let sim: Sim = createSim(layout, 1, quiet);
   let selected: number | undefined;
+  const pennants = createPennantStore(storage);
+  /** The Opening Day challenge: off, building between tries, or open with the free-build visitors set aside. */
+  let day:
+    | { phase: 'build'; last?: Outcome; previous?: Outcome; note?: string }
+    | { phase: 'open'; freeSim: Sim; last?: Outcome }
+    | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   canvas.width = FAIR_WIDTH * CELL;
@@ -116,6 +139,9 @@ export function startFair(
   const visitorCard = root.querySelector('.fair-visitor')!;
   const pauseButton = root.querySelector<HTMLButtonElement>('[data-act="pause"]')!;
   const walkButton = root.querySelector<HTMLButtonElement>('[data-act="walk"]')!;
+  const dayPanel = root.querySelector<HTMLElement>('.fair-day')!;
+  const dayButton = root.querySelector<HTMLButtonElement>('[data-act="day"]')!;
+  const dayOnly = (act: string) => root.querySelector<HTMLButtonElement>(`[data-act="${act}"]`)!;
   const tools = root.querySelector('.fair-tools')!;
   const toolButtons = PIECES.map((p, i) => {
     const b = document.createElement('button');
@@ -148,11 +174,68 @@ export function startFair(
   }
 
   function apply(result: PlaceResult, done: string) {
+    if (gatesOpen()) return say(GATES_OPEN);
     if (!result.ok) return say(result.reason);
     history = pushHistory(history, layout);
     setLayout(result.layout);
     say(done);
     draw();
+  }
+
+  const GATES_OPEN =
+    'The gates are open, so the plaza is locked. Finish or end the day to change it.';
+  const gatesOpen = () => day?.phase === 'open';
+
+  /** Ends a day, measured from what the visitors did, and returns to building with the debrief. */
+  function closeDay(complete: boolean) {
+    if (day?.phase !== 'open') return;
+    const outcome = measure(sim, complete);
+    const award = pennants.award(outcome);
+    const note = award.earned
+      ? award.saved
+        ? 'You earned the Opening Day pennant. It is kept in this browser.'
+        : 'You earned the Opening Day pennant, but this browser could not save it.'
+      : outcome.success
+        ? 'You already hold the Opening Day pennant.'
+        : undefined;
+    sim = day.freeSim;
+    selected = undefined;
+    day = { phase: 'build', last: outcome, previous: day.last, note };
+    setPauseButton();
+    say(
+      `${debrief(layout, outcome).headline} Change your plaza and open the gates again to retry.`,
+    );
+  }
+
+  function renderDay() {
+    dayButton.setAttribute('aria-pressed', String(Boolean(day)));
+    dayButton.textContent = day ? 'Back to free build' : 'Opening Day challenge';
+    dayOnly('day-open').hidden = day?.phase !== 'build';
+    dayOnly('day-open').textContent =
+      day?.phase === 'build' && day.last ? 'Retry: open the gates again' : 'Open the gates';
+    dayOnly('day-finish').hidden = !gatesOpen();
+    dayOnly('day-end').hidden = !gatesOpen();
+    dayPanel.hidden = !day;
+    if (!day) return;
+    const parts: string[] = [];
+    const held = pennants.load() ? ' 🚩 You hold the Opening Day pennant.' : '';
+    if (day.phase === 'open') {
+      parts.push(
+        `<p>Gates open: ${sim.spawned} of ${sim.spawns} groups have arrived, ${sim.left.length} have left. Pause with P, or finish or end the day below.</p>`,
+      );
+    } else {
+      parts.push(`<p>${GOALS_TEXT}${held}</p>`);
+      if (day.last) {
+        const d = debrief(layout, day.last, day.previous);
+        parts.push(
+          `<h2>${d.headline}</h2>`,
+          day.note ? `<p><strong>${day.note}</strong></p>` : '',
+          `<ul>${d.lines.map((l) => `<li>${l}</li>`).join('')}</ul>`,
+        );
+      }
+    }
+    const html = parts.join('');
+    if (dayPanel.innerHTML !== html) dayPanel.innerHTML = html;
   }
 
   function setPauseButton() {
@@ -167,7 +250,29 @@ export function startFair(
   }
 
   function act(name: string) {
-    if (name === 'undo') {
+    const locked = ['undo', 'reload', 'reset', 'reset-visitors'];
+    if (gatesOpen() && locked.includes(name)) {
+      say(GATES_OPEN);
+    } else if (name === 'day') {
+      if (gatesOpen()) closeDay(false);
+      day = day ? undefined : { phase: 'build' };
+      say(day ? GOALS_TEXT : 'Back to free build. Your plaza is unchanged.');
+    } else if (name === 'day-open' && day?.phase === 'build') {
+      const saved = store.save(layout);
+      day = { phase: 'open', freeSim: sim, last: day.last };
+      carrying = undefined;
+      sim = { ...openGates(layout), paused: quiet };
+      selected = undefined;
+      setPauseButton();
+      say(
+        `Gates open on ${saved ? 'your saved layout' : 'this layout (it could not be saved)'}.${quiet ? ' Quiet mode is on, so the day starts paused: press P to let visitors walk, or Finish the day now to see the result.' : ''}`,
+      );
+    } else if (name === 'day-finish' && gatesOpen()) {
+      sim = runToEnd(sim);
+      closeDay(true);
+    } else if (name === 'day-end' && gatesOpen()) {
+      closeDay(false);
+    } else if (name === 'undo') {
       const last = history.at(-1);
       if (!last) return say('Nothing to undo.');
       history = history.slice(0, -1);
@@ -308,6 +413,7 @@ export function startFair(
 
   function draw() {
     summaryLine.textContent = summary(layout);
+    renderDay();
     const card = describeVisitors();
     if (visitorCard.textContent !== card) visitorCard.textContent = card;
     toolButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(PIECES[i] === piece)));
@@ -411,6 +517,10 @@ export function startFair(
     sim = advance(sim, now - last);
     last = now;
     if (selected !== undefined && !sim.groups.some((g) => g.id === selected)) selected = undefined;
+    if (gatesOpen() && finished(sim)) {
+      closeDay(true);
+      draw();
+    }
     if (sim.tick !== lastTick) {
       lastTick = sim.tick;
       draw();
