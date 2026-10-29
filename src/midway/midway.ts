@@ -79,6 +79,7 @@ import {
 } from './locate';
 import { homeward, homewardMessage } from './homeward';
 import { lanternGlow, type Scene } from './scene';
+import { drawRepairedToy, toySpots, type RepairedToyId } from './repaired-toys';
 import {
   archBounds,
   BOOTH_SIGN_HEIGHT,
@@ -177,6 +178,8 @@ export interface MidwayOptions {
    * they replace notes still ringing (a new call does). See soundscape.ts.
    */
   onChime?(tones: number[], spacing: number, replace: boolean): void;
+  /** Toys repaired in the backstage workshop, shown beside the entrance. None when left out. */
+  repairedToys?: readonly RepairedToyId[];
 }
 
 export interface MidwayControls {
@@ -370,6 +373,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   /** The garden's own clock, which runs in quiet mode too so the still-state sequence plays. */
   let gustClock = 0;
   let nearGarden = false;
+  /** Repaired toys beside the entrance. See repaired-toys.ts. */
+  const repaired = toySpots(map, options.repairedToys ?? []);
   const gust = () => {
     garden = raiseGust(garden, gustClock);
   };
@@ -976,6 +981,14 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
               STONE_SHAPES[i],
               stoneOrder(chimes, i, quiet),
             ),
+        };
+      }),
+      ...repaired.map(({ id, at }) => {
+        const p = toScreen(at.x, at.y);
+        return {
+          depth: at.x + at.y,
+          box: { left: p.x - 12, right: p.x + 12, top: p.y - 30, bottom: p.y + 4 },
+          draw: () => drawRepairedToy(ctx, id, p, t),
         };
       }),
       ...garden.wheels.map((w, i) => {
