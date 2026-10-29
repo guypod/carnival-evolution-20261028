@@ -125,9 +125,10 @@ import {
   connectLanterns,
   createLightGarden,
   describeDesign,
+  editAt,
   lightGardenStore,
-  placeLantern,
   resetGarden,
+  saveNote,
   undo as undoGarden,
   type LanternColor,
   type LightGardenDesign,
@@ -390,6 +391,10 @@ function renderMidway() {
             <button type="button" class="tour-skip">Skip tour</button>
           </div>
         </section>
+        <div class="light-garden-editing" role="status" hidden>
+          <span>Editing the light garden. Click a cell on the patch by the entrance.</span>
+          <button type="button" class="light-garden-done">Done editing</button>
+        </div>
         <div class="visitor-guide" id="visitor-guide" role="region" aria-label="Visitor guide" hidden>
           <nav class="guide-contents" aria-label="Guide sections"><ul></ul></nav>
           <nav class="guide-destinations" aria-label="Destinations" data-guide-section="destinations">
@@ -483,12 +488,14 @@ function renderMidway() {
             <button type="button" class="scene-toggle" aria-pressed="false"></button>
             <details class="light-garden">
               <summary>🏮 Light garden</summary>
-              <p class="note">Hang up to 8 lanterns and 6 garlands on the patch right of the entrance. They light the map in lantern evening. Saved in this browser only.</p>
+              <p class="note">Hang up to 8 lanterns and 6 garlands on the patch at the foot of the entrance path. They light the map in lantern evening.</p>
+              <button type="button" class="light-garden-edit" aria-pressed="false">Edit on the map</button>
+              <p class="note">While editing, a click on the patch hangs a lantern on an empty cell or picks a lantern. Picking a second lantern strings a garland to it. Clicks on the map never walk or open anything until you press Done or Escape.</p>
               <form class="light-garden-place">
-                <label>Column (1 to 6) <input name="col" type="number" min="1" max="6" value="1" required /></label>
-                <label>Row (1 to 4) <input name="row" type="number" min="1" max="4" value="1" required /></label>
+                <label>Column (1 to 4) <input name="col" type="number" min="1" max="4" value="1" required /></label>
+                <label>Row (1 to 3) <input name="row" type="number" min="1" max="3" value="1" required /></label>
                 <label>Colour <select name="color"><option value="warm">Warm</option><option value="cool">Cool</option></select></label>
-                <button type="submit">Place lantern</button>
+                <button type="submit">Pick this cell</button>
               </form>
               <form class="light-garden-connect">
                 <label>From lantern <input name="a" type="number" min="1" value="1" required /></label>
@@ -604,7 +611,7 @@ function renderMidway() {
   setUpVisit(midway.walkTo, midway.walkToLandmark);
   setUpPocket();
   setUpSceneToggle(midway.setScene);
-  setUpLightGarden(midway.setLightGarden);
+  const stopLightGarden = setUpLightGarden(midway.setLightGarden, midway.editLightGarden);
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   const stopSound = setUpSound();
@@ -631,6 +638,7 @@ function renderMidway() {
     mystery.stop();
     stopHelp();
     stopGuide();
+    stopLightGarden();
     midway.stop();
   };
 }
@@ -1116,60 +1124,99 @@ function setUpPocket() {
   render();
 }
 
-// The light garden, from the guide: keyboard and form controls that place
-// lanterns by column and row, with a text summary of the whole design.
-function setUpLightGarden(show: (design: LightGardenDesign) => void) {
+// The light garden, from the guide. "Edit on the map" turns clicks on the map
+// into picks on the garden's cells until Done or Escape; the column and row
+// form makes the same picks from the keyboard. A text summary describes the
+// whole design, and the panel says plainly when the browser would not save it.
+function setUpLightGarden(
+  show: (design: LightGardenDesign, selected?: number) => void,
+  edit: (onPick: ((col: number, row: number) => void) | undefined) => void,
+): () => void {
   const panel = app.querySelector<HTMLDetailsElement>('.light-garden')!;
   const summary = panel.querySelector<HTMLParagraphElement>('.light-garden-summary')!;
-  let garden = createLightGarden(lightGardenStore.load());
-  const update = (note = '') => {
-    lightGardenStore.save(garden.design);
-    show(garden.design);
-    summary.textContent = `${note}${describeDesign(garden.design)}`;
-  };
+  const toggle = panel.querySelector<HTMLButtonElement>('.light-garden-edit')!;
+  const banner = app.querySelector<HTMLElement>('.light-garden-editing')!;
   const place = panel.querySelector<HTMLFormElement>('.light-garden-place')!;
+  let garden = createLightGarden(lightGardenStore.load());
+  let selected: number | undefined;
+  let editing = false;
+  const update = (note = '', changed = true) => {
+    const saved = changed ? ` ${saveNote(lightGardenStore.save(garden.design))}` : '';
+    show(garden.design, selected);
+    const chosen = selected === undefined ? '' : ` Lantern ${selected + 1} is picked.`;
+    summary.textContent = `${note}${describeDesign(garden.design)}${chosen}${saved}`;
+  };
+  const notes: Record<string, string> = {
+    placed: 'Lantern hung. ',
+    'out-of-bounds': 'That spot is outside the garden. ',
+    taken: 'A lantern already hangs there. ',
+    full: 'That is the most this garden holds: undo or reset to change it. ',
+    selected: 'Lantern picked: pick another to string a garland to it. ',
+    deselected: 'Lantern let go. ',
+    connected: 'Garland strung. ',
+    missing: 'There is no lantern with that number. ',
+    same: 'Pick two different lanterns. ',
+    already: 'Those two are already joined. ',
+  };
+  const pick = (col: number, row: number) => {
+    const color = new FormData(place).get('color') as LanternColor;
+    const before = garden;
+    const next = editAt(garden, selected, col, row, color);
+    garden = next.garden;
+    selected = next.selected;
+    update(notes[next.result], garden !== before);
+  };
+  const setEditing = (next: boolean) => {
+    editing = next;
+    toggle.setAttribute('aria-pressed', String(editing));
+    toggle.textContent = editing ? 'Done editing' : 'Edit on the map';
+    banner.hidden = !editing;
+    if (!editing) selected = undefined;
+    edit(editing ? pick : undefined);
+    update(editing ? 'Editing on the map. ' : '', false);
+  };
+  toggle.addEventListener('click', () => setEditing(!editing));
+  banner.querySelector('.light-garden-done')!.addEventListener('click', () => {
+    setEditing(false);
+    toggle.focus();
+  });
   place.addEventListener('submit', (event) => {
     event.preventDefault();
     const data = new FormData(place);
-    const next = placeLantern(
-      garden,
-      Number(data.get('col')) - 1,
-      Number(data.get('row')) - 1,
-      data.get('color') as LanternColor,
-    );
-    garden = next.garden;
-    const notes = {
-      placed: 'Lantern placed. ',
-      'out-of-bounds': 'That spot is outside the garden. ',
-      taken: 'A lantern already hangs there. ',
-      full: 'All 8 lanterns are hung: undo or reset to move one. ',
-    };
-    update(notes[next.result]);
+    pick(Number(data.get('col')) - 1, Number(data.get('row')) - 1);
   });
   const connect = panel.querySelector<HTMLFormElement>('.light-garden-connect')!;
   connect.addEventListener('submit', (event) => {
     event.preventDefault();
     const data = new FormData(connect);
     const next = connectLanterns(garden, Number(data.get('a')) - 1, Number(data.get('b')) - 1);
+    const changed = next.garden !== garden;
     garden = next.garden;
-    const notes = {
-      connected: 'Garland strung. ',
-      missing: 'There is no lantern with that number. ',
-      same: 'Pick two different lanterns. ',
-      already: 'Those two are already joined. ',
-      full: 'All 6 garlands are strung. ',
-    };
-    update(notes[next.result]);
+    update(notes[next.result], changed);
   });
   panel.querySelector('.light-garden-undo')!.addEventListener('click', () => {
+    const before = garden;
     garden = undoGarden(garden);
-    update('Undone. ');
+    selected = undefined;
+    update(garden === before ? 'Nothing to undo. ' : 'Undone. ', garden !== before);
   });
   panel.querySelector('.light-garden-reset')!.addEventListener('click', () => {
     garden = resetGarden(garden);
+    selected = undefined;
     update('Back to the starter garden. ');
   });
-  update();
+  // Escape leaves editing first, before the guide or any panel sees the key.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !editing) return;
+    event.stopImmediatePropagation();
+    setEditing(false);
+  };
+  window.addEventListener('keydown', onKeyDown, true);
+  update('', false);
+  return () => {
+    window.removeEventListener('keydown', onKeyDown, true);
+    edit(undefined);
+  };
 }
 
 // Day or lantern evening, from the guide. The choice is remembered when the

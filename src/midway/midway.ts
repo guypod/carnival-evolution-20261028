@@ -24,8 +24,10 @@ import {
 } from './motion';
 import { evening, gardenLights, palette } from './palette';
 import {
+  cellAt,
   GARDEN_COLUMNS,
   GARDEN_ROWS,
+  gardenPatch,
   lightGardenStore,
   type LightGardenDesign,
 } from './light-garden';
@@ -132,8 +134,17 @@ export interface MidwayControls {
   enterFair(): void;
   /** Changes what the finale ticket mystery shows at the landmarks. */
   setLandmarkDetail(detail: LandmarkDetail): void;
-  /** Shows a new light garden design. It lights the map in lantern evening only. */
-  setLightGarden(design: LightGardenDesign): void;
+  /**
+   * Shows a new light garden design, with the selected lantern ringed. It
+   * lights the map in lantern evening, and shows in any scene while editing.
+   */
+  setLightGarden(design: LightGardenDesign, selected?: number): void;
+  /**
+   * Starts editing the light garden: until it stops, a click on the map never
+   * walks, plays or opens anything, and a click on a garden cell calls
+   * `onPick`. Pass undefined to stop editing.
+   */
+  editLightGarden(onPick: ((col: number, row: number) => void) | undefined): void;
   stop(): void;
 }
 
@@ -260,9 +271,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
    * The pinwheel garden on the grass left of the entrance path, on the row by
    * the hedge and far enough left that the ticket booth never covers it. See pinwheels.ts.
    */
-  /** The light garden's patch, on the grass right of the entrance. See light-garden.ts. */
-  const lightOrigin = { x: map.spawn.x + 2.5, y: map.spawn.y - 4 };
+  /** The light garden's patch, at the foot of the entrance path. See light-garden.ts. */
+  const lightPatch = gardenPatch(map);
+  const lightOrigin = { x: lightPatch.x, y: lightPatch.y };
   let lightDesign = lightGardenStore.load();
+  let lightSelected: number | undefined;
+  let onGardenPick: ((col: number, row: number) => void) | undefined;
   let garden: PinwheelGarden = createGarden({ x: map.spawn.x - 8.9, y: map.spawn.y + 1.25 });
   let wheelAngles = garden.wheels.map((_, i) => i * 0.7);
   /** The garden's own clock, which runs in quiet mode too so the still-state sequence plays. */
@@ -375,6 +389,24 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     corners.forEach((c, i) => (i ? ctx!.lineTo(c.x, c.y) : ctx!.moveTo(c.x, c.y)));
     ctx!.closePath();
     ctx!.stroke();
+    if (onGardenPick) {
+      // Editing: every cell is outlined, so the player can see where a click lands.
+      ctx!.strokeStyle = gardenLights.editGrid;
+      ctx!.beginPath();
+      for (let col = 1; col < GARDEN_COLUMNS; col++) {
+        const a = toScreen(lightOrigin.x + col, lightOrigin.y);
+        const b = toScreen(lightOrigin.x + col, lightOrigin.y + GARDEN_ROWS);
+        ctx!.moveTo(a.x, a.y);
+        ctx!.lineTo(b.x, b.y);
+      }
+      for (let row = 1; row < GARDEN_ROWS; row++) {
+        const a = toScreen(lightOrigin.x, lightOrigin.y + row);
+        const b = toScreen(lightOrigin.x + GARDEN_COLUMNS, lightOrigin.y + row);
+        ctx!.moveTo(a.x, a.y);
+        ctx!.lineTo(b.x, b.y);
+      }
+      ctx!.stroke();
+    }
     ctx!.globalCompositeOperation = 'lighter';
     for (const l of lightDesign.lanterns) {
       const c = at(l.col, l.row);
@@ -405,6 +437,16 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       ctx!.arc(c.x, c.y - 10, 3.5, 0, Math.PI * 2);
       ctx!.fill();
     }
+    const chosen = lightSelected === undefined ? undefined : lightDesign.lanterns[lightSelected];
+    if (onGardenPick && chosen) {
+      const c = at(chosen.col, chosen.row);
+      ctx!.strokeStyle = gardenLights.selected;
+      ctx!.lineWidth = 1.5;
+      ctx!.beginPath();
+      ctx!.arc(c.x, c.y - 10, 6.5, 0, Math.PI * 2);
+      ctx!.stroke();
+      ctx!.lineWidth = 1;
+    }
   }
 
   const gardenAt = (point: Point) =>
@@ -413,8 +455,17 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       return Math.abs(point.x - p.x) <= 9 && point.y >= p.y - 26 && point.y <= p.y + 2;
     });
 
+  /** The garden cell under a screen point, read off the ground. */
+  const gardenCellAt = (point: Point) => cellAt(lightPatch, toTile(point.x, point.y));
+
   const onPointerDown = (event: PointerEvent) => {
     const point = toWorld(event);
+    if (onGardenPick) {
+      // Editing the light garden: the click is only ever about the garden.
+      const cell = gardenCellAt(point);
+      if (cell) onGardenPick(cell.col, cell.row);
+      return;
+    }
     const booth = boothAt(point);
     if (!booth && gardenAt(point)) {
       gust();
@@ -451,6 +502,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   };
   const onPointerMove = (event: PointerEvent) => {
     const point = toWorld(event);
+    if (onGardenPick) {
+      canvas.style.cursor = gardenCellAt(point) ? 'crosshair' : 'default';
+      return;
+    }
     canvas.style.cursor =
       boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point)
         ? 'pointer'
@@ -571,6 +626,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         ctx.fill();
       });
       ctx.globalCompositeOperation = 'source-over';
+      drawLightGarden();
+    } else if (onGardenPick) {
       drawLightGarden();
     }
 
@@ -772,8 +829,14 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     setLandmarkDetail(next) {
       detail = next;
     },
-    setLightGarden(next) {
+    setLightGarden(next, selected) {
       lightDesign = next;
+      lightSelected = selected;
+    },
+    editLightGarden(onPick) {
+      onGardenPick = onPick;
+      canvas.style.cursor = 'default';
+      if (onPick) cancelWalk();
     },
     landmarks,
     setMotion(next) {

@@ -5,9 +5,11 @@
  * and keeps no score. Lanterns glow steadily: nothing flashes.
  */
 
+import type { MidwayMap, Point, Rect } from './world';
+
 /** The garden's grid, in tiles: lanterns sit on whole cells inside it. */
-export const GARDEN_COLUMNS = 6;
-export const GARDEN_ROWS = 4;
+export const GARDEN_COLUMNS = 4;
+export const GARDEN_ROWS = 3;
 /** Few enough fixtures that the paths stay readable. */
 export const MAX_LANTERNS = 8;
 export const MAX_GARLANDS = 6;
@@ -37,15 +39,33 @@ export interface LightGarden {
 export function starterDesign(): LightGardenDesign {
   return {
     lanterns: [
-      { col: 1, row: 1, color: 'warm' },
-      { col: 3, row: 0, color: 'cool' },
-      { col: 4, row: 2, color: 'warm' },
+      { col: 0, row: 1, color: 'warm' },
+      { col: 2, row: 0, color: 'cool' },
+      { col: 3, row: 2, color: 'warm' },
     ],
     garlands: [
       [0, 1],
       [1, 2],
     ],
   };
+}
+
+/**
+ * Where the garden lies on the map: the open ground at the foot of the
+ * entrance path, between the round tent's cart and the ticket booth. Every
+ * cell there is clear of the carousel, the booths and every other prop, so
+ * nothing the player hangs is hidden and no hit area is covered.
+ */
+export function gardenPatch(map: Pick<MidwayMap, 'avenueX' | 'height'>): Rect {
+  return { x: map.avenueX - 2, y: map.height - 6, w: GARDEN_COLUMNS, h: GARDEN_ROWS };
+}
+
+/** The garden cell under a tile position, or undefined outside the garden. */
+export function cellAt(patch: Rect, at: Point): { col: number; row: number } | undefined {
+  const col = Math.floor(at.x - patch.x);
+  const row = Math.floor(at.y - patch.y);
+  if (col < 0 || row < 0 || col >= GARDEN_COLUMNS || row >= GARDEN_ROWS) return undefined;
+  return { col, row };
 }
 
 export function createLightGarden(design: LightGardenDesign = starterDesign()): LightGarden {
@@ -100,6 +120,37 @@ export function connectLanterns(
   return { garden: commit(garden, next), result };
 }
 
+export type EditResult = PlaceResult | ConnectResult | 'selected' | 'deselected';
+
+/**
+ * One pick on a garden cell, the same from a click on the map or from the
+ * column and row fields. An empty cell gets a new lantern, which is then
+ * selected. A lantern is selected, or let go when it already was. Picking a
+ * second lantern strings a garland to it from the selected one.
+ */
+export function editAt(
+  garden: LightGarden,
+  selected: number | undefined,
+  col: number,
+  row: number,
+  color: LanternColor,
+): { garden: LightGarden; selected: number | undefined; result: EditResult } {
+  const index = garden.design.lanterns.findIndex((l) => l.col === col && l.row === row);
+  if (index === -1) {
+    const next = placeLantern(garden, col, row, color);
+    const placed = next.result === 'placed';
+    return {
+      garden: next.garden,
+      selected: placed ? next.garden.design.lanterns.length - 1 : selected,
+      result: next.result,
+    };
+  }
+  if (index === selected) return { garden, selected: undefined, result: 'deselected' };
+  if (selected === undefined) return { garden, selected: index, result: 'selected' };
+  const next = connectLanterns(garden, selected, index);
+  return { garden: next.garden, selected: index, result: next.result };
+}
+
 /** Steps back one change. Nothing happens when there is nothing to undo. */
 export function undo(garden: LightGarden): LightGarden {
   const previous = garden.history[garden.history.length - 1];
@@ -144,6 +195,13 @@ export function parseDesign(raw: unknown): LightGardenDesign | undefined {
     garden = next.garden;
   }
   return garden.design;
+}
+
+/** What the panel says after a save, true to whether the browser kept it. */
+export function saveNote(saved: boolean): string {
+  return saved
+    ? 'Saved in this browser.'
+    : 'Not saved: this browser would not keep it, so the design lasts until you leave the page.';
 }
 
 export const LIGHT_GARDEN_KEY = 'tessl-carnival:light-garden';

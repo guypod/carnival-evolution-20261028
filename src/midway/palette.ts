@@ -78,4 +78,6 @@ export const gardenLights = {
   glowEdge: 'rgba(0, 0, 0, 0)',
   garland: colors.stripeB,
   bed: 'rgba(255, 248, 231, 0.12)',
+  editGrid: 'rgba(255, 248, 231, 0.35)',
+  selected: colors.stripeB,
 } as const;
