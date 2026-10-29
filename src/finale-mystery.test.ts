@@ -9,6 +9,7 @@ import {
   NEW_MYSTERY,
   npcLine,
   parseMystery,
+  sameMystery,
   type MysteryAction,
 } from './finale-mystery';
 
@@ -91,5 +92,49 @@ describe('finale mystery', () => {
       clues: [],
       rethought: false,
     });
+  });
+
+  it("keeps this session's progress when storage is missing or fails", () => {
+    const none = createMysteryStore(undefined);
+    const started = play({ type: 'start' });
+    expect(none.save(started)).toBe(false);
+    expect(none.load()).toEqual(started);
+
+    const storage = memoryStorage();
+    const flaky = createMysteryStore(storage);
+    flaky.save(started);
+    storage.setItem = () => {
+      throw new Error('quota');
+    };
+    const next = mysteryStep(flaky.load(), { type: 'inspect', at: 'carousel' });
+    expect(flaky.save(next)).toBe(false);
+    expect(flaky.load()).toEqual(next);
+
+    storage.getItem = () => {
+      throw new Error('blocked');
+    };
+    expect(createMysteryStore(storage).load()).toEqual(NEW_MYSTERY);
+  });
+
+  it("still picks up another tab's saved steps", () => {
+    const storage = memoryStorage();
+    const store = createMysteryStore(storage);
+    store.save(play({ type: 'start' }));
+    const other = play({ type: 'start' }, { type: 'inspect', at: 'entrance' });
+    storage.setItem(MYSTERY_KEY, JSON.stringify(other));
+    expect(store.load()).toEqual(other);
+  });
+
+  it('treats an equal reloaded state as no change', () => {
+    const storage = memoryStorage();
+    const store = createMysteryStore(storage);
+    const state = play({ type: 'start' }, { type: 'inspect', at: 'carousel' });
+    store.save(state);
+    const reloaded = store.load();
+    expect(reloaded).not.toBe(state);
+    expect(sameMystery(mysteryStep(reloaded, { type: 'inspect', at: 'carousel' }), state)).toBe(
+      true,
+    );
+    expect(sameMystery(reloaded, play({ type: 'start' }))).toBe(false);
   });
 });

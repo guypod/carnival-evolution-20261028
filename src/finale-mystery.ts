@@ -151,21 +151,44 @@ export function parseMystery(raw: string | null): MysteryState {
 
 type MysteryStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
+/** Whether two states are the same progress, even when they are different objects. */
+export function sameMystery(a: MysteryState, b: MysteryState): boolean {
+  return (
+    a.started === b.started &&
+    a.rethought === b.rethought &&
+    a.trusted === b.trusted &&
+    a.clues.length === b.clues.length &&
+    a.clues.every((c, i) => b.clues[i] === c)
+  );
+}
+
+/**
+ * Saved progress, with this tab's latest state kept in memory. When storage is
+ * missing, cannot be read, or the last save failed, `load` returns the state in
+ * memory, so a broken storage never loses progress made in this session.
+ */
 export function createMysteryStore(storage: MysteryStorage | undefined) {
+  let current = NEW_MYSTERY;
+  let unsaved = false;
   return {
     load(): MysteryState {
+      if (!storage || unsaved) return current;
       try {
-        return parseMystery(storage?.getItem(MYSTERY_KEY) ?? null);
+        current = parseMystery(storage.getItem(MYSTERY_KEY));
       } catch {
-        return NEW_MYSTERY;
+        // Keep the state in memory.
       }
+      return current;
     },
     save(state: MysteryState): boolean {
+      current = state;
       try {
         if (!storage) return false;
         storage.setItem(MYSTERY_KEY, JSON.stringify(state));
+        unsaved = false;
         return true;
       } catch {
+        unsaved = true;
         return false;
       }
     },

@@ -113,6 +113,7 @@ import {
   NPC_NAMES,
   npcLine,
   RETHINK_HINT,
+  sameMystery,
   type MysteryAction,
 } from './finale-mystery';
 import {
@@ -640,7 +641,7 @@ function setUpMystery(landmarks: readonly Landmark[]) {
   const step = (action: MysteryAction, fromGuide: boolean) => {
     // Read the saved progress again first, so another tab's steps are kept.
     const next = mysteryStep(mysteryStore.load(), action);
-    if (next === state && !fromGuide) return;
+    if (sameMystery(next, state) && !fromGuide) return;
     state = next;
     mysteryStore.save(state);
     render();
@@ -654,7 +655,7 @@ function setUpMystery(landmarks: readonly Landmark[]) {
       const before = state;
       if (id === 'entrance') step({ type: 'start' }, false);
       step({ type: 'inspect', at: id }, false);
-      return state === before ? undefined : `🎟️ Finale ticket: ${mysteryStatus(state)}`;
+      return sameMystery(state, before) ? undefined : `🎟️ Finale ticket: ${mysteryStatus(state)}`;
     },
     stop() {
       body.replaceChildren();
