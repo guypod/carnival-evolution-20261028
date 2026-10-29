@@ -3,6 +3,7 @@ import {
   canZoomIn,
   canZoomOut,
   DEFAULT_VIEW_SCALE,
+  fitCamera,
   project,
   unproject,
   VIEW_SCALES,
@@ -53,5 +54,41 @@ describe('projection', () => {
   it('puts the camera corner at the canvas origin', () => {
     expect(project({ x: 5, y: 7 }, { x: 5, y: 7 }, 2.5)).toEqual({ x: 0, y: 0 });
     expect(unproject({ x: 20, y: 10 }, { x: 0, y: 0 }, 2)).toEqual({ x: 10, y: 5 });
+  });
+});
+
+describe('fitCamera', () => {
+  const bounds = { left: -400, right: 400, top: -100, bottom: 300 };
+
+  it('centres the focus when there is room', () => {
+    const camera = fitCamera({ x: 0, y: 100 }, { w: 200, h: 100 }, bounds);
+    expect(camera.x).toBe(-100);
+    expect(camera.y).toBe(100 - 50 - 16);
+  });
+
+  it('keeps the view inside the bounds near an edge, at every zoom', () => {
+    for (const scale of VIEW_SCALES) {
+      const zoom = viewZoom(1024, 768, scale);
+      const view = { w: 1024 / zoom, h: 768 / zoom };
+      for (const focus of [
+        { x: -1000, y: -1000 },
+        { x: 1000, y: 1000 },
+      ]) {
+        const camera = fitCamera(focus, view, bounds);
+        if (view.w < 800) {
+          expect(camera.x).toBeGreaterThanOrEqual(bounds.left);
+          expect(camera.x + view.w).toBeLessThanOrEqual(bounds.right + 1e-9);
+        }
+        if (view.h < 400) {
+          expect(camera.y).toBeGreaterThanOrEqual(bounds.top);
+          expect(camera.y + view.h).toBeLessThanOrEqual(bounds.bottom + 1e-9);
+        }
+      }
+    }
+  });
+
+  it('centres a view larger than the bounds', () => {
+    const camera = fitCamera({ x: 300, y: 0 }, { w: 1000, h: 600 }, bounds);
+    expect(camera).toEqual({ x: -500, y: -200 });
   });
 });

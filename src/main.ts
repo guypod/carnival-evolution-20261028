@@ -204,6 +204,7 @@ import {
 } from './midway/motion';
 import { nextScene, scenePreference, sceneToggleState, type Scene } from './midway/scene';
 import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './midway/view';
+import { watchLocateEscape } from './midway/locate';
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
 import { KEYS_HELP, coasterStore, startCoasterWorkshop } from './coaster-workshop';
@@ -376,7 +377,9 @@ function renderMidway() {
           <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
           <button type="button" class="view-reset" aria-label="Reset the map view">Reset view</button>
           <button type="button" class="view-in" aria-label="Zoom the map in">+</button>
+          <button type="button" class="view-locate" aria-keyshortcuts="L">Find me (L)</button>
         </div>
+        <p class="locate-status" role="status" aria-live="polite"></p>
         <button type="button" class="discovery-hint" hidden></button>
         <section class="midway-help-panel" id="midway-help-panel" aria-labelledby="midway-help-title" hidden>
           <h2 id="midway-help-title">Controls</h2>
@@ -625,7 +628,9 @@ function renderMidway() {
     },
     motion: motionPreference.load(),
     onRoute: (route) => routeStatus.show(route),
+    onLocate: (message) => (locateStatus.textContent = message ?? ''),
   });
+  const locateStatus = app.querySelector<HTMLElement>('.locate-status')!;
   const routeStatus = setUpRoute(midway.cancelWalk);
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
   const mystery = setUpMystery(midway.landmarks, midway.setLandmarkDetail);
@@ -636,6 +641,9 @@ function renderMidway() {
   const stopPhoto = setUpPhotoMode();
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
+  app.querySelector('.view-locate')!.addEventListener('click', midway.locate);
+  // Escape hides the locate ring first, while it shows; then panels get the key.
+  const stopLocateEscape = watchLocateEscape(window, midway.hideLocate);
   const stopSound = setUpSound();
   // The card's Enter link goes in the same way as E or a click on the gateway,
   // so coming back still puts you beside it.
@@ -653,6 +661,7 @@ function renderMidway() {
     app.querySelector<HTMLElement>('.midway-map')!.focus();
   }
   stop = () => {
+    stopLocateEscape();
     stopSound();
     tour.stop();
     routeStatus.stop();

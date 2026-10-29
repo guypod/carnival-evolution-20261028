@@ -22,7 +22,7 @@ import {
   type MotionHost,
   type MotionPreference,
 } from './motion';
-import { evening, gardenLights, palette } from './palette';
+import { evening, gardenLights, locator, palette } from './palette';
 import {
   cellAt,
   GARDEN_COLUMNS,
@@ -39,7 +39,16 @@ import {
   wheelState,
   type PinwheelGarden,
 } from './pinwheels';
-import { DEFAULT_VIEW_SCALE, unproject, viewZoom } from './view';
+import { DEFAULT_VIEW_SCALE, fitCamera, unproject, viewZoom } from './view';
+import {
+  HIDDEN_LOCATE,
+  isLocateKey,
+  isLocateShown,
+  locateMessage,
+  showLocate,
+  tickLocate,
+  type LocateState,
+} from './locate';
 import { lanternGlow, type Scene } from './scene';
 import {
   archBounds,
@@ -110,6 +119,8 @@ export interface MidwayOptions {
   onFairGateReach?(near: boolean): void;
   /** What the finale ticket mystery shows at the landmarks. Nothing when left out. */
   detail?: LandmarkDetail;
+  /** Called with a status line when the locate marker goes up, and undefined when it goes. */
+  onLocate?(message: string | undefined): void;
 }
 
 export interface MidwayControls {
@@ -145,6 +156,13 @@ export interface MidwayControls {
    * `onPick`. Pass undefined to stop editing.
    */
   editLightGarden(onPick: ((col: number, row: number) => void) | undefined): void;
+  /**
+   * Rings the player for a few seconds and recentres the camera on them, at
+   * the current zoom. The player, their walk and any game are left alone.
+   */
+  locate(): void;
+  /** Hides the locate marker. Returns false when it was not showing. */
+  hideLocate(): boolean;
   stop(): void;
 }
 
@@ -285,6 +303,19 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const gust = () => {
     garden = raiseGust(garden, gustClock);
   };
+  let located: LocateState = HIDDEN_LOCATE;
+  const locate = () => {
+    located = showLocate();
+    // Jump straight to the player rather than sweep across the map.
+    cameraReady = false;
+    options.onLocate?.(locateMessage(map, player, names));
+  };
+  const hideLocate = () => {
+    if (!isLocateShown(located)) return false;
+    located = HIDDEN_LOCATE;
+    options.onLocate?.(undefined);
+    return true;
+  };
   const enterFair = () => {
     if (!options.onFairGate) return;
     returnTo = { x: player.x, y: player.y };
@@ -309,6 +340,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       event.preventDefault();
       // A held key repeats; only a fresh press restarts the gust.
       if (!event.repeat) gust();
+    } else if (isLocateKey(event)) {
+      event.preventDefault();
+      if (!event.repeat) locate();
     }
   };
   const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
@@ -449,6 +483,33 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     }
   }
 
+  // A static ring at the player's feet and an arrow over their head, drawn
+  // over everything so tents never hide it. Dark under light, for contrast.
+  function drawLocator() {
+    const p = toScreen(player.x, player.y);
+    for (const [color, width] of [
+      [locator.edge, 4],
+      [locator.ring, 2],
+    ] as const) {
+      ctx!.strokeStyle = color;
+      ctx!.lineWidth = width;
+      ctx!.beginPath();
+      ctx!.ellipse(p.x, p.y, 15, 7.5, 0, 0, Math.PI * 2);
+      ctx!.stroke();
+    }
+    ctx!.beginPath();
+    ctx!.moveTo(p.x - 6, p.y - 58);
+    ctx!.lineTo(p.x + 6, p.y - 58);
+    ctx!.lineTo(p.x, p.y - 49);
+    ctx!.closePath();
+    ctx!.fillStyle = locator.ring;
+    ctx!.strokeStyle = locator.edge;
+    ctx!.lineWidth = 2;
+    ctx!.fill();
+    ctx!.stroke();
+    ctx!.lineWidth = 1;
+  }
+
   const gardenAt = (point: Point) =>
     garden.wheels.some((w) => {
       const p = toScreen(w.x, w.y);
@@ -542,16 +603,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const updateCamera = (dt: number) => {
     const focus = toScreen(player.x, player.y);
     const margin = 40;
-    const left = -map.height * 16 - margin;
-    const right = map.width * 16 + margin;
-    const top = HORIZON - 150;
-    const bottom = (map.width + map.height) * 8 + 30;
-    const fit = (target: number, min: number, max: number, size: number) =>
-      max - min <= size ? (min + max) / 2 - size / 2 : Math.max(min, Math.min(max - size, target));
-    const target = {
-      x: fit(focus.x - view.w / 2, left, right, view.w),
-      y: fit(focus.y - view.h / 2 - 16, top, bottom, view.h),
-    };
+    const target = fitCamera(focus, view, {
+      left: -map.height * 16 - margin,
+      right: map.width * 16 + margin,
+      top: HORIZON - 150,
+      bottom: (map.width + map.height) * 8 + 30,
+    });
     const ease = cameraReady ? 1 - Math.exp(-dt * 5) : 1;
     camera.x += (target.x - camera.x) * ease;
     camera.y += (target.y - camera.y) * ease;
@@ -727,6 +784,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (onScreen(archBounds(map))) faded(archBounds(map), Infinity, () => drawArch(ctx, map, t));
     drawBunting(ctx, map, t, visible);
     drawFloaters(ctx, floaters);
+    if (isLocateShown(located)) drawLocator();
 
     // The prompt over the booth in reach, at full resolution.
     if (inReach?.gameId) {
@@ -807,6 +865,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     wheelAngles = turnWheels(wheelAngles, garden, gustClock, dt, quiet);
 
     updateFloaters(dt);
+    if (isLocateShown(located)) {
+      located = tickLocate(located, Math.max(0, elapsed));
+      if (!isLocateShown(located)) options.onLocate?.(undefined);
+    }
     updateCamera(dt);
     sceneTime = advanceSceneClock(sceneTime, Math.max(0, elapsed), quiet);
     draw(sceneTime);
@@ -845,6 +907,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     },
     cancelWalk,
     enterFair,
+    locate,
+    hideLocate,
     setViewScale(next) {
       if (next === viewScale) return;
       viewScale = next;
