@@ -342,7 +342,8 @@ export function startWorkshop(
     // Hammer on its own pivot, swung by the rod.
     const hammerPivot = { x: 520, y: 220 };
     const swing = travel * pull;
-    const ha = -Math.PI / 2 - 0.8 + swing * 0.8;
+    // A full swing (middle hole) meets the bell; half again lands on the rubber stop.
+    const ha = -Math.PI / 2 - 0.8 + swing * 1.69;
     const head = {
       x: hammerPivot.x + Math.cos(ha) * 130,
       y: hammerPivot.y + Math.sin(ha) * 130,
@@ -375,7 +376,7 @@ export function startWorkshop(
     ctx.lineTo(620, 150);
     ctx.fill();
     ctx.fillStyle = colors.muted;
-    ctx.fillRect(640, 190, 30, 12);
+    ctx.fillRect(633, 253, 30, 12);
     if (run?.result.working && pull > 0.9) {
       ctx.fillStyle = colors.text;
       ctx.font = canvasFont('body', 'bold');
