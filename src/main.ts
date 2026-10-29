@@ -354,6 +354,13 @@ function renderMidway() {
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   const stopSound = setUpSound();
+  // The card's Enter link goes in the same way as E or a click on the gateway,
+  // so coming back still puts you beside it.
+  card.querySelector('.play')!.addEventListener('click', (event) => {
+    if (card.dataset.gate !== 'fair') return;
+    event.preventDefault();
+    midway.enterFair();
+  });
   const stopGuide = setUpGuide();
   const tour = setUpTour();
   const stopHelp = setUpHelp(tour.start);

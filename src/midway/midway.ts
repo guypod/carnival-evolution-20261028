@@ -101,6 +101,8 @@ export interface MidwayControls {
   cancelWalk(): void;
   /** Zooms the view by a step from `view.ts`, keeping the player centred. */
   setViewScale(scale: number): void;
+  /** Saves where the player stands, then goes through the fair gateway. */
+  enterFair(): void;
   stop(): void;
 }
 
@@ -629,6 +631,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       updateQuiet();
     },
     cancelWalk,
+    enterFair,
     setViewScale(next) {
       if (next === viewScale) return;
       viewScale = next;
