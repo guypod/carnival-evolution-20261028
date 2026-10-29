@@ -2,6 +2,8 @@ import './style.css';
 import {
   applyTheme,
   beginScopedRound,
+  canvasFont,
+  theme,
   bestScore,
   onScoreRecorded,
   type CarnivalGame,
@@ -11,6 +13,22 @@ import { startFair } from './fair/view';
 import { browserFairStorage } from './fair/fair';
 import { startParade } from './parade/view';
 import { onEscapeKey } from './escape';
+import {
+  MAZE_H,
+  MAZE_W,
+  createExpeditionStore,
+  edgeKey,
+  hint,
+  move,
+  openPassages,
+  resumeExpedition,
+  startExpedition,
+  turnMirror,
+  undoTurn,
+  xy,
+  type Dir,
+  type Expedition,
+} from './expedition';
 import {
   CLOSED_GUIDE,
   escapeGuide,
@@ -277,6 +295,7 @@ function renderMidway() {
             <a class="plush-link" href="#/plush">🧸 Plush Workshop</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
+            <a class="expedition-link" href="#/expedition">🪞 Mirror Maze Expedition</a>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </nav>
           <section class="midway-visit" aria-label="Choose my visit" data-guide-section="visit">
@@ -2251,6 +2270,201 @@ function renderParade() {
   };
 }
 
+const expeditionStore = createExpeditionStore(
+  (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return undefined;
+    }
+  })(),
+);
+
+const CELL = 52;
+
+function drawExpedition(ctx: CanvasRenderingContext2D, state: Expedition, showMap: boolean) {
+  const { colors } = theme;
+  const { maze } = state;
+  const open = openPassages(maze, state.flipped);
+  ctx.fillStyle = colors.background;
+  ctx.fillRect(0, 0, MAZE_W * CELL, MAZE_H * CELL);
+  const seen = (c: number) => showMap || c === state.at || state.visited.includes(c);
+  ctx.font = canvasFont('body');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let c = 0; c < MAZE_W * MAZE_H; c++) {
+    if (!seen(c)) continue;
+    const [x, y] = xy(c);
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+    const landmark = maze.landmarks.find((l) => l.cell === c);
+    const label =
+      c === maze.exit
+        ? '🚪'
+        : c === maze.mirror
+          ? state.flipped
+            ? '⬆️'
+            : '➡️'
+          : landmark
+            ? ['🤡', '⛲', '🔭'][maze.landmarks.indexOf(landmark)]
+            : '';
+    if (label) ctx.fillText(label, x * CELL + CELL / 2, y * CELL + CELL / 2);
+  }
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (let c = 0; c < MAZE_W * MAZE_H; c++) {
+    if (!seen(c)) continue;
+    const [x, y] = xy(c);
+    const walls: [number | undefined, number, number, number, number][] = [
+      [y > 0 ? c - MAZE_W : undefined, x, y, x + 1, y],
+      [y < MAZE_H - 1 ? c + MAZE_W : undefined, x, y + 1, x + 1, y + 1],
+      [x > 0 ? c - 1 : undefined, x, y, x, y + 1],
+      [x < MAZE_W - 1 ? c + 1 : undefined, x + 1, y, x + 1, y + 1],
+    ];
+    for (const [n, x1, y1, x2, y2] of walls) {
+      const key = n === undefined ? '' : edgeKey(c, n);
+      if (n !== undefined && open.has(key)) continue;
+      const switchable = key !== '' && (key === maze.gate || key === maze.shortcut);
+      ctx.strokeStyle = switchable ? colors.accent : colors.water;
+      ctx.beginPath();
+      ctx.moveTo(x1 * CELL, y1 * CELL);
+      ctx.lineTo(x2 * CELL, y2 * CELL);
+      ctx.stroke();
+    }
+  }
+  const [px, py] = xy(state.at);
+  ctx.fillStyle = colors.accent;
+  ctx.beginPath();
+  ctx.arc(px * CELL + CELL / 2, py * CELL + CELL / 2, CELL / 5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function renderExpedition() {
+  document.body.dataset.view = 'expedition';
+  app.innerHTML = `
+    <section class="expedition" aria-labelledby="expedition-title">
+      <a class="back" href="#/">← Back to the midway</a>
+      <h1 id="expedition-title" tabindex="-1">Mirror Maze Expedition</h1>
+      <p>An untimed walk through a mirror maze. Find the clown 🤡, the fountain ⛲ and the telescope 🔭, then reach the exit 🚪. Stand on the mirror (an arrow) and turn it to swap which gold wall is open. Arrow keys or WASD walk, M turns the mirror, U undoes the last turn, H gives a hint.</p>
+      <canvas class="expedition-maze" role="img" aria-label="The mirror maze"></canvas>
+      <div class="expedition-pad">
+        <button type="button" data-dir="up" aria-label="Walk up">↑</button>
+        <button type="button" data-dir="left" aria-label="Walk left">←</button>
+        <button type="button" data-dir="down" aria-label="Walk down">↓</button>
+        <button type="button" data-dir="right" aria-label="Walk right">→</button>
+      </div>
+      <div class="expedition-actions">
+        <button type="button" class="expedition-turn">Turn mirror</button>
+        <button type="button" class="expedition-undo">Undo last turn</button>
+        <button type="button" class="expedition-hint">Hint</button>
+        <label><input type="checkbox" class="expedition-map" /> Show whole map</label>
+        <button type="button" class="expedition-restart">Restart this seed</button>
+        <button type="button" class="expedition-new">New expedition</button>
+      </div>
+      <p class="expedition-status" role="status" aria-live="polite"></p>
+      <p class="note">Expedition progress is kept in this browser only, apart from the arcade scores.</p>
+    </section>
+  `;
+  const saved = expeditionStore.load();
+  let state = saved.current
+    ? resumeExpedition(saved.current)
+    : startExpedition(Date.now() % 100000);
+  let message = '';
+  const canvas = app.querySelector<HTMLCanvasElement>('.expedition-maze')!;
+  canvas.width = MAZE_W * CELL;
+  canvas.height = MAZE_H * CELL;
+  const ctx = canvas.getContext('2d');
+  const mapBox = app.querySelector<HTMLInputElement>('.expedition-map')!;
+  const status = app.querySelector<HTMLElement>('.expedition-status')!;
+  const undo = app.querySelector<HTMLButtonElement>('.expedition-undo')!;
+  const turn = app.querySelector<HTMLButtonElement>('.expedition-turn')!;
+
+  const update = (next: Expedition, note = '') => {
+    const wasFinished = state.finished;
+    state = next;
+    message = note;
+    expeditionStore.save(state);
+    if (state.finished && !wasFinished)
+      message = `Expedition ${state.maze.seed} complete! All three landmarks found.`;
+    if (ctx) drawExpedition(ctx, state, mapBox.checked);
+    turn.disabled = state.at !== state.maze.mirror || state.finished;
+    undo.disabled = state.history.length === 0 || state.finished;
+    const done = expeditionStore.load().completed.length;
+    status.textContent = `Seed ${state.maze.seed}. Landmarks ${state.found.length} of 3${state.found.length ? `: ${state.found.join(', ')}` : ''}. Mirror faces ${state.flipped ? 'north' : 'east'}. Expeditions finished here: ${done}. ${message}`;
+  };
+  const walk = (dir: Dir) => {
+    const next = move(state, dir);
+    update(next, next === state ? 'A mirror wall blocks that way.' : '');
+  };
+  const doTurn = () => {
+    const next = turnMirror(state);
+    update(
+      next,
+      next === state
+        ? 'Stand on the mirror to turn it.'
+        : 'The mirror turns: a gold wall opens and another closes.',
+    );
+  };
+  const doUndo = () =>
+    update(undoTurn(state), 'Back at the mirror, as it was before the last turn.');
+  const doHint = () => {
+    const h = hint(state);
+    update(
+      state,
+      h.type === 'step'
+        ? `Hint: go ${h.dir}.`
+        : h.type === 'turn'
+          ? 'Hint: turn the mirror.'
+          : 'You are done!',
+    );
+  };
+  for (const button of app.querySelectorAll<HTMLButtonElement>('[data-dir]')) {
+    button.addEventListener('click', () => walk(button.dataset.dir as Dir));
+  }
+  turn.addEventListener('click', doTurn);
+  undo.addEventListener('click', doUndo);
+  app.querySelector('.expedition-hint')!.addEventListener('click', doHint);
+  mapBox.addEventListener('change', () => update(state, message));
+  app
+    .querySelector('.expedition-restart')!
+    .addEventListener('click', () => update(startExpedition(state.maze.seed), 'Restarted.'));
+  app
+    .querySelector('.expedition-new')!
+    .addEventListener('click', () => update(startExpedition(Date.now() % 100000), 'A new maze.'));
+  const keys: Record<string, Dir> = {
+    ArrowUp: 'up',
+    ArrowDown: 'down',
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+    w: 'up',
+    s: 'down',
+    a: 'left',
+    d: 'right',
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (
+      event.target instanceof HTMLInputElement ||
+      (event.target instanceof HTMLButtonElement && event.key === ' ')
+    )
+      return;
+    const dir = keys[event.key];
+    if (dir) {
+      event.preventDefault();
+      walk(dir);
+    } else if (event.key === 'm') doTurn();
+    else if (event.key === 'u') doUndo();
+    else if (event.key === 'h') doHint();
+  };
+  window.addEventListener('keydown', onKey);
+  update(state);
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    window.removeEventListener('keydown', onKey);
+  };
+}
+
 function route() {
   stop?.();
   stop = undefined;
@@ -2271,6 +2485,7 @@ function route() {
   else if (location.hash === '#/plush') renderPlush();
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
+  else if (location.hash === '#/expedition') renderExpedition();
   else renderMidway();
 }
 

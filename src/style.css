@@ -1928,3 +1928,22 @@ kbd {
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
+
+.expedition-maze {
+  max-width: 100%;
+  height: auto;
+}
+
+.expedition-pad,
+.expedition-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.expedition-pad button {
+  min-width: 3rem;
+  min-height: 3rem;
+  font-size: 1.4rem;
+}
