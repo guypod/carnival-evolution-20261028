@@ -86,9 +86,15 @@ export function pack(stop: Stop, packing: Packing, piece: Piece): Change<Packing
   return { ok: true, value: { ...packing, [piece]: packing[piece] + 1 } };
 }
 
-export function unpack(packing: Packing, piece: Piece): Change<Packing> {
+/** Leaves one packed piece at home, refusing one that is already placed at the stop. */
+export function unpack(packing: Packing, piece: Piece, layout: Layout = {}): Change<Packing> {
   if (packing[piece] === 0)
     return { ok: false, reason: `No ${PIECE_NAME[piece].toLowerCase()} is packed.` };
+  if (Object.values(layout).filter((p) => p === piece).length >= packing[piece])
+    return {
+      ok: false,
+      reason: `Every packed ${PIECE_NAME[piece].toLowerCase()} is placed. Remove one from the site first.`,
+    };
   return { ok: true, value: { ...packing, [piece]: packing[piece] - 1 } };
 }
 
@@ -114,8 +120,8 @@ export function placeAtStop(
   return { ok: true, value: { ...layout, [key(cell)]: piece } };
 }
 
-/** Why a layout cannot open at this stop, or undefined when it can. */
-export function layoutProblem(stop: Stop, packing: Packing, layout: Layout): string | undefined {
+/** Why a layout does not fit this stop's ground and wagons, or undefined when it does. */
+export function fitProblem(stop: Stop, packing: Packing, layout: Layout): string | undefined {
   if (packedCount(packing) > stop.capacity) return `More than ${stop.capacity} pieces are packed.`;
   for (const [k, piece] of Object.entries(layout)) {
     if (stop.blocked.includes(k))
@@ -127,6 +133,13 @@ export function layoutProblem(stop: Stop, packing: Packing, layout: Layout): str
     if (used > packing[piece])
       return `More ${PIECE_NAME[piece].toLowerCase()}s are placed than packed.`;
   }
+  return undefined;
+}
+
+/** Why a layout cannot open at this stop, or undefined when it can. */
+export function layoutProblem(stop: Stop, packing: Packing, layout: Layout): string | undefined {
+  const misfit = fitProblem(stop, packing, layout);
+  if (misfit) return misfit;
   if (!Object.values(layout).some((p) => p === 'game' || p === 'food' || p === 'bench'))
     return 'Place at least one stall or bench before opening.';
   return undefined;
@@ -134,8 +147,10 @@ export function layoutProblem(stop: Stop, packing: Packing, layout: Layout): str
 
 export type Campaign = {
   version: typeof CAMPAIGN_VERSION;
-  /** Index into STOPS; STOPS.length means the tour is complete. */
+  /** How many stops are passed; STOPS.length means the tour is complete. */
   stop: number;
+  /** The stop the player chose to travel to next, if they have chosen. */
+  at?: StopId;
   reputation: number;
   /** Keepsakes earned, one per stop passed. */
   keepsakes: StopId[];
@@ -158,6 +173,27 @@ export const capacityFor = (stop: Stop, campaign: Campaign) =>
 
 export const complete = (c: Campaign) => c.stop >= STOPS.length;
 
+/** The stop as the wagons see it, with reputation's extra capacity applied. */
+export const withCapacity = (stop: Stop, c: Campaign): Stop => ({
+  ...stop,
+  capacity: capacityFor(stop, c),
+});
+
+/** Stops not yet passed, in tour order. */
+export const unvisited = (c: Campaign) => STOPS.filter((s) => !c.keepsakes.includes(s.id));
+
+/** The stop being played: the one chosen, else the first not yet passed. */
+export const currentStop = (c: Campaign): Stop | undefined =>
+  complete(c) ? undefined : c.at ? stopById(c.at) : unvisited(c)[0];
+
+/** Chooses the next stop, with empty wagons. Refuses a stop already passed. */
+export function chooseStop(c: Campaign, id: StopId): Change<Campaign> {
+  if (complete(c)) return { ok: false, reason: 'The tour is complete.' };
+  if (c.keepsakes.includes(id))
+    return { ok: false, reason: `The fair has already played ${stopById(id).name}.` };
+  return { ok: true, value: { ...c, at: id, packing: EMPTY_PACKING, layout: {} } };
+}
+
 /** Reputation a day earns at a stop, from what the simulation measured. */
 export function reputationEarned(stop: Stop, o: Outcome): number {
   if (!o.complete || !o.success) return 0;
@@ -169,8 +205,8 @@ export function reputationEarned(stop: Stop, o: Outcome): number {
 
 /** Records a day. A success travels on with a keepsake; anything else stays for a retry with the layout kept. */
 export function recordDay(c: Campaign, o: Outcome): Campaign {
-  if (complete(c)) return c;
-  const stop = STOPS[c.stop];
+  const stop = currentStop(c);
+  if (!stop) return c;
   const earned = reputationEarned(stop, o);
   if (earned === 0) return c;
   return {
@@ -178,6 +214,7 @@ export function recordDay(c: Campaign, o: Outcome): Campaign {
     stop: c.stop + 1,
     reputation: c.reputation + earned,
     keepsakes: [...c.keepsakes, stop.id],
+    at: undefined,
     packing: EMPTY_PACKING,
     layout: {},
   };
@@ -192,7 +229,15 @@ export function parseCampaign(raw: unknown): Campaign | undefined {
     return undefined;
   if (!Number.isInteger(d.reputation) || (d.reputation as number) < 0) return undefined;
   const ids = STOPS.map((s) => s.id);
-  if (!Array.isArray(d.keepsakes) || !d.keepsakes.every((k) => ids.includes(k as StopId)))
+  if (
+    !Array.isArray(d.keepsakes) ||
+    d.keepsakes.length !== d.stop ||
+    new Set(d.keepsakes).size !== d.keepsakes.length ||
+    !d.keepsakes.every((k) => ids.includes(k as StopId))
+  )
+    return undefined;
+  // `at` came after the first saves: a save without it simply has no stop chosen yet.
+  if (d.at !== undefined && (!ids.includes(d.at as StopId) || d.keepsakes.includes(d.at)))
     return undefined;
   if (!d.packing || typeof d.packing !== 'object' || !d.layout || typeof d.layout !== 'object')
     return undefined;
@@ -214,6 +259,7 @@ export function parseCampaign(raw: unknown): Campaign | undefined {
     stop: d.stop as number,
     reputation: d.reputation as number,
     keepsakes: d.keepsakes as StopId[],
+    ...(d.at ? { at: d.at as StopId } : {}),
     packing,
     layout,
   };

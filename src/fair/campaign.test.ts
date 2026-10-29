@@ -5,16 +5,22 @@ import {
   EMPTY_PACKING,
   NEW_CAMPAIGN,
   STOPS,
+  chooseStop,
   complete,
   createCampaignStore,
+  currentStop,
   layoutProblem,
   pack,
   parseCampaign,
   placeAtStop,
   recordDay,
+  unpack,
+  unvisited,
+  withCapacity,
   type Packing,
 } from './campaign';
-import type { Outcome } from './opening-day';
+import type { Layout } from './fair';
+import { measure, openGates, runToEnd, type Outcome } from './opening-day';
 
 const win: Outcome = {
   arrived: 8,
@@ -105,5 +111,61 @@ describe('travelling fair campaign', () => {
     const storage = memory();
     storage.setItem(CAMPAIGN_KEY, '{bad');
     expect(createCampaignStore(storage).load()).toEqual(NEW_CAMPAIGN);
+  });
+});
+
+describe('choosing stops', () => {
+  it('lets the player pick any stop not yet passed, in any order', () => {
+    const r = chooseStop(NEW_CAMPAIGN, 'hilltop');
+    if (!r.ok) throw new Error(r.reason);
+    expect(currentStop(r.value)?.id).toBe('hilltop');
+    const after = recordDay(r.value, win);
+    expect(after.keepsakes).toEqual(['hilltop']);
+    expect(after.at).toBeUndefined();
+    expect(unvisited(after).map((s) => s.id)).toEqual(['riverside', 'market']);
+    expect(chooseStop(after, 'hilltop').ok).toBe(false);
+  });
+
+  it('carries reputation into extra wagon capacity, up to three', () => {
+    const stop = STOPS[2];
+    expect(withCapacity(stop, NEW_CAMPAIGN).capacity).toBe(stop.capacity);
+    expect(withCapacity(stop, { ...NEW_CAMPAIGN, reputation: 9 }).capacity).toBe(
+      stop.capacity + 3,
+    );
+  });
+
+  it('will not leave a placed piece at home', () => {
+    const packing = { ...EMPTY_PACKING, game: 1 };
+    expect(unpack(packing, 'game', { '1,1': 'game' }).ok).toBe(false);
+    expect(unpack(packing, 'game', {}).ok).toBe(true);
+  });
+
+  it('wins a real Opening Day at every stop with a small packed layout', () => {
+    const layout: Layout = {
+      '1,3': 'path',
+      '2,3': 'path',
+      '3,3': 'path',
+      '4,3': 'path',
+      '1,2': 'game',
+      '3,2': 'food',
+      '1,4': 'bench',
+      '3,4': 'bench',
+    };
+    const packing = { path: 4, game: 1, food: 1, bench: 2, tree: 0 };
+    let c = NEW_CAMPAIGN;
+    for (const stop of STOPS) {
+      expect(layoutProblem(stop, packing, layout)).toBeUndefined();
+      c = recordDay({ ...c, packing, layout }, measure(runToEnd(openGates(layout)), true));
+    }
+    expect(complete(c)).toBe(true);
+    expect(c.keepsakes).toEqual(['riverside', 'market', 'hilltop']);
+  });
+
+  it('migrates a save from before stops could be chosen, and refuses inconsistent ones', () => {
+    const old = { ...NEW_CAMPAIGN, stop: 1, reputation: 2, keepsakes: ['riverside'] };
+    expect(currentStop(parseCampaign(old)!)?.id).toBe('market');
+    expect(parseCampaign({ ...old, keepsakes: [] })).toBeUndefined();
+    expect(parseCampaign({ ...old, at: 'riverside' })).toBeUndefined();
+    expect(parseCampaign({ ...old, at: 'hilltop' })?.at).toBe('hilltop');
   });
 });
