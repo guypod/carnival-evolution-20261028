@@ -137,8 +137,10 @@ export function ferryMessage(
   const to = dockById(map, ferry.dock).name;
   if (ferry.phase === 'sailing') {
     // No running percentage: the line changes only when the ride does, so it never chatters.
-    return ferry.riding
-      ? `Crossing to ${to}. Press E to hurry to the dock.`
+    // E only reaches an empty ferry from a pier, so away from one only the Skip button hurries it.
+    if (ferry.riding) return `Crossing to ${to}. Press E to hurry to the dock.`;
+    return near === undefined
+      ? `The ferry is coming over to ${to}. Use Skip to the dock to hurry it.`
       : `The ferry is coming over to ${to}. Press E to hurry it.`;
   }
   if (ferry.riding) {

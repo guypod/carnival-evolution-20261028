@@ -207,6 +207,17 @@ describe('what the ferry says', () => {
     );
   });
 
+  it('offers E to hurry an empty ferry only from a pier, where the key works', () => {
+    const called = requestFerry(START_FERRY, 'call', 'far-shore');
+    expect(ferryMessage(map, called, 'far-shore')).toBe(
+      'The ferry is coming over to the far shore dock. Press E to hurry it.',
+    );
+    expect(ferryMessage(map, called, undefined)).toBe(
+      'The ferry is coming over to the far shore dock. Use Skip to the dock to hurry it.',
+    );
+    expect(ferryButtons(called, undefined)).toEqual(['skip', 'turn-back']);
+  });
+
   it('keeps one line for the whole crossing, so it never chatters', () => {
     const aboard = requestFerry(START_FERRY, 'board', 'promenade');
     const sailing = requestFerry(aboard, 'depart', undefined);
