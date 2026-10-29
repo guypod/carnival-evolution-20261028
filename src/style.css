@@ -1720,6 +1720,7 @@ kbd {
 }
 
 .fair-grid[hidden],
+.fair-actions[hidden],
 .fair-preview-note[hidden] {
   display: none;
 }
@@ -1738,6 +1739,15 @@ kbd {
   padding: 12px 16px;
   border: 2px solid var(--color-accent);
   border-radius: var(--radius);
+}
+
+.fair-tour {
+  max-width: 60ch;
+}
+
+.fair-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .fair-day h2 {

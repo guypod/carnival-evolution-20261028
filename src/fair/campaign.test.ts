@@ -129,9 +129,7 @@ describe('choosing stops', () => {
   it('carries reputation into extra wagon capacity, up to three', () => {
     const stop = STOPS[2];
     expect(withCapacity(stop, NEW_CAMPAIGN).capacity).toBe(stop.capacity);
-    expect(withCapacity(stop, { ...NEW_CAMPAIGN, reputation: 9 }).capacity).toBe(
-      stop.capacity + 3,
-    );
+    expect(withCapacity(stop, { ...NEW_CAMPAIGN, reputation: 9 }).capacity).toBe(stop.capacity + 3);
   });
 
   it('will not leave a placed piece at home', () => {
