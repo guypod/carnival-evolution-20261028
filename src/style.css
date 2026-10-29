@@ -2008,3 +2008,21 @@ kbd {
 .tune-quiet .tune-step.tune-current {
   box-shadow: none;
 }
+
+.balloon-scene {
+  display: block;
+  width: 360px;
+  max-width: 100%;
+  margin: 1rem 0;
+  border-radius: var(--radius);
+}
+
+.balloon-form fieldset {
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius);
+  margin: 0 0 0.75rem;
+}
+
+.balloon-keepsakes {
+  overflow-wrap: anywhere;
+}

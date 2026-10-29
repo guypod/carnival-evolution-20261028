@@ -192,6 +192,20 @@ import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './mi
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
 import {
+  BALLOON_COLORS,
+  BALLOON_COLOR_NAMES,
+  BALLOON_SCENE,
+  RELEASE_MS,
+  RESTING_POSITION,
+  WISH_MAX,
+  addKeepsake,
+  balloonPosition,
+  drawBalloonScene,
+  keepsakeStore,
+  makeBalloon,
+  type WishBalloon,
+} from './wish-balloon';
+import {
   STARTER_TUNE,
   TUNE_LENGTHS,
   TUNE_TEMPOS,
@@ -316,6 +330,7 @@ function renderMidway() {
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
             <a class="plush-link" href="#/plush">🧸 Plush Workshop</a>
             <a class="tune-link" href="#/tune">🎠 Carousel Tune Workshop</a>
+            <a class="balloon-link" href="#/balloon">🎈 Wish Balloon</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <a class="expedition-link" href="#/expedition">🪞 Mirror Maze Expedition</a>
@@ -2274,6 +2289,117 @@ function renderTune() {
   };
 }
 
+function renderBalloon() {
+  document.body.dataset.view = 'balloon';
+  app.innerHTML = `
+    <section class="balloon" aria-labelledby="balloon-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="balloon-title" tabindex="-1">Wish Balloon</h1>
+      </div>
+      <p>Pick a colour, write a short wish and let the balloon go.</p>
+      <form class="balloon-form">
+        <fieldset><legend>Colour</legend>${BALLOON_COLORS.map(
+          (color, i) =>
+            `<label><input type="radio" name="balloon-color" value="${color}" ${i === 0 ? 'checked' : ''} /> ${BALLOON_COLOR_NAMES[color]}</label>`,
+        ).join('')}</fieldset>
+        <label for="balloon-wish">Your wish (up to ${WISH_MAX} characters)</label>
+        <input id="balloon-wish" type="text" autocomplete="off" />
+        <button type="submit">Release the balloon</button>
+      </form>
+      <canvas class="balloon-scene" aria-hidden="true"></canvas>
+      <p class="balloon-status" role="status" aria-live="polite"></p>
+      <h2>Keepsakes</h2>
+      <ul class="balloon-keepsakes"></ul>
+      <p class="note">Your wishes stay in this browser only. Nothing is uploaded, shared or counted. Escape leaves without releasing.</p>
+    </section>
+  `;
+
+  const form = app.querySelector<HTMLFormElement>('.balloon-form')!;
+  const wish = app.querySelector<HTMLInputElement>('#balloon-wish')!;
+  const status = app.querySelector<HTMLElement>('.balloon-status')!;
+  const keepsakesList = app.querySelector<HTMLUListElement>('.balloon-keepsakes')!;
+  const canvas = app.querySelector<HTMLCanvasElement>('.balloon-scene')!;
+  canvas.width = BALLOON_SCENE.width;
+  canvas.height = BALLOON_SCENE.height;
+  const ctx = canvas.getContext('2d');
+  let keepsakes = keepsakeStore.load();
+  let frame = 0;
+  let quiet = false;
+
+  // Keepsakes are added with textContent, so a wish is never read as HTML.
+  function showKeepsakes() {
+    keepsakesList.replaceChildren(
+      ...keepsakes.map((balloon) => {
+        const item = document.createElement('li');
+        item.textContent = `${BALLOON_COLOR_NAMES[balloon.color]}: ${balloon.wish}`;
+        return item;
+      }),
+    );
+    if (keepsakes.length === 0) {
+      const item = document.createElement('li');
+      item.textContent = 'No balloons yet.';
+      keepsakesList.append(item);
+    }
+  }
+
+  function release(balloon: WishBalloon) {
+    cancelAnimationFrame(frame);
+    if (!ctx) return;
+    if (quiet) {
+      drawBalloonScene(ctx, balloon, RESTING_POSITION);
+      return;
+    }
+    const started = performance.now();
+    const step = (now: number) => {
+      if (quiet) {
+        drawBalloonScene(ctx, balloon, RESTING_POSITION);
+        return;
+      }
+      const t = (now - started) / RELEASE_MS;
+      drawBalloonScene(ctx, balloon, balloonPosition(t));
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+  }
+
+  wish.addEventListener('input', () => {
+    const chars = Array.from(wish.value);
+    if (chars.length > WISH_MAX) wish.value = chars.slice(0, WISH_MAX).join('');
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const color = form.querySelector<HTMLInputElement>(
+      'input[name="balloon-color"]:checked',
+    )?.value;
+    const balloon = makeBalloon(color ?? '', wish.value);
+    if (!balloon) {
+      status.textContent = 'Write a wish first.';
+      return;
+    }
+    keepsakes = addKeepsake(keepsakes, balloon);
+    const saved = keepsakeStore.save(keepsakes);
+    wish.value = '';
+    showKeepsakes();
+    release(balloon);
+    status.textContent = `${quiet ? 'Your balloon rests above the stall' : 'Your balloon floats away'}: ${balloon.wish}.${saved ? '' : ' This browser would not keep it.'}`;
+  });
+
+  const stopWatching = watchReducedMotion(window, (systemReduces) => {
+    quiet = isQuiet(motionPreference.load(), systemReduces);
+  });
+  if (ctx) drawBalloonScene(ctx, undefined, RESTING_POSITION);
+  else canvas.hidden = true;
+  showKeepsakes();
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    stopWatching();
+    cancelAnimationFrame(frame);
+  };
+}
+
 function renderBooths() {
   document.body.dataset.view = 'booths';
   let entries = directoryEntries(registry.all(), bestScore, favorites.load());
@@ -2692,6 +2818,7 @@ function route() {
   else if (location.hash === '#/postcard') renderPostcard();
   else if (location.hash === '#/plush') renderPlush();
   else if (location.hash === '#/tune') renderTune();
+  else if (location.hash === '#/balloon') renderBalloon();
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
   else if (location.hash === '#/expedition') renderExpedition();
