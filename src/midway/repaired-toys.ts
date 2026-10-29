@@ -26,6 +26,24 @@ export function toySpots(
   }));
 }
 
+const HAMMER_HEAD = 2.5;
+const HAMMER_LENGTH = 12;
+
+/**
+ * Where the rooster bell's hammer head is: on the end of the handle, which
+ * pivots at the plinth and swings from upright onto the bell's left edge. The
+ * swing starts and rests on the bell, so a still scenery clock (quiet mode)
+ * shows the head touching it.
+ */
+export function bellHammerHead(p: Point, t: number): Point {
+  const top = p.y - 8;
+  const swing = 0.5 + 0.5 * Math.cos(t * 3);
+  // At full swing the head sits 2.9px right of the pivot, so its edge touches the bell's dome.
+  const hit = Math.atan2(-Math.sqrt(HAMMER_LENGTH ** 2 - 2.9 ** 2), 2.9);
+  const a = hit - 0.9 + swing * 0.9;
+  return { x: p.x - 5 + Math.cos(a) * HAMMER_LENGTH, y: top + Math.sin(a) * HAMMER_LENGTH };
+}
+
 /** Draws one toy at its spot. `t` is the scenery clock, which stands still in quiet mode. */
 export function drawRepairedToy(
   ctx: CanvasRenderingContext2D,
@@ -63,17 +81,16 @@ export function drawRepairedToy(
     ctx.lineTo(p.x + 8, top - 8);
     ctx.lineTo(p.x, top - 8);
     ctx.fill();
-    const swing = 0.5 - 0.5 * Math.cos(t * 3);
-    const a = -Math.PI / 2 - 0.9 + swing * 0.9;
+    const head = bellHammerHead(p, t);
     ctx.strokeStyle = palette.woodDark;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(p.x - 5, top);
-    ctx.lineTo(p.x - 5 + Math.cos(a) * 12, top + Math.sin(a) * 12);
+    ctx.lineTo(head.x, head.y);
     ctx.stroke();
     ctx.fillStyle = palette.red;
     ctx.beginPath();
-    ctx.arc(p.x - 5, top - 13, 2.5, 0, Math.PI * 2);
+    ctx.arc(head.x, head.y, HAMMER_HEAD, 0, Math.PI * 2);
     ctx.fill();
   } else {
     // The frog rises slowly on its snail cam, then drops.
