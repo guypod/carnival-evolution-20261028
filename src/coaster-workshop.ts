@@ -452,6 +452,7 @@ export const VIEW_HEIGHT = 220;
 export interface SpanRide {
   /** The span from point `span + 1` to point `span + 2`, counted from 1 in words. */
   span: number;
+  /** The fastest the train went on the span, launch included. Not rounded. */
   topSpeed: number;
   /** The steepest downhill slope on the span, as the sine of its angle. */
   steepest: number;
@@ -478,12 +479,13 @@ export function rideSpans(points: readonly Point[]): SpanRide[] {
   const reached = new Set<number>();
   let far = 0;
   let run = createRun();
+  topSpeeds[0] = Math.abs(run.v);
   while (!run.outcome) {
     run = stepRun(run, path, length);
     far = Math.max(far, run.s);
     const index = ends.findIndex((end) => run.s <= end);
     const span = index < 0 ? spanCount - 1 : index;
-    topSpeeds[span] = Math.max(topSpeeds[span], Math.round(Math.abs(run.v)));
+    topSpeeds[span] = Math.max(topSpeeds[span], Math.abs(run.v));
     reached.add(span);
   }
   const spans: SpanRide[] = [];
@@ -522,17 +524,18 @@ export interface RiderNote {
 /** How one rider felt about one span, worked out from what the train did there. */
 export function react(rider: RiderId, ride: SpanRide): RiderNote {
   const steep = ride.steepest >= STEEP;
+  const speed = Math.round(ride.topSpeed);
   const note = (reaction: Reaction, why: string) => ({ span: ride.span, reaction, why });
   if (rider === 'scenery') {
-    if (ride.topSpeed > FAST) return note('disliked', `too fast at ${ride.topSpeed}`);
+    if (ride.topSpeed > FAST) return note('disliked', `too fast at ${speed}`);
     if (steep) return note('disliked', 'the drop was too steep');
     if (ride.height >= VIEW_HEIGHT) return note('liked', `a calm view from height ${ride.height}`);
     return note('neutral', 'calm but low');
   }
-  if (ride.topSpeed > FAST && steep) return note('liked', `a steep drop at ${ride.topSpeed}`);
-  if (ride.topSpeed > FAST) return note('liked', `fast at ${ride.topSpeed}`);
-  if (ride.topSpeed < SLOW) return note('disliked', `slow at ${ride.topSpeed}`);
-  return note('neutral', `steady at ${ride.topSpeed}`);
+  if (ride.topSpeed > FAST && steep) return note('liked', `a steep drop at ${speed}`);
+  if (ride.topSpeed > FAST) return note('liked', `fast at ${speed}`);
+  if (ride.topSpeed < SLOW) return note('disliked', `slow at ${speed}`);
+  return note('neutral', `steady at ${speed}`);
 }
 
 /** Words for a span: the stretch from one numbered point to the next. */

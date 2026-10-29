@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   FAST,
+  LAUNCH_SPEED,
+  SLOW,
+  react,
   createWorkshop,
   nudge,
   riderReports,
@@ -37,6 +40,19 @@ describe('coaster riders', () => {
     expect(rides[0].mid.y).toBeGreaterThan(420);
     const [gail] = riderReports(wall);
     expect(gail.summary).not.toMatch(/calm view/);
+  });
+
+  it('counts the launch speed in the first span', () => {
+    const wall = [440, 80, 80, 80, 80, 80, 80].map((y, i) => ({ x: pointX(i), y }));
+    expect(rideSpans(wall)[0].topSpeed).toBe(LAUNCH_SPEED);
+  });
+
+  it('judges speed before rounding it for the words', () => {
+    const ride = { span: 0, topSpeed: FAST + 0.4, steepest: 0, height: 0, mid: { x: 0, y: 0 } };
+    expect(react('thrill', ride)).toMatchObject({ reaction: 'liked', why: `fast at ${FAST}` });
+    expect(react('scenery', ride).reaction).toBe('disliked');
+    const slow = { ...ride, topSpeed: SLOW - 0.4 };
+    expect(react('thrill', slow)).toMatchObject({ reaction: 'disliked', why: `slow at ${SLOW}` });
   });
 
   it('gives the two riders different reactions to the same drop', () => {
