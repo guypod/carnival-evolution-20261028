@@ -1,5 +1,10 @@
 import { canvasFont, theme } from '../carnival/theme';
-import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../midway/motion';
+import {
+  REDUCED_MOTION_QUERY,
+  isQuiet,
+  motionPreference,
+  watchReducedMotion,
+} from '../midway/motion';
 import {
   CADENCES,
   MOTIFS,
@@ -70,7 +75,7 @@ export function startParade(
   storage: Parameters<typeof createParadeStore>[0],
   stamped: ReadonlySet<string>,
 ): () => void {
-  const quiet = quietNow();
+  let quiet = quietNow();
   root.innerHTML = `
     <p class="parade-intro">Pick 3 to 5 floats, put them in order and choose a cadence, then stage the parade from the gate on the left to the finale stage on the right. Stamping a booth on the midway unlocks an extra float.</p>
     <div class="parade-add" role="group" aria-label="Add a float"></div>
@@ -104,6 +109,7 @@ export function startParade(
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   const ctx = canvas.getContext('2d')!;
   const status = root.querySelector<HTMLElement>('.parade-status')!;
+  const storyboardBar = root.querySelector<HTMLElement>('[aria-label="Storyboard"]')!;
   const timeline = root.querySelector<HTMLElement>('.parade-timeline')!;
   const say = (text: string) => (status.textContent = text);
 
@@ -117,7 +123,7 @@ export function startParade(
       `<button type="button" data-cadence="${c}" aria-pressed="false">${c[0].toUpperCase()}${c.slice(1)}</button>`,
   ).join('');
 
-  function renderOrder(focusIndex?: number, focusAct?: string) {
+  function renderOrder(focus?: string) {
     order.innerHTML = composition.floats
       .map((id, i) => {
         const m = motif(id);
@@ -132,9 +138,7 @@ export function startParade(
     });
     const seconds = (duration(composition) / 1000).toFixed(1);
     timeline.textContent = `Timeline: ${composition.floats.map((id) => motif(id).name).join(' → ')}, at a ${composition.cadence}, ${seconds} seconds from gate to finale.`;
-    if (focusIndex !== undefined && focusAct) {
-      order.querySelectorAll<HTMLElement>(`[${focusAct}="${focusIndex}"]`)[0]?.focus();
-    }
+    if (focus) order.querySelector<HTMLElement>(focus)?.focus();
   }
 
   function apply(result: EditResult, message: string) {
@@ -176,6 +180,7 @@ export function startParade(
     ctx.font = canvasFont('title');
     ctx.textBaseline = 'middle';
     let queued = 0;
+    let arrived = 0;
     for (const p of positions) {
       if (p.phase === 'waiting') {
         ctx.globalAlpha = 0.5;
@@ -184,9 +189,14 @@ export function startParade(
         queued++;
         continue;
       }
+      if (p.phase === 'arrived') {
+        // Arrived floats line up above the finale stage, first arrival nearest it.
+        ctx.fillText(motif(p.id).icon, fin.x + 30 - arrived * 36, fin.y - 70);
+        arrived++;
+        continue;
+      }
       const at = routePoint(p.progress);
-      const lift = p.phase === 'marching' ? p.sway * 6 : 0;
-      ctx.fillText(motif(p.id).icon, at.x, at.y - 18 + lift);
+      ctx.fillText(motif(p.id).icon, at.x, at.y - 18 + p.sway * 6);
     }
     const finale = t >= duration(composition);
     if (finale) {
@@ -248,11 +258,11 @@ export function startParade(
         result,
         `Moved ${motif(composition.floats[index]).name} ${delta < 0 ? 'earlier' : 'later'}.`,
       );
-      renderOrder(result.ok ? index + delta : index, 'data-move');
+      renderOrder(`[data-move="${result.ok ? index + delta : index}"][data-delta="${delta}"]`);
     } else if (d.remove) {
       const index = Number(d.remove);
       apply(removeFloat(composition, index), `Removed ${motif(composition.floats[index]).name}.`);
-      renderOrder(Math.min(index, composition.floats.length - 1), 'data-remove');
+      renderOrder(`[data-remove="${Math.min(index, composition.floats.length - 1)}"]`);
     } else if (d.cadence) {
       composition = { ...composition, cadence: d.cadence as Cadence };
       show = READY;
@@ -273,6 +283,22 @@ export function startParade(
   );
   draw();
 
+  // Follow the system's reduced-motion setting while the composer is open.
+  const stopWatching = watchReducedMotion(window, () => {
+    const next = quietNow();
+    if (next === quiet) return;
+    quiet = next;
+    storyboardBar.hidden = !quiet;
+    step = 0;
+    if (quiet && show.phase === 'playing') show = pause(show);
+    say(
+      quiet
+        ? 'Quiet mode is on, so the parade plays as a storyboard you step through.'
+        : 'Quiet mode is off. Press Play to stage the parade.',
+    );
+    draw();
+  });
+
   let frame = 0;
   let last = performance.now();
   const loop = (now: number) => {
@@ -290,5 +316,6 @@ export function startParade(
   return () => {
     cancelAnimationFrame(frame);
     root.removeEventListener('click', onClick);
+    stopWatching();
   };
 }

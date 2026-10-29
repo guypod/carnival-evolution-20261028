@@ -1723,6 +1723,10 @@ kbd {
   margin: 12px 0;
 }
 
+.parade-actions[hidden] {
+  display: none;
+}
+
 .parade-actions button[aria-pressed='true'] {
   background: var(--color-accent);
   color: var(--color-background);
