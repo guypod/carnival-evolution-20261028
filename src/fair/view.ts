@@ -86,6 +86,13 @@ import {
 
 const CELL = 64;
 
+/** What the tour says before a stop is chosen: the first stop, or the next one once keepsakes exist. */
+export function tourStartText(tour: Pick<Campaign, 'keepsakes'>): string {
+  return tour.keepsakes.length > 0
+    ? 'The travelling fair is ready to roll on. Choose the next stop: each site has different ground and visitors.'
+    : 'The travelling fair is ready to roll. Choose the first stop: each site has different ground and visitors.';
+}
+
 /** The part of an element `bindActions` needs, so tests can pass a fake. */
 export interface ActionBar {
   addEventListener(type: 'click', listener: (event: Event) => void): void;
@@ -403,7 +410,7 @@ export function startFair(
         ? 'Your travelling fair has played all three stops.'
         : tour.at
           ? `Resuming the tour at ${stopById(tour.at).name}.`
-          : 'The travelling fair is ready to roll. Choose the first stop: each site has different ground and visitors.',
+          : tourStartText(tour),
     );
   }
 
