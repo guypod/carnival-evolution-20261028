@@ -43,6 +43,18 @@ import {
   runToEnd,
   type Outcome,
 } from './opening-day';
+import {
+  PREVIEW_HEIGHT,
+  PREVIEW_WIDTH,
+  bindPreviewKeys,
+  drawPreview,
+  intentCue,
+  previewItems,
+  toggleView,
+  unreachableCount,
+  viewState,
+  type ViewMode,
+} from './preview';
 
 const CELL = 64;
 
@@ -88,8 +100,11 @@ export function startFair(
     <p class="fair-intro">Lay paths from the entrance (the gate on the left), then place stalls and benches beside them. Visitors only reach a piece that touches a path connected to the entrance.</p>
     <div class="fair-tools" role="group" aria-label="Piece to place"></div>
     <canvas class="fair-grid" tabindex="0" role="application" aria-label="Fair plaza grid. Arrow keys move the cursor."></canvas>
-    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, G selects a visitor group, P pauses visitors. The Opening Day buttons below the grid start an optional challenge.</p>
+    <canvas class="fair-grid fair-preview" tabindex="0" role="img" hidden></canvas>
+    <p class="fair-preview-note" aria-live="polite" hidden></p>
+    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, V switches between the grid and the visitor-eye preview, G selects a visitor group, P pauses visitors. The Opening Day buttons below the grid start an optional challenge.</p>
     <div class="fair-actions">
+      <button type="button" data-act="view" aria-pressed="false">Visitor-eye preview (V)</button>
       <button type="button" data-act="undo">Undo</button>
       <button type="button" data-act="walk" aria-pressed="false">Walk my plaza</button>
       <button type="button" data-act="save">Save layout</button>
@@ -123,6 +138,7 @@ export function startFair(
   const quiet = quietNow();
   let sim: Sim = createSim(layout, 1, quiet);
   let selected: number | undefined;
+  let view: ViewMode = 'grid';
   const pennants = createPennantStore(storage);
   /** The Opening Day challenge: off, building between tries, or open with the free-build visitors set aside. */
   let day:
@@ -134,6 +150,12 @@ export function startFair(
   canvas.width = FAIR_WIDTH * CELL;
   canvas.height = FAIR_HEIGHT * CELL;
   const ctx = canvas.getContext('2d');
+  const previewCanvas = root.querySelector<HTMLCanvasElement>('.fair-preview')!;
+  previewCanvas.width = PREVIEW_WIDTH;
+  previewCanvas.height = PREVIEW_HEIGHT;
+  const previewCtx = previewCanvas.getContext('2d');
+  const previewNote = root.querySelector<HTMLElement>('.fair-preview-note')!;
+  const viewButton = root.querySelector<HTMLButtonElement>('[data-act="view"]')!;
   const status = root.querySelector('.fair-status')!;
   const summaryLine = root.querySelector('.fair-summary')!;
   const visitorCard = root.querySelector('.fair-visitor')!;
@@ -279,6 +301,20 @@ export function startFair(
       history = history.slice(0, -1);
       setLayout(last);
       say('Undid the last edit.');
+    } else if (name === 'view') {
+      view = toggleView(view);
+      // Only what is shown changes: the layout, budget, visitors and saved copy stay as they are.
+      const shown = viewState(view);
+      canvas.hidden = shown.gridHidden;
+      previewCanvas.hidden = previewNote.hidden = shown.previewHidden;
+      viewButton.setAttribute('aria-pressed', String(shown.pressed));
+      viewButton.textContent = shown.label;
+      say(
+        view === 'preview'
+          ? 'Visitor-eye preview. It is read-only and follows your edits. Press V to go back to the grid.'
+          : `Back to the grid. ${describe(cursor)}`,
+      );
+      (shown.focus === 'preview' ? previewCanvas : canvas).focus();
     } else if (name === 'walk') {
       walker = walker ? undefined : { ...ENTRANCE };
       walkButton.setAttribute('aria-pressed', String(Boolean(walker)));
@@ -366,6 +402,7 @@ export function startFair(
     const digit = Number(event.key);
     if (digit >= 1 && digit <= PIECES.length) return pick(PIECES[digit - 1]);
     const k = event.key.toLowerCase();
+    if (k === 'v') return act('view');
     if (k === 'w') return act('walk');
     if (k === 'g') return act('next-group');
     if (k === 'p') return act('pause');
@@ -412,8 +449,22 @@ export function startFair(
       : `${head} Press G to select a group and read its plan.`;
   }
 
+  function drawPreviewView() {
+    const items = previewItems(layout, sim);
+    const cut = unreachableCount(items);
+    const note = `${summary(layout)} ${
+      cut
+        ? `${cut} ${cut === 1 ? 'piece has' : 'pieces have'} no path from the gate, marked "No path".`
+        : 'Every stall and bench is reachable from the gate.'
+    } ${sim.groups.length} visitor ${sim.groups.length === 1 ? 'group is' : 'groups are'} on the plaza.`;
+    if (previewNote.textContent !== note) previewNote.textContent = note;
+    previewCanvas.setAttribute('aria-label', `Visitor-eye preview of your plaza. ${note}`);
+    if (previewCtx) drawPreview(previewCtx, items, selected);
+  }
+
   function draw() {
     summaryLine.textContent = summary(layout);
+    if (view === 'preview') drawPreviewView();
     renderDay();
     const card = describeVisitors();
     if (visitorCard.textContent !== card) visitorCard.textContent = card;
@@ -475,15 +526,7 @@ export function startFair(
         ctx.lineWidth = 1;
         ctx.font = canvasFont('small');
         ctx.fillStyle = c.text;
-        const bubble =
-          g.phase === 'leaving'
-            ? '👋'
-            : g.target?.need === 'thirst'
-              ? '🥤'
-              : g.target?.need === 'rest'
-                ? '💤'
-                : '🎯';
-        ctx.fillText(bubble, gx, gy - CELL / 4);
+        ctx.fillText(intentCue(g), gx, gy - CELL / 4);
       }
     });
     if (walker) {
@@ -502,6 +545,7 @@ export function startFair(
   const stopActions = bindActions(root.querySelectorAll('.fair-actions'), act);
   canvas.addEventListener('keydown', onKey);
   canvas.addEventListener('click', onClick);
+  const stopPreviewKeys = bindPreviewKeys(previewCanvas, act);
   setPauseButton();
   say(
     loaded.note ??
@@ -535,5 +579,6 @@ export function startFair(
     stopActions();
     canvas.removeEventListener('keydown', onKey);
     canvas.removeEventListener('click', onClick);
+    stopPreviewKeys();
   };
 }
