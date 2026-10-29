@@ -11,6 +11,7 @@ import {
   createPennantStore,
   debrief,
   finished,
+  criticalTrees,
   improvement,
   measure,
   openGates,
@@ -306,6 +307,23 @@ describe('forecasts', () => {
     expect(advice).not.toMatch(/tree at|cheapest cut|Trees serve/);
     const spare = measure(runToEnd(openGates(pricey, 'heat')));
     expect(improvement(pricey, spare)).toMatch(/tree at column 8, row 1 shades no connected path/);
+  });
+
+  it('never advises cutting the tree that shades the entrance in the heat', () => {
+    const gate = { ...base, '4,2': 'game', '0,2': 'tree' } as Layout;
+    expect(criticalTrees(gate, 'heat').critical).toEqual([expect.objectContaining({ x: 0, y: 2 })]);
+    const o = measure(runToEnd(openGates(gate, 'heat')));
+    expect(o.spent).toBeGreaterThan(OPENING_BUDGET);
+    expect(improvement(gate, o)).not.toMatch(/tree at|cheapest cut|Trees serve/);
+  });
+
+  it('says a spare tree shares its cover, rather than that it gives none', () => {
+    const both = { ...base, '4,2': 'game', '3,5': 'tree', '2,4': 'tree' } as Layout;
+    const o = measure(runToEnd(openGates(both, 'rain')));
+    expect(o.spent).toBeGreaterThan(OPENING_BUDGET);
+    const advice = improvement(both, o);
+    expect(advice).toMatch(/only shelters benches another tree also shelters/);
+    expect(advice).not.toMatch(/shelters no connected bench/);
   });
 
   it('keeps the clear skies budget advice, and reads only this try forecast', () => {

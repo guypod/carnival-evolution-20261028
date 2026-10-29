@@ -5,7 +5,7 @@
  * debrief reads only what the simulation measured. Plain functions, so goals,
  * early exit, retry and the pennant test without a browser.
  */
-import { PIECE_NAME, attractions, reachable, spent, type Layout } from './fair';
+import { ENTRANCE, PIECE_NAME, attractions, key, reachable, spent, type Layout } from './fair';
 import {
   KIND_NAME,
   SERVES,
@@ -158,8 +158,9 @@ const TREE_ROLE: Record<Weather, string> = {
 
 /**
  * The squares visitors can use whose forecast cue a tree decides: connected
- * benches in the rain, reachable paths in the heat. Read from `atmosphere`, so
- * the advice follows the same rules the visitors do.
+ * benches in the rain, reachable paths and the entrance in the heat. Read from
+ * `atmosphere` and `besideTree`, so the advice follows the same rules the
+ * visitors do.
  */
 function covered(layout: Layout, weather: Weather): Set<string> {
   const reach = reachable(layout);
@@ -168,13 +169,21 @@ function covered(layout: Layout, weather: Weather): Set<string> {
       .filter((a) => a.connected)
       .map((a) => `${a.x},${a.y}`),
   );
-  return new Set(
-    atmosphere(layout, weather)
-      .filter((c) => c.cue === 'sheltered' || c.cue === 'shade')
-      .map((c) => `${c.x},${c.y}`)
-      .filter((k) => reach.has(k) || connected.has(k)),
-  );
+  const squares = atmosphere(layout, weather)
+    .filter((c) => c.cue === 'sheltered' || c.cue === 'shade')
+    .map((c) => `${c.x},${c.y}`)
+    .filter((k) => reach.has(k) || connected.has(k));
+  // Groups arrive and leave at the entrance, and `grow` slows their thirst there too.
+  if (weather === 'heat' && besideTree(layout, ENTRANCE)) squares.push(key(ENTRANCE));
+  return new Set(squares);
 }
+
+/** Whether a tree stands beside any of these squares. */
+const touches = (t: { x: number; y: number }, squares: Set<string>) =>
+  [...squares].some((k) => {
+    const [x, y] = k.split(',').map(Number);
+    return Math.abs(x - t.x) + Math.abs(y - t.y) === 1;
+  });
 
 /** Trees whose removal would leave a used bench wet or a used path in the sun under this forecast. */
 export function criticalTrees(layout: Layout, weather?: Weather) {
@@ -199,9 +208,16 @@ function budgetAdvice(layout: Layout, o: Outcome): string {
   if (!o.weather)
     return `${over}${spare.length ? ' Trees serve no visitor need, so they are the cheapest cut.' : general}`;
   const keep = critical.length ? ` In ${forecastName(o.weather)}, ${TREE_ROLE[o.weather]}.` : '';
+  const used = covered(layout, o.weather);
+  const idle = spare.find((t) => !touches(t, used));
   const role = o.weather === 'rain' ? 'shelters no connected bench' : 'shades no connected path';
-  const cheap = spare.length
-    ? ` The tree at ${where(spare[0])} ${role}, so it is the cheapest cut.`
+  const shared =
+    o.weather === 'rain'
+      ? 'only shelters benches another tree also shelters'
+      : 'only shades squares another tree also shades';
+  const cut = idle ?? spare[0];
+  const cheap = cut
+    ? ` The tree at ${where(cut)} ${idle ? role : shared}, so it is the cheapest cut.`
     : general;
   return `${over}${keep}${cheap}`;
 }
