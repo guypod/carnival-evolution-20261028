@@ -8,7 +8,10 @@ import {
   createTheatre,
   itemAt,
   keyAction,
+  parseSavedTheatre,
   parseStage,
+  recordFinalScore,
+  rewinds,
   stageSaveSlot,
   takeFinalScore,
   type Action,
@@ -124,6 +127,26 @@ describe('undo and rehearse', () => {
     expect(theatre.stage.positions.knight).toBe(createStage().positions.knight);
   });
 
+  it('undoes a whole prop drag, drop and scene change in one step', () => {
+    const dragged = run(
+      toSceneTwo(),
+      { type: 'grab', id: 'cake' },
+      { type: 'move', id: 'cake', x: 620, record: false },
+      { type: 'drop', id: 'cake', record: false },
+    );
+    expect(dragged.stage.scene).toBe(3);
+    const undone = act(dragged, { type: 'undo' });
+    expect(undone.stage.scene).toBe(2);
+    expect(undone.stage.positions.cake).toBe(createStage().positions.cake);
+  });
+
+  it('counts undo, rehearse and replay as rewinds that end a drag', () => {
+    expect(rewinds({ type: 'undo' })).toBe(true);
+    expect(rewinds({ type: 'rehearse' })).toBe(true);
+    expect(rewinds({ type: 'replay' })).toBe(true);
+    expect(rewinds({ type: 'move', id: 'knight', x: 200, record: false })).toBe(false);
+  });
+
   it('rehearse puts the current scene back to how it began, and can be undone', () => {
     const moved = act(toSceneTwo(), { type: 'move', id: 'cake', x: 500 });
     const rehearsed = act(moved, { type: 'rehearse' });
@@ -163,6 +186,24 @@ describe('replay and scoring', () => {
     expect(takeFinalScore(second)).toBe(2);
   });
 
+  it('keeps the score to retry when the write fails', () => {
+    const curtain = toCurtain('cake');
+    const failing = () => {
+      throw new Error('storage full');
+    };
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      expect(recordFinalScore(curtain, failing)).toBe(false);
+    } finally {
+      console.error = quiet;
+    }
+    const scores: number[] = [];
+    expect(recordFinalScore(curtain, (score) => scores.push(score))).toBe(true);
+    expect(recordFinalScore(curtain, (score) => scores.push(score))).toBe(true);
+    expect(scores).toEqual([1]);
+  });
+
   it('has no score before the curtain', () => {
     expect(takeFinalScore(toSceneThree('cake'))).toBeNull();
   });
@@ -189,6 +230,11 @@ describe('controls', () => {
     expect(itemAt(stage, 20, 20)).toBeUndefined();
   });
 
+  it('skips the gift the dragon has taken, so it never hides a puppet', () => {
+    const stage = toSceneThree('cake').stage;
+    expect(itemAt(stage, stage.positions.cake, 340)).toBe('dragon');
+  });
+
   it('replays on any click after the curtain', () => {
     expect(buttonAction(toCurtain('cake').stage, 10, 10)).toEqual({ type: 'replay' });
   });
@@ -206,10 +252,34 @@ describe('saved stage', () => {
   it('saves and loads a stage under its own key, apart from scores', () => {
     const storage = memory();
     const slot = stageSaveSlot(storage);
-    const stage = toSceneThree('cake').stage;
-    expect(slot.save(stage)).toBe(true);
+    const { stage, sceneStart } = toSceneThree('cake');
+    expect(slot.save({ stage, sceneStart })).toBe(true);
     expect(storage.getItem('tessl-carnival:puppet-theatre:stage')).not.toBeNull();
-    expect(slot.load()).toMatchObject({ scene: 3, gift: 'cake', positions: stage.positions });
+    expect(slot.load()?.stage).toMatchObject({
+      scene: 3,
+      gift: 'cake',
+      positions: stage.positions,
+    });
+  });
+
+  it('rehearses from the real scene start after a restore', () => {
+    const moved = act(toSceneTwo(), { type: 'move', id: 'cake', x: 500 });
+    const storage = memory();
+    stageSaveSlot(storage).save({ stage: moved.stage, sceneStart: moved.sceneStart });
+    const saved = stageSaveSlot(storage).load();
+    expect(saved).toBeDefined();
+    const restored = createTheatre(saved?.stage, saved?.sceneStart);
+    expect(restored.stage.positions.cake).toBe(500);
+    const rehearsed = act(restored, { type: 'rehearse' });
+    expect(rehearsed.stage.positions.cake).toBe(createStage().positions.cake);
+  });
+
+  it('rejects a saved scene start from another scene', () => {
+    const stage = JSON.parse(JSON.stringify(toSceneTwo().stage));
+    const start = JSON.parse(JSON.stringify(createStage()));
+    expect(parseSavedTheatre({ stage, sceneStart: stage })).toBeDefined();
+    expect(parseSavedTheatre({ stage, sceneStart: start })).toBeUndefined();
+    expect(parseSavedTheatre(stage)).toBeUndefined();
   });
 
   it('rejects malformed saves', () => {

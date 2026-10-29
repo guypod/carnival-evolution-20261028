@@ -69,7 +69,7 @@ export type Action =
   | { type: 'move'; id: ItemId; x: number; record?: boolean }
   | { type: 'nudge'; id: ItemId; dx: number }
   | { type: 'pose'; id: ActorId; pose: Pose }
-  | { type: 'drop'; id: PropId }
+  | { type: 'drop'; id: PropId; record?: boolean }
   | { type: 'grab'; id: ItemId }
   | { type: 'undo' }
   | { type: 'rehearse' }
@@ -100,11 +100,14 @@ export function createStage(endingsSeen: Gift[] = []): StageState {
   };
 }
 
-export function createTheatre(stage: StageState = createStage()): Theatre {
+export function createTheatre(
+  stage: StageState = createStage(),
+  sceneStart: StageState = stage,
+): Theatre {
   return {
     stage: cloneStage(stage),
     history: [],
-    sceneStart: cloneStage(stage),
+    sceneStart: cloneStage(sceneStart),
     scoreTaken: false,
   };
 }
@@ -200,7 +203,10 @@ export function act(theatre: Theatre, action: Action): Theatre {
   }
   if (stage.scene === 'curtain') return theatre;
   const next = apply(stage, action);
-  const record = action.type === 'move' ? action.record !== false : action.type !== 'select';
+  const record =
+    action.type === 'move' || action.type === 'drop'
+      ? action.record !== false
+      : action.type !== 'select';
   return {
     ...theatre,
     stage: next,
@@ -211,11 +217,49 @@ export function act(theatre: Theatre, action: Action): Theatre {
   };
 }
 
+/** True for the actions that rewind the stage, which end any drag in progress. */
+export const rewinds = (action: Action) =>
+  action.type === 'undo' || action.type === 'rehearse' || action.type === 'replay';
+
 /** The performance's score once the curtain falls: one point per ending seen so far. */
 export function takeFinalScore(theatre: Theatre): number | null {
   if (theatre.stage.scene !== 'curtain' || theatre.scoreTaken) return null;
   theatre.scoreTaken = true;
   return theatre.stage.endingsSeen.length;
+}
+
+/**
+ * Hands a finished performance's score to `record`. When the write fails, the
+ * score stays untaken so the next action tries again.
+ */
+export function recordFinalScore(theatre: Theatre, record: (score: number) => void): boolean {
+  const score = takeFinalScore(theatre);
+  if (score === null) return true;
+  try {
+    record(score);
+    return true;
+  } catch (error) {
+    theatre.scoreTaken = false;
+    console.error('Puppet Theatre could not save the score', error);
+    return false;
+  }
+}
+
+/** What the save slot keeps: the stage, and the stage as its scene began. */
+export interface SavedTheatre {
+  stage: StageState;
+  sceneStart: StageState;
+}
+
+/** Turns a saved value back into a stage and its scene start, or undefined when either is off. */
+export function parseSavedTheatre(value: unknown): SavedTheatre | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  const stage = parseStage(v.stage);
+  const sceneStart = parseStage(v.sceneStart);
+  if (!stage || !sceneStart || sceneStart.scene !== stage.scene) return undefined;
+  if (sceneStart.gift !== stage.gift) return undefined;
+  return { stage, sceneStart };
 }
 
 /** Turns a saved value back into a stage, or undefined when anything about it is off. */
@@ -266,7 +310,7 @@ export function stageSaveSlot(storage: SaveStorage | undefined) {
   return createSaveSlot(storage, {
     key: 'tessl-carnival:puppet-theatre:stage',
     maxLength: 2000,
-    parse: parseStage,
+    parse: parseSavedTheatre,
   });
 }
 
@@ -274,6 +318,7 @@ export function stageSaveSlot(storage: SaveStorage | undefined) {
 export function itemAt(stage: StageState, x: number, y: number): ItemId | undefined {
   let best: { id: ItemId; d: number } | undefined;
   for (const id of ITEMS) {
+    if (id === stage.gift) continue;
     const top = isActor(id) ? FLOOR_Y - 150 : FLOOR_Y - 50;
     if (y < top || y > FLOOR_Y + 10) continue;
     const d = Math.abs(stage.positions[id] - x);
@@ -541,14 +586,18 @@ export const puppetTheatre: CarnivalGame = {
     canvas.height = HEIGHT;
 
     const slot = stageSaveSlot(browserSaveStorage());
-    let theatre = createTheatre(slot.load() ?? createStage());
+    const saved = slot.load();
+    let theatre = saved ? createTheatre(saved.stage, saved.sceneStart) : createTheatre();
     let dragging: ItemId | undefined;
 
+    const record = (score: number) => recordScore(puppetTheatre.id, score);
     const run = (action: Action) => {
+      if (rewinds(action)) dragging = undefined;
+      // Retries a score whose write failed, before a replay starts a fresh performance.
+      recordFinalScore(theatre, record);
       theatre = act(theatre, action);
-      const score = takeFinalScore(theatre);
-      if (score !== null) recordScore(puppetTheatre.id, score);
-      slot.save(theatre.stage);
+      slot.save({ stage: theatre.stage, sceneStart: theatre.sceneStart });
+      recordFinalScore(theatre, record);
     };
     const toCanvas = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -572,7 +621,7 @@ export const puppetTheatre: CarnivalGame = {
       run({ type: 'move', id: dragging, x: toCanvas(event).x, record: false });
     };
     const onUp = () => {
-      if (dragging && isProp(dragging)) run({ type: 'drop', id: dragging });
+      if (dragging && isProp(dragging)) run({ type: 'drop', id: dragging, record: false });
       dragging = undefined;
     };
     const onKeyDown = (event: KeyboardEvent) => {

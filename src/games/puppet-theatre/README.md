@@ -29,7 +29,8 @@ a different comic finale.
 | Click after the curtain               | `Space` or `Enter`   | Perform it again                           |
 
 Props stay on the shelf until the gift scene. A drag counts as one change for
-undo.
+undo, including a prop drop and any scene change it causes. Undo or Rehearse
+during a drag ends the drag.
 
 ## Scoring
 
@@ -39,6 +40,7 @@ saved stage.
 
 ## Saved stage
 
-The stage (scene, positions, poses, gift and endings found) is saved after
-every change under its own key, separate from scores, and restored when you
-come back. A saved stage that is malformed is ignored and the play starts over.
+The stage (scene, positions, poses, gift and endings found), and the stage as
+the current scene began, are saved after every change under their own key,
+separate from scores, and restored when you come back. Rehearse after a restore
+still goes back to the start of the scene. A saved stage that is malformed is ignored and the play starts over.
