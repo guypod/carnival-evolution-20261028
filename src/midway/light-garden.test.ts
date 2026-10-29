@@ -185,9 +185,13 @@ describe('where the garden lies on the midway', () => {
       for (const b of cells) {
         const from = centre(a);
         const to = centre(b);
+        // The renderer's quadratic curve: ends 10 up, control point 2 up at the middle.
+        const control = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 - 2 };
         for (let s = 0; s <= 1; s += 0.125) {
+          const bend = (a: number, c: number, b: number) =>
+            (1 - s) * (1 - s) * a + 2 * (1 - s) * s * c + s * s * b;
           points.push({
-            at: { x: from.x + (to.x - from.x) * s, y: from.y + (to.y - from.y) * s - 10 },
+            at: { x: bend(from.x, control.x, to.x), y: bend(from.y - 10, control.y, to.y - 10) },
             what: `garland from column ${a.col + 1}, row ${a.row + 1} to column ${b.col + 1}, row ${b.row + 1}`,
           });
         }
@@ -210,8 +214,9 @@ describe('where the garden lies on the midway', () => {
   };
 
   it('keeps every cell and every possible garland clear of the entrance arch on screen', () => {
-    // Zoom scales the whole world uniformly, so clear in world pixels is clear
-    // at every step in VIEW_SCALES; this checks each step's scaled geometry too.
+    // The arch and the garden are both drawn in world pixels and zoom scales
+    // them together, so clear here is clear at every step in VIEW_SCALES. The
+    // loop only confirms that, with each step's scaled geometry.
     for (const scale of VIEW_SCALES) {
       const zoomed = (q: Point) => ({ x: q.x * scale, y: q.y * scale });
       const arch = archSilhouette(map).map((shape) => shape.map(zoomed));
