@@ -2725,7 +2725,9 @@ function renderToy() {
     const started = performance.now();
     const step = (now: number) => {
       const t = (now - started) / duration;
-      if (ctx && !quiet) drawDesk(ctx, toyPosition(t, winds), winds * (1 - Math.min(t, 1)), demo);
+      // Quiet can switch on mid-walk: stage the toy back at rest straight away.
+      if (ctx && quiet) drawDesk(ctx, toyPosition(0, 0), winds, demo);
+      else if (ctx) drawDesk(ctx, toyPosition(t, winds), winds * (1 - Math.min(t, 1)), demo);
       if (t < 1) frame = requestAnimationFrame(step);
       else act('finish');
     };
