@@ -107,6 +107,7 @@ body[data-view='midway'] main {
 .discovery-toast,
 .midway-route,
 .midway-ferry,
+.midway-homeward,
 .midway-stones,
 .mystery-card,
 .booth-card {
@@ -178,7 +179,8 @@ kbd {
 }
 
 .midway-view button,
-.midway-ferry button {
+.midway-ferry button,
+.midway-homeward button {
   min-width: 36px;
   padding: 4px 10px;
   border: 2px solid var(--color-accent);
@@ -193,7 +195,9 @@ kbd {
 .midway-view button:hover:not(:disabled),
 .midway-view button:focus-visible,
 .midway-ferry button:hover,
-.midway-ferry button:focus-visible {
+.midway-ferry button:focus-visible,
+.midway-homeward button:hover,
+.midway-homeward button:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
@@ -1502,6 +1506,29 @@ kbd {
 .midway-ferry .actions {
   display: flex;
   gap: 6px;
+}
+
+/* Sits above the ferry's panel, so both fit by the docks. */
+.midway-homeward {
+  bottom: 72px;
+  left: 50%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  justify-content: center;
+  max-width: min(460px, calc(100% - 32px));
+  padding: 6px 10px;
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+
+.midway-homeward[hidden] {
+  display: none;
+}
+
+.midway-homeward .message {
+  margin: 0;
 }
 
 @media (max-width: 720px) {

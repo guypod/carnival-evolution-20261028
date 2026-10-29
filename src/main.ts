@@ -546,6 +546,10 @@ function renderMidway() {
         <p class="message" role="status"></p>
         <button type="button" class="cancel" hidden>Cancel walk</button>
       </div>
+      <div class="midway-homeward" role="group" aria-label="Way back" hidden>
+        <p class="message" role="status" aria-live="polite"></p>
+        <button type="button" class="return">Return to midway</button>
+      </div>
       <div class="midway-ferry" role="group" aria-label="Ferry" hidden>
         <p class="message" role="status" aria-live="polite"></p>
         <div class="actions"></div>
@@ -644,10 +648,12 @@ function renderMidway() {
     onRoute: (route) => routeStatus.show(route),
     onLocate: (message) => (locateStatus.textContent = message ?? ''),
     onFerry: (message, requests) => ferryPanel.show(message, requests),
+    onHomeward: (message) => homewardPanel.show(message),
     onStones: (status) => stonesPanel.show(status),
     onChime: (tones, spacing, replace) => sound.chime(tones, spacing, replace),
   });
   const ferryPanel = setUpFerry((request) => midway.ferry(request));
+  const homewardPanel = setUpHomeward(() => midway.returnToMidway());
   const stonesPanel = setUpStones(midway.stones);
   const locateStatus = app.querySelector<HTMLElement>('.locate-status')!;
   // Escape hides the locate ring first, while it shows; then panels get the key.
@@ -897,6 +903,27 @@ function setUpFerry(request: (request: FerryRequest) => void) {
       );
       // A button that went away must not drop focus to the page.
       if (hadFocus) app.querySelector<HTMLElement>('.midway-map')?.focus();
+    },
+  };
+}
+
+// The way back from the waterside: where the player is and a Return to midway
+// button that starts the walk back. The route line says when it starts,
+// arrives, is cancelled or can't be found. It shows only in the waterside.
+function setUpHomeward(back: () => boolean) {
+  const box = app.querySelector<HTMLElement>('.midway-homeward')!;
+  const message = box.querySelector<HTMLElement>('.message')!;
+  box.querySelector('.return')!.addEventListener('click', () => {
+    app.querySelector<HTMLElement>('.midway-map')?.focus();
+    back();
+  });
+  return {
+    show(text: string) {
+      const hadFocus = box.contains(document.activeElement);
+      box.hidden = text === '';
+      message.textContent = text;
+      // A panel that went away must not drop focus to the page.
+      if (hadFocus && box.hidden) app.querySelector<HTMLElement>('.midway-map')?.focus();
     },
   };
 }
