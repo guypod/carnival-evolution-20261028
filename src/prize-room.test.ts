@@ -8,6 +8,7 @@ import {
   STARTER_DECOR,
   applyRoom,
   createRoomStore,
+  describeLook,
   describeRoom,
   describeSlot,
   editorApply,
@@ -282,5 +283,32 @@ describe('inspecting the room in words', () => {
     );
     expect(describeSlot(layout, objects, ROOM_SLOTS[8])).toBe('Floor, spot 1: empty.');
     expect(describeRoom(layout)).toBe('Sunset pier backdrop, 1 object placed of 12 spots.');
+  });
+
+  it("keeps the walking description in step with every edit at the visitor's spot", () => {
+    const owned = ownedIds({});
+    const objects = roomObjects(games, () => undefined);
+    const spot = ROOM_SLOTS[9];
+    const look = (editor: { current: RoomLayout }) =>
+      describeLook(editor.current, objects, spot, true);
+    expect(describeLook(EMPTY_ROOM, objects, spot, false)).toBe('');
+
+    let editor = editorFor(EMPTY_ROOM);
+    expect(look(editor)).toBe('You look at: Floor, spot 2: empty.');
+    editor = editorApply(editor, { type: 'place', objectId: 'starter:fern', slot: spot.id }, owned);
+    const placed = look(editor);
+    expect(placed).toBe('You look at: Floor, spot 2: Potted Fern (Starter decor), facing front.');
+    editor = editorApply(editor, { type: 'rotate', objectId: 'starter:fern' }, owned);
+    expect(look(editor)).toBe(
+      'You look at: Floor, spot 2: Potted Fern (Starter decor), turned right.',
+    );
+    editor = editorApply(editor, { type: 'remove', objectId: 'starter:fern' }, owned);
+    expect(look(editor)).toBe('You look at: Floor, spot 2: empty.');
+    editor = editorUndo(editorUndo(editor));
+    expect(look(editor)).toBe(placed);
+    editor = editorReset(editor);
+    expect(look(editor)).toBe('You look at: Floor, spot 2: empty.');
+    editor = editorUndo(editor);
+    expect(look(editor)).toBe(placed);
   });
 });

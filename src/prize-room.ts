@@ -360,6 +360,19 @@ export function describeSlot(
   return `${slot.label}: ${object.name} (${object.source}), ${FACING[placed.rotation]}.`;
 }
 
+/**
+ * What the walking visitor sees at their spot in the current layout, or
+ * nothing before their first step. The page calls it after every edit.
+ */
+export function describeLook(
+  layout: RoomLayout,
+  objects: readonly RoomObject[],
+  slot: RoomSlot,
+  walked: boolean,
+): string {
+  return walked ? `You look at: ${describeSlot(layout, objects, slot)}` : '';
+}
+
 /** A one-line summary of the whole room. */
 export function describeRoom(layout: RoomLayout): string {
   const count = layout.placements.length;

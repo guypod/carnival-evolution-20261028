@@ -251,6 +251,7 @@ import {
   EMPTY_ROOM,
   ROOM_SIZE,
   ROOM_SLOTS,
+  describeLook,
   describeRoom,
   describeSlot,
   drawRoom,
@@ -1500,8 +1501,7 @@ function renderRoom() {
       }),
     );
     canvas.setAttribute('aria-label', `Prize room picture. ${describeRoom(layout)}`);
-    if (looking)
-      look.textContent = `You look at: ${describeSlot(layout, objects, ROOM_SLOTS[visitor])}`;
+    look.textContent = describeLook(layout, objects, ROOM_SLOTS[visitor], looking);
     if (ctx) drawRoom(ctx, layout, objects, { selected, visitorSlot: ROOM_SLOTS[visitor].id });
   }
 
