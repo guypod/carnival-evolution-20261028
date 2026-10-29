@@ -7,6 +7,7 @@ import {
   OPENING_BUDGET,
   OPENING_GROUPS,
   PENNANT_KEY,
+  atmosphere,
   createPennantStore,
   debrief,
   finished,
@@ -183,5 +184,114 @@ describe('Opening Day pennant', () => {
     };
     expect(createPennantStore(broken).award(success())).toEqual({ earned: true, saved: false });
     expect(createPennantStore(undefined).award(success())).toEqual({ earned: true, saved: false });
+  });
+});
+
+describe('forecasts', () => {
+  // A path from the gate east, a refreshment stall, a game stall and a bench all beside it.
+  const base: Layout = {
+    '1,3': 'path',
+    '2,3': 'path',
+    '3,3': 'path',
+    '4,3': 'path',
+    '1,2': 'game',
+    '2,2': 'food',
+    '3,4': 'bench',
+  };
+
+  it('leaves a day with no forecast exactly as it was', () => {
+    const plain = runToEnd(openGates(base));
+    const none = runToEnd(openGates(base, undefined));
+    expect(none).toEqual(plain);
+    expect(plain.weather).toBeUndefined();
+  });
+
+  it('runs the same forecast the same way every time', () => {
+    expect(runToEnd(openGates(base, 'rain'))).toEqual(runToEnd(openGates(base, 'rain')));
+    expect(runToEnd(openGates(base, 'heat'))).toEqual(runToEnd(openGates(base, 'heat')));
+  });
+
+  it('turns tired visitors away from a wet bench in the rain, and a tree beside it fixes that', () => {
+    const wet = measure(runToEnd(openGates(base, 'rain')));
+    expect(wet.unmet.rest).toBeGreaterThan(0);
+    expect(measure(runToEnd(openGates(base))).unmet.rest).toBe(0);
+    const sheltered = measure(runToEnd(openGates({ ...base, '3,5': 'tree' }, 'rain')));
+    expect(sheltered.unmet.rest).toBe(0);
+    expect(sheltered.happy).toBeGreaterThan(wet.happy);
+    expect(improvement(base, wet)).toMatch(/tree beside a connected bench/);
+  });
+
+  it('advises shelter, not a path, when an isolated bench sits beside a wet connected one', () => {
+    const isolated = { ...base, '5,4': 'bench' } as Layout;
+    const wet = measure(runToEnd(openGates(isolated, 'rain')));
+    expect(wet.worst?.need).toBe('rest');
+    expect(improvement(isolated, wet)).toMatch(/tree beside a connected bench/);
+    const cut = Object.fromEntries(
+      Object.entries({ ...base, '5,5': 'bench' }).filter(([k]) => k !== '3,4'),
+    ) as Layout;
+    const day = measure(runToEnd(openGates(cut)));
+    expect(day.worst?.need).toBe('rest');
+    expect(improvement(cut, day)).toMatch(/Lay a path from the gate to the bench/);
+  });
+
+  it('names the wet benches, not a missing path, as the rain bottleneck', () => {
+    const wet = measure(runToEnd(openGates(base, 'rain')));
+    const text = debrief(base, wet).lines.join(' ');
+    expect(text).toMatch(/every connected bench was wet in the rain/);
+    expect(text).not.toMatch(/no bench touched a connected path/);
+    expect(text).toMatch(/every connected bench is wet, with no tree beside it/);
+    const plain = debrief(base, measure(runToEnd(openGates(base)))).lines.join(' ');
+    expect(plain).not.toMatch(/wet/);
+  });
+
+  it('makes visitors thirstier in the heat, and shade slows it', () => {
+    const thirst = (s: ReturnType<typeof openGates>) =>
+      [...s.left, ...s.groups].reduce((n, g) => n + g.needs.thirst, 0);
+    const at = (layout: Layout, w?: 'heat') => {
+      let s = openGates(layout, w);
+      for (let i = 0; i < 6; i++) s = tick(s);
+      return thirst(s);
+    };
+    const shaded = { ...base, '1,4': 'tree', '2,4': 'tree', '4,4': 'tree' } as Layout;
+    expect(at(base, 'heat')).toBeGreaterThan(at(base));
+    expect(at(shaded, 'heat')).toBeLessThan(at(base, 'heat'));
+  });
+
+  it('keeps the forecast each try ran under, so the debrief labels both tries', () => {
+    const rain = measure(runToEnd(openGates(base, 'rain')));
+    const clear = measure(runToEnd(openGates(base)));
+    expect(rain.weather).toBe('rain');
+    expect(clear.weather).toBeUndefined();
+    const text = debrief(base, clear, rain).lines.join(' ');
+    expect(text).toMatch(/Forecast this try: clear skies\./);
+    expect(text).toMatch(/Last try \(light rain\): served/);
+    expect(text).toMatch(/This try \(clear skies\): served/);
+    expect(text).toMatch(/not a same-weather comparison/);
+    const same = debrief(base, rain, rain).lines.join(' ');
+    expect(same).toMatch(/Last try \(light rain\).*This try \(light rain\)/);
+    expect(same).not.toMatch(/not a same-weather comparison/);
+  });
+
+  it('leaves the debrief with no forecast on either try exactly as it was', () => {
+    const clear = measure(runToEnd(openGates(base)));
+    const text = debrief(base, clear, clear).lines.join(' ');
+    expect(text).toMatch(/Last try: served .* This try: served/);
+    expect(text).not.toMatch(/Forecast|clear skies|same-weather/);
+  });
+
+  it('marks only the squares the forecast changes, from the visitors own rules', () => {
+    const sheltered = { ...base, '3,5': 'tree' } as Layout;
+    expect(atmosphere(base)).toEqual([]);
+    expect(atmosphere(base, 'rain')).toEqual([{ x: 3, y: 4, cue: 'wet' }]);
+    expect(atmosphere(sheltered, 'rain')).toEqual([{ x: 3, y: 4, cue: 'sheltered' }]);
+    const heat = atmosphere({ ...base, '1,4': 'tree' } as Layout, 'heat');
+    expect(heat).toContainEqual({ x: 1, y: 3, cue: 'shade' });
+    expect(heat).toContainEqual({ x: 4, y: 3, cue: 'sun' });
+    expect(heat.every((c) => c.cue === 'sun' || c.cue === 'shade')).toBe(true);
+  });
+
+  it('draws the same cues every time, so Quiet mode needs no other picture', () => {
+    expect(atmosphere(base, 'rain')).toEqual(atmosphere(base, 'rain'));
+    expect(atmosphere(base, 'heat')).toEqual(atmosphere(base, 'heat'));
   });
 });

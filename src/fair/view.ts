@@ -32,15 +32,20 @@ import {
   relayout,
   resetSim,
   type Sim,
+  type Weather,
 } from './visitors';
 import {
   GOALS_TEXT,
   createPennantStore,
+  atmosphere,
   debrief,
   finished,
+  forecastName,
   measure,
   openGates,
+  FORECASTS,
   runToEnd,
+  type Cue,
   type Outcome,
 } from './opening-day';
 import {
@@ -90,6 +95,15 @@ function quietNow(): boolean {
   return isQuiet(motionPreference.load(), systemReduces);
 }
 const ICON: Record<Piece, string> = { path: '', game: '🎯', food: '🍿', bench: '🪑', tree: '🌳' };
+/** The corner mark for each forecast cue on the grid. */
+const CUE_MARK: Record<Cue['cue'], string> = { wet: '💧', sheltered: '☂', sun: '☀', shade: '◐' };
+/** What each forecast cue means, read out when the cursor is on that square. */
+const CUE_TEXT: Record<Cue['cue'], string> = {
+  wet: 'wet in the rain, tired visitors will not use it',
+  sheltered: 'sheltered by a tree, usable in the rain',
+  sun: 'in the sun, visitors here get thirsty twice as fast',
+  shade: 'shaded by a tree',
+};
 
 /** Mounts the plaza editor into `root`. Returns a cleanup that removes every listener. */
 export function startFair(
@@ -118,6 +132,7 @@ export function startFair(
     </div>
     <div class="fair-actions" role="group" aria-label="Opening Day challenge">
       <button type="button" data-act="day" aria-pressed="false">Opening Day challenge</button>
+      <button type="button" data-act="day-forecast" hidden>Forecast: clear skies</button>
       <button type="button" data-act="day-open" hidden>Open the gates</button>
       <button type="button" data-act="day-finish" hidden>Finish the day now</button>
       <button type="button" data-act="day-end" hidden>End early</button>
@@ -145,6 +160,8 @@ export function startFair(
     | { phase: 'build'; last?: Outcome; ran?: Layout; previous?: Outcome; note?: string }
     | { phase: 'open'; freeSim: Sim; last?: Outcome }
     | undefined;
+  /** The forecast the player opted into for Opening Day, if any. */
+  let forecast: Weather | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   canvas.width = FAIR_WIDTH * CELL;
@@ -184,7 +201,8 @@ export function startFair(
     if (cell.x === ENTRANCE.x && cell.y === ENTRANCE.y) return `${where}: the entrance.`;
     if (!here) return `${where}: empty.`;
     const info = attractions(layout).find((a) => a.x === cell.x && a.y === cell.y);
-    return `${where}: ${PIECE_NAME[here]}${info && !info.connected ? ', not connected to the entrance' : ''}.`;
+    const cue = atmosphere(layout, shownForecast()).find((a) => a.x === cell.x && a.y === cell.y);
+    return `${where}: ${PIECE_NAME[here]}${info && !info.connected ? ', not connected to the entrance' : ''}${cue ? `, ${CUE_TEXT[cue.cue]}` : ''}.`;
   }
 
   /** Every layout change goes through here, so a pickup or a walker never outlives the layout it was made on. */
@@ -235,6 +253,8 @@ export function startFair(
     dayOnly('day-open').hidden = day?.phase !== 'build';
     dayOnly('day-open').textContent =
       day?.phase === 'build' && day.last ? 'Retry: open the gates again' : 'Open the gates';
+    dayOnly('day-forecast').hidden = day?.phase !== 'build';
+    dayOnly('day-forecast').textContent = `Forecast: ${forecastName(forecast)}`;
     dayOnly('day-finish').hidden = !gatesOpen();
     dayOnly('day-end').hidden = !gatesOpen();
     dayPanel.hidden = !day;
@@ -247,6 +267,7 @@ export function startFair(
       );
     } else {
       parts.push(`<p>${GOALS_TEXT}${held}</p>`);
+      if (forecast) parts.push(`<p><strong>Forecast.</strong> ${FORECASTS[forecast].rule}</p>`);
       if (day.last) {
         // The debrief belongs to the layout the day ran on, not to edits made since.
         const d = debrief(day.ran ?? layout, day.last, day.previous);
@@ -280,11 +301,18 @@ export function startFair(
       if (gatesOpen()) closeDay(false);
       day = day ? undefined : { phase: 'build' };
       say(day ? GOALS_TEXT : 'Back to free build. Your plaza is unchanged.');
+    } else if (name === 'day-forecast' && day?.phase === 'build') {
+      forecast = forecast === undefined ? 'heat' : forecast === 'heat' ? 'rain' : undefined;
+      say(
+        forecast
+          ? FORECASTS[forecast].rule
+          : 'Forecast: clear skies. The day runs with no weather rules.',
+      );
     } else if (name === 'day-open' && day?.phase === 'build') {
       const saved = store.save(layout);
       day = { phase: 'open', freeSim: sim, last: day.last };
       carrying = undefined;
-      sim = { ...openGates(layout), paused: quiet };
+      sim = { ...openGates(layout, forecast), paused: quiet };
       selected = undefined;
       setPauseButton();
       say(
@@ -462,6 +490,33 @@ export function startFair(
     if (previewCtx) drawPreview(previewCtx, items, selected);
   }
 
+  /** The forecast the grid shows: the one the gates opened under, or the one picked for the next try. */
+  function shownForecast(): Weather | undefined {
+    if (!day) return undefined;
+    return day.phase === 'open' ? sim.weather : forecast;
+  }
+
+  /**
+   * Marks the squares the forecast changes, from the same rules the visitors
+   * follow. The marks never animate, so Quiet mode shows the same picture.
+   */
+  function drawAtmosphere(ctx: CanvasRenderingContext2D) {
+    const c = theme.colors;
+    ctx.font = canvasFont('small', 'bold');
+    for (const { x, y, cue } of atmosphere(layout, shownForecast())) {
+      const px = x * CELL;
+      const py = y * CELL;
+      if (cue === 'wet' || cue === 'sun') {
+        ctx.strokeStyle = cue === 'wet' ? c.water : c.accent;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px + 3, py + 3, CELL - 6, CELL - 6);
+        ctx.lineWidth = 1;
+      }
+      ctx.fillStyle = cue === 'wet' ? c.water : cue === 'sun' ? c.accent : c.text;
+      ctx.fillText(CUE_MARK[cue], px + CELL - 9, py + 9);
+    }
+  }
+
   function draw() {
     summaryLine.textContent = summary(layout);
     if (view === 'preview') drawPreviewView();
@@ -512,6 +567,7 @@ export function startFair(
         }
       }
     }
+    drawAtmosphere(ctx);
     sim.groups.forEach((g, i) => {
       const gx = g.at.x * CELL + CELL / 2 + ((i % 2) * 2 - 1) * 8;
       const gy = g.at.y * CELL + CELL / 2 + (i < 2 ? -8 : 8);

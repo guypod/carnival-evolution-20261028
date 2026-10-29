@@ -6,7 +6,18 @@
  * early exit, retry and the pennant test without a browser.
  */
 import { PIECE_NAME, attractions, spent, type Layout } from './fair';
-import { KIND_NAME, SERVES, createSim, tick, type Group, type Need, type Sim } from './visitors';
+import {
+  KIND_NAME,
+  SERVES,
+  besideTree,
+  createSim,
+  tick,
+  usable,
+  type Group,
+  type Need,
+  type Sim,
+  type Weather,
+} from './visitors';
 
 export const OPENING_SEED = 11;
 export const OPENING_GROUPS = 8;
@@ -24,11 +35,48 @@ export const DEFINITIONS = {
   happy: 'Happy: served, and never turned away for a need the plaza could not meet.',
   unreachable:
     'Turned away: the group needed a game, a bench or refreshments, and none touched a path connected to the gate.',
+  wet: 'In the rain, a tired group is also turned away when every connected bench is wet, with no tree beside it.',
 };
 
-/** Starts the gates on `layout`, with the same seeded visitors every time. */
-export function openGates(layout: Layout): Sim {
-  return createSim(layout, OPENING_SEED, false, OPENING_GROUPS);
+/** The forecasts a player can opt into, and the rule each one changes, told before the gates open. */
+export const FORECASTS: Record<Weather, { name: string; rule: string }> = {
+  heat: {
+    name: 'Sunny heat',
+    rule: 'Sunny heat: visitors get thirsty twice as fast, except while they stand on a path beside a tree, which gives shade. Refreshments matter more; trees along busy paths slow the thirst.',
+  },
+  rain: {
+    name: 'Light rain',
+    rule: 'Light rain: a bench with no tree beside it is wet, and tired visitors will not use it. A tree beside a bench gives shelter, so that bench still works.',
+  },
+};
+
+/** What the forecast does to one square, drawn on the grid: a wet or sheltered bench, a sunny or shaded path. */
+export type Cue = { x: number; y: number; cue: 'wet' | 'sheltered' | 'sun' | 'shade' };
+
+/**
+ * The squares a forecast changes, read from the same rules the visitors follow.
+ * It depends only on the layout and the forecast, never on time, so it is
+ * drawn still in every mode, Quiet included.
+ */
+export function atmosphere(layout: Layout, weather?: Weather): Cue[] {
+  const cues: Cue[] = [];
+  for (const [k, piece] of Object.entries(layout)) {
+    const [x, y] = k.split(',').map(Number);
+    const covered = besideTree(layout, { x, y });
+    if (weather === 'rain' && piece === 'bench')
+      cues.push({ x, y, cue: covered ? 'sheltered' : 'wet' });
+    if (weather === 'heat' && piece === 'path') cues.push({ x, y, cue: covered ? 'shade' : 'sun' });
+  }
+  return cues;
+}
+
+/** The forecast's name for the debrief, with no forecast read as clear skies. */
+export const forecastName = (weather?: Weather) =>
+  weather ? FORECASTS[weather].name.toLowerCase() : 'clear skies';
+
+/** Starts the gates on `layout`, with the same seeded visitors every time, under an optional forecast. */
+export function openGates(layout: Layout, weather?: Weather): Sim {
+  return createSim(layout, OPENING_SEED, false, OPENING_GROUPS, weather);
 }
 
 /** Whether every group has arrived and left, or the gates have closed. */
@@ -59,6 +107,8 @@ export type Outcome = {
   unmet: Record<Need, number>;
   /** Groups turned away, by kind, for the need that turned away the most. */
   worst?: { need: Need; count: number; kinds: string[] };
+  /** The forecast the day actually ran under, kept so a later change to the selector cannot relabel it. */
+  weather?: Weather;
 };
 
 /** Measures a day from what the simulation recorded. `complete` is false when the player ended early. */
@@ -86,11 +136,19 @@ export function measure(sim: Sim, complete = finished(sim)): Outcome {
       count: unmet[worstNeed],
       kinds: [...new Set(all.filter((g) => g.unmet === worstNeed).map((g) => KIND_NAME[g.kind]))],
     },
+    ...(sim.weather ? { weather: sim.weather } : {}),
   };
 }
 
 const NEED_WORD: Record<Need, string> = { fun: 'bored', rest: 'tired', thirst: 'thirsty' };
 const where = (c: { x: number; y: number }) => `column ${c.x + 1}, row ${c.y + 1}`;
+
+/** Whether rest went unmet because the rain made every connected bench wet, rather than for lack of a path. */
+const wetBenches = (layout: Layout, o: Outcome) =>
+  o.worst?.need === 'rest' &&
+  attractions(layout).some(
+    (a) => a.piece === 'bench' && a.connected && !usable(layout, a, a.piece, o.weather),
+  );
 
 /** The one change most likely to help, read from the outcome and the layout. */
 export function improvement(layout: Layout, o: Outcome): string {
@@ -98,6 +156,8 @@ export function improvement(layout: Layout, o: Outcome): string {
     const piece = SERVES[o.worst.need];
     const name = PIECE_NAME[piece].toLowerCase();
     const cut = attractions(layout).find((a) => a.piece === piece && !a.connected);
+    if (wetBenches(layout, o))
+      return 'Plant a tree beside a connected bench: in the rain, only a sheltered bench can be used.';
     return cut
       ? `Lay a path from the gate to the ${name} at ${where(cut)}: it is not connected, so nobody can use it.`
       : `Place a ${name} beside a path connected to the gate.`;
@@ -128,16 +188,21 @@ export function debrief(layout: Layout, o: Outcome, previous?: Outcome): Debrief
   ];
   if (o.worst)
     lines.push(
-      `Bottleneck: ${o.worst.count} ${o.worst.count === 1 ? 'group was' : 'groups were'} ${NEED_WORD[o.worst.need]} (${o.worst.kinds.join(', ')}) and no ${PIECE_NAME[SERVES[o.worst.need]].toLowerCase()} touched a connected path.`,
+      `Bottleneck: ${o.worst.count} ${o.worst.count === 1 ? 'group was' : 'groups were'} ${NEED_WORD[o.worst.need]} (${o.worst.kinds.join(', ')}) and ${wetBenches(layout, o) ? 'every connected bench was wet in the rain, with no tree beside it' : `no ${PIECE_NAME[SERVES[o.worst.need]].toLowerCase()} touched a connected path`}.`,
     );
   else if (o.spent > OPENING_BUDGET)
     lines.push(`Bottleneck: the plaza is ${o.spent - OPENING_BUDGET} over the Opening Day budget.`);
   lines.push(`Try: ${improvement(layout, o)}`);
+  // With no forecast on either try, the debrief reads exactly as it did before forecasts existed.
+  const forecasts = Boolean(o.weather || previous?.weather);
+  const label = (w?: Weather) => (forecasts ? ` (${forecastName(w)})` : '');
+  if (forecasts) lines.push(`Forecast this try: ${forecastName(o.weather)}.`);
   if (previous)
     lines.push(
-      `Last try: served ${previous.served}, happy ${previous.happy}, turned away ${previous.unreachable}, spent ${previous.spent}. This try: served ${o.served}, happy ${o.happy}, turned away ${o.unreachable}, spent ${o.spent}.`,
+      `Last try${label(previous.weather)}: served ${previous.served}, happy ${previous.happy}, turned away ${previous.unreachable}, spent ${previous.spent}. This try${label(o.weather)}: served ${o.served}, happy ${o.happy}, turned away ${o.unreachable}, spent ${o.spent}.${previous.weather === o.weather ? '' : ' The forecasts differ, so this is not a same-weather comparison.'}`,
     );
   lines.push(DEFINITIONS.served, DEFINITIONS.happy, DEFINITIONS.unreachable);
+  if (o.weather === 'rain') lines.push(DEFINITIONS.wet);
   return { headline, lines };
 }
 
