@@ -193,6 +193,18 @@ kbd {
   outline-offset: 2px;
 }
 
+.locate-status:empty {
+  display: none;
+}
+
+.locate-status {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  color: var(--color-text);
+}
+
 .midway-view button:disabled {
   opacity: 0.5;
   cursor: default;

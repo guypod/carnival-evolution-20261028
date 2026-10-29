@@ -81,3 +81,9 @@ export const gardenLights = {
   editGrid: 'rgba(255, 248, 231, 0.35)',
   selected: colors.stripeB,
 } as const;
+
+/** The locate marker: a light ring on a dark edge, readable by day and by evening. */
+export const locator = {
+  ring: colors.stripeB,
+  edge: colors.background,
+} as const;
