@@ -552,18 +552,18 @@ function renderMidway() {
             <p class="message" role="status" aria-live="polite"></p>
             <button type="button" class="return">Return to midway</button>
           </div>
+          <div class="midway-stones" role="group" aria-label="Chime stones" hidden>
+            <p class="message" role="status" aria-live="polite"></p>
+            <div class="actions">
+              <button type="button" class="stones-call">Play call</button>
+            </div>
+            <p class="note">Notes ring only with Midway sound on in Settings.</p>
+          </div>
           <div class="midway-ferry" role="group" aria-label="Ferry" hidden>
             <p class="message" role="status" aria-live="polite"></p>
             <div class="actions"></div>
           </div>
         </div>
-      </div>
-      <div class="midway-stones" role="group" aria-label="Chime stones" hidden>
-        <p class="message" role="status" aria-live="polite"></p>
-        <div class="actions">
-          <button type="button" class="stones-call">Play call</button>
-        </div>
-        <p class="note">Notes ring only with Midway sound on in Settings.</p>
       </div>
       <section class="mystery-card" aria-labelledby="mystery-card-title" hidden>
         <h2 id="mystery-card-title"></h2>

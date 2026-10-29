@@ -1481,9 +1481,9 @@ kbd {
 }
 
 /*
- * The way back and the ferry's panels stack at the bottom, so neither covers
- * the other however far they wrap. The docks are far from every booth, so the
- * booth card never opens under them.
+ * The way back, the chime stones and the ferry's panels stack at the bottom,
+ * so none covers another however far they wrap. The docks and the stones are
+ * far from every booth, so the booth card never opens under them.
  */
 .midway-waterside {
   position: absolute;
@@ -2355,18 +2355,17 @@ body[data-photo='on'] .midway > :not(.midway-map, .midway-panels, .photo-frame-o
   pointer-events: none;
 }
 
-/* The chime stones sit far from the docks and every booth, so this never overlaps the ferry panel. */
+/* Stacks between the way back and the ferry's panels in .midway-waterside. */
 .midway-stones {
-  bottom: 16px;
-  left: 50%;
+  position: static;
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: center;
-  max-width: min(460px, calc(100% - 32px));
+  max-width: min(460px, 100%);
   padding: 6px 10px;
   font-size: 14px;
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .midway-stones[hidden] {
