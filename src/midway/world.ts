@@ -80,6 +80,11 @@ const AVENUE_X = 11;
 const FIRST_ROW_Y = 9;
 const ROW_SPACING = 3;
 const MIN_ROWS = 2;
+/**
+ * Rows of open ground between the plaza by the carousel and the gate, so the
+ * light garden has an apron that the entrance arch never stands in front of.
+ */
+const GARDEN_APRON = 5;
 
 /** Small seeded random numbers, for anything that should look random but stay put. */
 export function seededRandom(seed: number): () => number {
@@ -104,7 +109,7 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   const avenueEnd = FIRST_ROW_Y + rows * ROW_SPACING;
   const entrance = avenueEnd + 2;
   const width = MAP_WIDTH;
-  const height = entrance + 6;
+  const height = entrance + 6 + GARDEN_APRON;
   const ground: Ground[] = new Array(width * height).fill('grass');
   const blocked: boolean[] = new Array(width * height).fill(false);
 

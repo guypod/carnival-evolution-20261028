@@ -488,7 +488,7 @@ function renderMidway() {
             <button type="button" class="scene-toggle" aria-pressed="false"></button>
             <details class="light-garden">
               <summary>🏮 Light garden</summary>
-              <p class="note">Hang up to 8 lanterns and 6 garlands on the patch at the foot of the entrance path. They light the map in lantern evening.</p>
+              <p class="note">Hang up to 8 lanterns and 6 garlands on the patch just inside the entrance, right of the path. They light the map in lantern evening.</p>
               <button type="button" class="light-garden-edit" aria-pressed="false">Edit on the map</button>
               <p class="note">While editing, a click on the patch hangs a lantern on an empty cell or picks a lantern. Picking a second lantern strings a garland to it. Clicks on the map never walk or open anything until you press Done or Escape.</p>
               <form class="light-garden-place">
