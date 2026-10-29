@@ -2181,3 +2181,61 @@ kbd {
 .light-garden-edit[aria-pressed='true'] {
   outline: 2px solid var(--color-accent);
 }
+
+/* Photo mode hides the midway's panels on purpose; the map, the zoom buttons
+   and the photo panel stay. */
+body[data-photo='on'] .midway-help,
+body[data-photo='on'] .midway-credit,
+body[data-photo='on'] .midway-panels > :not(.midway-view, .photo-mode, .midway-toggles),
+body[data-photo='on'] .midway-toggles > :not(.photo-toggle),
+body[data-photo='on'] .midway > :not(.midway-map, .midway-panels, .photo-frame-outline) {
+  display: none !important;
+}
+
+.photo-mode {
+  max-width: 300px;
+  padding: 10px 12px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  font-size: 14px;
+}
+
+.photo-mode[hidden],
+.photo-frame-outline[hidden],
+.photo-preview[hidden] {
+  display: none;
+}
+
+.photo-mode h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.photo-frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 8px 0;
+}
+
+.photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.photo-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  margin-top: 8px;
+  border: 2px solid var(--color-text);
+}
+
+.photo-frame-outline {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px dashed var(--color-text);
+  pointer-events: none;
+}
