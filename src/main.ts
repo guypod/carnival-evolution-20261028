@@ -1,6 +1,8 @@
 import './style.css';
 import { applyTheme, bestScore, onScoreRecorded, type CarnivalGame } from './carnival';
 import { registry } from './games';
+import { startFair } from './fair/view';
+import { browserFairStorage } from './fair/fair';
 import { onEscapeKey } from './escape';
 import {
   CLOSED_GUIDE,
@@ -197,6 +199,7 @@ function renderMidway() {
             <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
             <a class="records-link" href="#/records">📜 Hall of Records</a>
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
+            <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </nav>
           <section class="midway-visit" aria-label="Choose my visit" data-guide-section="visit">
@@ -1433,6 +1436,26 @@ function renderGame(game: CarnivalGame) {
   };
 }
 
+function renderFair() {
+  document.body.dataset.view = 'fair';
+  app.innerHTML = `
+    <section class="fair" aria-labelledby="fair-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="fair-title" tabindex="-1">Run Your Own Fair</h1>
+      </div>
+      <div class="fair-body"></div>
+      <p class="note">Your plaza is kept in this browser only. Resetting it never touches scores or other progress.</p>
+    </section>`;
+  const stopFair = startFair(app.querySelector<HTMLElement>('.fair-body')!, browserFairStorage());
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    stopFair();
+  };
+}
+
 function route() {
   stop?.();
   stop = undefined;
@@ -1449,6 +1472,7 @@ function route() {
   else if (location.hash === '#/records') renderRecords();
   else if (location.hash === '#/booths') renderBooths();
   else if (location.hash === '#/postcard') renderPostcard();
+  else if (location.hash === '#/fair') renderFair();
   else renderMidway();
 }
 
