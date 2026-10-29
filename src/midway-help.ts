@@ -41,6 +41,11 @@ export const HELP_CONTROLS: HelpControl[] = [
     action:
       'At a waterside dock: board the ferry, cast off, call it over, or hurry a crossing to its dock. Walking steps off at a dock.',
   },
+  {
+    keys: ['C', 'Play call', 'Stone buttons'],
+    action:
+      'At the chime stones south of the ferry dock: play their call, then answer it by stepping on, tapping or pressing the stones in order. No score and no timer.',
+  },
   { keys: ['Esc'], action: 'Leave a game or a guide page and come back to the midway.' },
 ];
 

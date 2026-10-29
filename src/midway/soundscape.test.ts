@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CHIME_LENGTH,
+  MAX_CHIME_NOTES,
   createSoundscape,
   MAX_SOUNDSCAPE_GAIN,
   SOUNDSCAPE_TONES,
@@ -151,5 +153,109 @@ describe('soundToggleState', () => {
     await Promise.resolve();
     expect(fake.context.state).toBe('suspended');
     expect(sound.isPlaying()).toBe(false);
+  });
+});
+
+describe('chime notes', () => {
+  const tones = [392, 440, 523.25, 659.25];
+  const chimeOscillators = (fake: ReturnType<typeof fakeContext>) =>
+    fake.oscillators.slice(SOUNDSCAPE_TONES.length);
+
+  it('makes no sound and touches no audio while the midway sound is off', () => {
+    const create = vi.fn();
+    const sound = createSoundscape(create);
+    sound.chime(tones, 0.7);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('rings each note once, spaced out, through the hum’s volume', () => {
+    const fake = fakeContext();
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.chime(tones, 0.7);
+    const notes = chimeOscillators(fake);
+    expect(notes.map((o) => o.frequency.value)).toEqual(tones);
+    expect(vi.mocked(notes[2].start).mock.calls[0][0]).toBeCloseTo(1.4);
+    expect(vi.mocked(notes[2].stop).mock.calls[0][0]).toBeCloseTo(1.4 + CHIME_LENGTH);
+    // Every note goes through the master gain, so the slider and mute reach it.
+    const master = fake.gains[0];
+    for (const gain of fake.gains.slice(1)) expect(gain.connect).toHaveBeenCalledWith(master);
+  });
+
+  it('stops every pending and sounding note on mute, and rings none after', () => {
+    const fake = fakeContext();
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.chime(tones, 0.7);
+    sound.stop();
+    for (const note of chimeOscillators(fake)) expect(note.stop).toHaveBeenLastCalledWith();
+    const before = fake.oscillators.length;
+    sound.chime(tones, 0.7);
+    expect(fake.oscillators).toHaveLength(before);
+  });
+
+  it('stops pending notes and rings none after the midway closes', () => {
+    const fake = fakeContext();
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.chime(tones, 0.7);
+    sound.dispose();
+    for (const note of chimeOscillators(fake)) expect(note.stop).toHaveBeenLastCalledWith();
+    const before = fake.oscillators.length;
+    sound.chime(tones, 0.7);
+    expect(fake.oscillators).toHaveLength(before);
+    expect(fake.context.close).toHaveBeenCalled();
+  });
+
+  it('keeps overlapping notes to a few, stopping the oldest first', () => {
+    const fake = fakeContext();
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    for (let i = 0; i < 5; i++) sound.chime(tones, 0.7);
+    const notes = chimeOscillators(fake);
+    const live = notes.filter((o) => vi.mocked(o.stop).mock.calls.length === 1);
+    expect(live).toHaveLength(MAX_CHIME_NOTES);
+    expect(live).toEqual(notes.slice(-MAX_CHIME_NOTES));
+  });
+
+  it('rings nothing once a refused resume has stopped the sound', async () => {
+    const fake = fakeContext();
+    fake.context.resume.mockImplementationOnce(async () => {
+      throw new Error('blocked');
+    });
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.chime(tones, 0.7);
+    await Promise.resolve();
+    await Promise.resolve();
+    for (const note of chimeOscillators(fake)) expect(note.stop).toHaveBeenLastCalledWith();
+    const before = fake.oscillators.length;
+    sound.chime(tones, 0.7);
+    expect(fake.oscillators).toHaveLength(before);
+  });
+
+  it('stays suspended when a late resume lands after a mute that cut notes off', async () => {
+    const fake = fakeContext();
+    let finishResume = () => {};
+    fake.context.resume.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finishResume = () => {
+            fake.context.state = 'running';
+            resolve(undefined);
+          };
+        }),
+    );
+    const sound = createSoundscape(() => fake.context);
+    sound.start();
+    sound.chime(tones, 0.7);
+    sound.stop();
+    finishResume();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fake.context.state).toBe('suspended');
+    const before = fake.oscillators.length;
+    sound.chime(tones, 0.7);
+    expect(fake.oscillators).toHaveLength(before);
   });
 });

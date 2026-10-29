@@ -1,5 +1,6 @@
 import { canvasFont, theme } from '../carnival';
 import { gardenLights, palette, waterside } from './palette';
+import type { StoneShape } from './stepping-stones';
 import {
   CART_KINDS,
   toScreen,
@@ -2280,10 +2281,17 @@ export function drawPinwheel(
 }
 
 /**
- * One chime stone, flat on the promenade at `p`. `glow` from 0 to 1 lights a
- * soft ring over it; it only ever fades, so quiet mode draws it the same way.
+ * One chime stone, flat on the promenade at `p`, marked with its `shape` so it
+ * never depends on colour. `glow` from 0 to 1 lights a soft ring over it.
+ * `order`, in quiet mode, numbers the stone's place in the call beside it.
  */
-export function drawChimeStone(ctx: Ctx, p: { x: number; y: number }, glow: number) {
+export function drawChimeStone(
+  ctx: Ctx,
+  p: { x: number; y: number },
+  glow: number,
+  shape: StoneShape,
+  order?: number,
+) {
   ctx.fillStyle = palette.shadow;
   ctx.beginPath();
   ctx.ellipse(p.x, p.y + 1.5, 11, 5.5, 0, 0, Math.PI * 2);
@@ -2292,7 +2300,24 @@ export function drawChimeStone(ctx: Ctx, p: { x: number; y: number }, glow: numb
   ctx.beginPath();
   ctx.ellipse(p.x, p.y, 10, 5, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (glow <= 0) return;
+  if (glow > 0) drawStoneGlow(ctx, p, glow);
+  drawStoneMark(ctx, p, shape);
+  if (order === undefined) return;
+  ctx.save();
+  ctx.translate(p.x + 12, p.y - 8);
+  ctx.fillStyle = palette.ink;
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = canvasFont('small', 'bold');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = palette.white;
+  ctx.fillText(String(order), 0, 0.5);
+  ctx.restore();
+}
+
+function drawStoneGlow(ctx: Ctx, p: { x: number; y: number }, glow: number) {
   ctx.save();
   ctx.globalAlpha = glow;
   ctx.fillStyle = gardenLights.coolGlow;
@@ -2302,6 +2327,30 @@ export function drawChimeStone(ctx: Ctx, p: { x: number; y: number }, glow: numb
   ctx.fillStyle = gardenLights.cool;
   ctx.beginPath();
   ctx.ellipse(p.x, p.y, 7, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** The flat shape carved into a chime stone, squashed to lie on the ground. */
+function drawStoneMark(ctx: Ctx, p: { x: number; y: number }, shape: StoneShape) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.scale(1, 0.5);
+  ctx.fillStyle = palette.ink;
+  ctx.beginPath();
+  if (shape === 'circle') ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+  else if (shape === 'square') ctx.rect(-3.2, -3.2, 6.4, 6.4);
+  else if (shape === 'triangle') {
+    ctx.moveTo(0, -4.2);
+    ctx.lineTo(4, 3);
+    ctx.lineTo(-4, 3);
+  } else {
+    ctx.moveTo(0, -4.5);
+    ctx.lineTo(4, 0);
+    ctx.lineTo(0, 4.5);
+    ctx.lineTo(-4, 0);
+  }
+  ctx.closePath();
   ctx.fill();
   ctx.restore();
 }

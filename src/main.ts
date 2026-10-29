@@ -142,6 +142,7 @@ import {
   soundToggleState,
   type SoundContext,
 } from './midway/soundscape';
+import { STONE_MARKS, STONE_NAMES } from './midway/stepping-stones';
 import { routeMessage, type RouteState } from './midway/route';
 import {
   POSTCARD_MESSAGES,
@@ -535,7 +536,7 @@ function renderMidway() {
             <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
             <button type="button" class="sound-toggle" aria-pressed="false" aria-describedby="sound-note"></button>
             <label class="sound-volume">Volume <input type="range" min="0" max="1" step="0.05" value="${DEFAULT_SOUNDSCAPE_VOLUME}" /></label>
-            <p class="note" id="sound-note">A soft hum made in your browser. Starts off, stops when you leave the midway or hide the page. Nothing on the map depends on it.</p>
+            <p class="note" id="sound-note">A soft hum made in your browser, and soft notes from the chime stones by the water. Starts off, stops when you leave the midway or hide the page. Nothing on the map depends on it.</p>
   <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </section>
         </div>
@@ -548,6 +549,13 @@ function renderMidway() {
       <div class="midway-ferry" role="group" aria-label="Ferry" hidden>
         <p class="message" role="status" aria-live="polite"></p>
         <div class="actions"></div>
+      </div>
+      <div class="midway-stones" role="group" aria-label="Chime stones" hidden>
+        <p class="message" role="status" aria-live="polite"></p>
+        <div class="actions">
+          <button type="button" class="stones-call">Play call</button>
+        </div>
+        <p class="note">Notes ring only with Midway sound on in Settings.</p>
       </div>
       <section class="mystery-card" aria-labelledby="mystery-card-title" hidden>
         <h2 id="mystery-card-title"></h2>
@@ -616,6 +624,7 @@ function renderMidway() {
     link.textContent = 'Enter';
   };
 
+  const sound = setUpSound();
   const midway = startMidway(app.querySelector('canvas')!, {
     games: registry.all(),
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
@@ -635,8 +644,11 @@ function renderMidway() {
     onRoute: (route) => routeStatus.show(route),
     onLocate: (message) => (locateStatus.textContent = message ?? ''),
     onFerry: (message, requests) => ferryPanel.show(message, requests),
+    onStones: (status) => stonesPanel.show(status),
+    onChime: (tones, spacing) => sound.chime(tones, spacing),
   });
   const ferryPanel = setUpFerry((request) => midway.ferry(request));
+  const stonesPanel = setUpStones(midway.stones);
   const locateStatus = app.querySelector<HTMLElement>('.locate-status')!;
   // Escape hides the locate ring first, while it shows; then panels get the key.
   // Capture listeners on window run in the order they were added, so this one
@@ -653,7 +665,7 @@ function renderMidway() {
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   app.querySelector('.view-locate')!.addEventListener('click', midway.locate);
-  const stopSound = setUpSound();
+  const stopSound = sound.stop;
   // The card's Enter link goes in the same way as E or a click on the gateway,
   // so coming back still puts you beside it.
   card.querySelector('.play')!.addEventListener('click', (event) => {
@@ -885,6 +897,33 @@ function setUpFerry(request: (request: FerryRequest) => void) {
       );
       // A button that went away must not drop focus to the page.
       if (hadFocus) app.querySelector<HTMLElement>('.midway-map')?.focus();
+    },
+  };
+}
+
+// The chime stones' panel: the call and answer in words, a Play call button
+// and a labelled button for each stone, so the stones work without seeing the
+// glow or walking onto them. It shows only while the player stands by them.
+function setUpStones(press: (input: 'call' | number) => void) {
+  const box = app.querySelector<HTMLElement>('.midway-stones')!;
+  const message = box.querySelector<HTMLElement>('.message')!;
+  const actions = box.querySelector<HTMLElement>('.actions')!;
+  box.querySelector('.stones-call')!.addEventListener('click', () => press('call'));
+  STONE_NAMES.forEach((name, i) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `${STONE_MARKS[i]} ${name}`;
+    button.setAttribute('aria-label', `${name} stone`);
+    button.addEventListener('click', () => press(i));
+    actions.append(button);
+  });
+  return {
+    show(status: string | undefined) {
+      const hadFocus = box.contains(document.activeElement);
+      box.hidden = status === undefined;
+      message.textContent = status ?? '';
+      // A panel that went away must not drop focus to the page.
+      if (hadFocus && box.hidden) app.querySelector<HTMLElement>('.midway-map')?.focus();
     },
   };
 }
@@ -1479,7 +1518,7 @@ function setUpMotionToggle(setMotion: (preference: MotionPreference) => void) {
 // The opt-in soundscape. It starts off on every visit and only a click starts
 // it, so the browser's autoplay rules always hold. Hiding the page or leaving
 // the midway stops it; the choice is not remembered.
-function setUpSound(): () => void {
+function setUpSound() {
   const button = app.querySelector<HTMLButtonElement>('.sound-toggle')!;
   const slider = app.querySelector<HTMLInputElement>('.sound-volume input')!;
   const sound = createSoundscape(
@@ -1510,9 +1549,12 @@ function setUpSound(): () => void {
   };
   document.addEventListener('visibilitychange', onVisibility);
   show();
-  return () => {
-    document.removeEventListener('visibilitychange', onVisibility);
-    sound.dispose();
+  return {
+    chime: sound.chime,
+    stop() {
+      document.removeEventListener('visibilitychange', onVisibility);
+      sound.dispose();
+    },
   };
 }
 
