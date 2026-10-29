@@ -1769,3 +1769,27 @@ kbd {
   max-width: 100%;
   border-radius: var(--radius);
 }
+
+.finale-mystery {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.finale-mystery h3,
+.finale-mystery p {
+  margin: 0;
+}
+
+.finale-mystery .mystery-body {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.finale-mystery .npc {
+  font-style: italic;
+}
+
+.finale-mystery .ending {
+  font-weight: bold;
+}

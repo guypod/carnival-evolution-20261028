@@ -102,6 +102,20 @@ import {
   type LandmarkId,
 } from './midway/discovery';
 import {
+  canChoose,
+  CLUE_ORDER,
+  CLUES,
+  ENDINGS,
+  mysteryEnding,
+  mysteryStatus,
+  mysteryStep,
+  mysteryStore,
+  NPC_NAMES,
+  npcLine,
+  RETHINK_HINT,
+  type MysteryAction,
+} from './finale-mystery';
+import {
   CLOSED_STORY,
   closeStory,
   escapeStory,
@@ -244,6 +258,12 @@ function renderMidway() {
               <p class="revisit"></p>
               <button type="button" class="story-close">Back to the trail</button>
             </section>
+            <section class="finale-mystery" aria-labelledby="finale-mystery-title">
+              <h3 id="finale-mystery-title">🎟️ The missing finale ticket</h3>
+              <p class="mystery-status" role="status"></p>
+              <div class="mystery-body"></div>
+              <p class="note">Walk up to a landmark on the map or use the buttons here: both count. Kept in this browser only, apart from scores.</p>
+            </section>
             <p class="note">Optional, and separate from scores and stamps. Kept in this browser only.</p>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </section>
@@ -343,12 +363,17 @@ function renderMidway() {
     onFairGate: () => (location.hash = '#/fair'),
     onFairGateReach: showFairGate,
     scene: scenePreference.load(),
-    onLandmark: (landmark) => discovery.found(landmark),
+    onLandmark: (landmark) => {
+      discovery.found(landmark);
+      const note = mystery.visit(landmark.id);
+      if (note) discovery.note(note);
+    },
     motion: motionPreference.load(),
     onRoute: (route) => routeStatus.show(route),
   });
   const routeStatus = setUpRoute(midway.cancelWalk);
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
+  const mystery = setUpMystery(midway.landmarks);
   setUpVisit(midway.walkTo, midway.walkToLandmark);
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
@@ -374,6 +399,7 @@ function renderMidway() {
     tour.stop();
     routeStatus.stop();
     discovery.stop();
+    mystery.stop();
     stopHelp();
     stopGuide();
     midway.stop();
@@ -548,11 +574,90 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
           : `You found the ${landmark.name}! ${discoveryProgress(landmarks, found)}.`,
       );
     },
+    /** Adds a line to the note on screen, or shows it on its own. */
+    note(text: string) {
+      showToast(toast.hidden ? text : `${toast.textContent} ${text}`);
+    },
     stop() {
       window.clearTimeout(hideToast);
       hint.removeEventListener('click', onHint);
       window.removeEventListener('keydown', onKeyDown, true);
       card.removeEventListener('keydown', onCardKeyDown);
+    },
+  };
+}
+
+// The missing finale ticket: one state machine for walking up to landmarks
+// and for the buttons in the guide. Every word is set with textContent.
+function setUpMystery(landmarks: readonly Landmark[]) {
+  const section = app.querySelector<HTMLElement>('.finale-mystery')!;
+  const body = section.querySelector<HTMLElement>('.mystery-body')!;
+  let state = mysteryStore.load();
+  const nameOf = (id: LandmarkId) => landmarks.find((l) => l.id === id)?.name ?? id;
+
+  const para = (text: string, className?: string) => {
+    const p = document.createElement('p');
+    if (className) p.className = className;
+    p.textContent = text;
+    body.append(p);
+  };
+  const button = (text: string, action: MysteryAction) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.addEventListener('click', () => step(action, true));
+    body.append(b);
+  };
+
+  const render = () => {
+    section.querySelector('.mystery-status')!.textContent = mysteryStatus(state);
+    body.replaceChildren();
+    para(npcLine(state, 'mara'), 'npc');
+    if (!state.started) {
+      button('Offer to help Mara', { type: 'start' });
+      return;
+    }
+    if (state.clues.includes('carousel')) para(npcLine(state, 'otto'), 'npc');
+    for (const id of state.clues) para(`${CLUES[id].title}: ${CLUES[id].text}`);
+    const ending = mysteryEnding(state);
+    if (ending) {
+      para(`${ENDINGS[ending].title}. ${ENDINGS[ending].text}`, 'ending');
+      button('Start the mystery again', { type: 'restart' });
+      return;
+    }
+    for (const id of CLUE_ORDER) {
+      if (!state.clues.includes(id))
+        button(`Look around the ${nameOf(id)}`, { type: 'inspect', at: id });
+    }
+    if (canChoose(state)) {
+      if (state.rethought) para(RETHINK_HINT);
+      button(`Trust ${NPC_NAMES.mara}`, { type: 'trust', npc: 'mara' });
+      button(`Trust ${NPC_NAMES.otto}`, { type: 'trust', npc: 'otto' });
+      if (!state.rethought) button('I\u2019m not sure yet', { type: 'unsure' });
+    }
+  };
+
+  const step = (action: MysteryAction, fromGuide: boolean) => {
+    // Read the saved progress again first, so another tab's steps are kept.
+    const next = mysteryStep(mysteryStore.load(), action);
+    if (next === state && !fromGuide) return;
+    state = next;
+    mysteryStore.save(state);
+    render();
+    if (fromGuide) section.querySelector<HTMLElement>('.mystery-body button')?.focus();
+  };
+
+  render();
+  return {
+    /** Walking up to a landmark on the map: Mara's booth starts it, any landmark gives its clue. */
+    visit(id: LandmarkId): string | undefined {
+      const before = state;
+      if (id === 'entrance') step({ type: 'start' }, false);
+      step({ type: 'inspect', at: id }, false);
+      return state === before ? undefined : `🎟️ Finale ticket: ${mysteryStatus(state)}`;
+    },
+    stop() {
+      body.replaceChildren();
     },
   };
 }
