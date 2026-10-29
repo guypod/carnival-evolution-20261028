@@ -271,7 +271,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
    * The pinwheel garden on the grass left of the entrance path, on the row by
    * the hedge and far enough left that the ticket booth never covers it. See pinwheels.ts.
    */
-  /** The light garden's patch, at the foot of the entrance path. See light-garden.ts. */
+  /** The light garden's patch, on the apron just inside the gate. See light-garden.ts. */
   const lightPatch = gardenPatch(map);
   const lightOrigin = { x: lightPatch.x, y: lightPatch.y };
   let lightDesign = lightGardenStore.load();

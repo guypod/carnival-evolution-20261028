@@ -1748,10 +1748,48 @@ export function archBounds(map: MidwayMap): Box {
   return { left: left.x, right: right.x, top: right.y - ARCH_HEIGHT - 26, bottom: left.y };
 }
 
-export function drawArch(ctx: Ctx, map: MidwayMap, t: number) {
+/** Where the arch's posts stand, and the point its sign is centred on. */
+function archFrame(map: MidwayMap) {
   const y = map.height - 0.75;
   const left = map.avenueX + ARCH_LEFT;
   const right = map.avenueX + ARCH_RIGHT;
+  return { y, left, right, centre: at((left + right + 0.26) / 2, y, ARCH_HEIGHT + 2) };
+}
+
+/**
+ * The outlines the arch paints on screen, in world pixels: each post, each
+ * post's flag, and the sign with its crest and lights on their slanted plane.
+ * The arch is drawn over everything else, so whatever lies inside these is hidden.
+ */
+export function archSilhouette(map: MidwayMap): Point[][] {
+  const { y, left, right, centre } = archFrame(map);
+  const pt = ([x, py]: Pt): Point => ({ x, y: py });
+  const shapes: Point[][] = [];
+  for (const px of [left, right]) {
+    shapes.push(
+      [
+        at(px, y + 0.11),
+        at(px + 0.26, y + 0.11),
+        at(px + 0.26, y - 0.15),
+        at(px + 0.26, y - 0.15, ARCH_HEIGHT),
+        at(px, y - 0.15, ARCH_HEIGHT),
+        at(px, y + 0.11, ARCH_HEIGHT),
+      ].map(pt),
+    );
+    const [fx, fy] = at(px + 0.13, y - 0.02, ARCH_HEIGHT);
+    shapes.push([pt([fx, fy]), pt([fx + 12, fy]), pt([fx + 12, fy - 17]), pt([fx, fy - 17])]);
+  }
+  // The sign's plane, as onPlane maps it: the board, the crest above, the lights below.
+  const plane = (lx: number, ly: number): Point => ({
+    x: centre[0] + 0.894 * lx,
+    y: centre[1] + 0.447 * lx + ly,
+  });
+  shapes.push([plane(-48, -24), plane(48, -24), plane(48, 16), plane(-48, 16)]);
+  return shapes;
+}
+
+export function drawArch(ctx: Ctx, map: MidwayMap, t: number) {
+  const { y, left, right, centre } = archFrame(map);
   for (const px of [left, right])
     box(
       ctx,
@@ -1765,7 +1803,6 @@ export function drawArch(ctx: Ctx, map: MidwayMap, t: number) {
       palette.wood,
       palette.woodDark,
     );
-  const centre = at((left + right + 0.26) / 2, y, ARCH_HEIGHT + 2);
   onPlane(ctx, centre, () => {
     ctx.fillStyle = palette.gold;
     ctx.beginPath();

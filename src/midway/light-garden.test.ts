@@ -18,9 +18,10 @@ import {
   starterDesign,
   undo,
 } from './light-garden';
-import { boothBounds, propBounds } from './render';
+import { archSilhouette, boothBounds, propBounds } from './render';
 import { trailLandmarks } from './discovery';
-import { canStand, layoutMidway, toScreen, toTile } from './world';
+import { canStand, layoutMidway, toScreen, toTile, type Point } from './world';
+import { VIEW_SCALES } from './view';
 import { registry } from '../games';
 
 const empty = () => createLightGarden({ lanterns: [], garlands: [] });
@@ -147,6 +148,98 @@ describe('where the garden lies on the midway', () => {
           `column ${col + 1}, row ${row + 1}`,
         ).toEqual([]);
       }
+    }
+  });
+
+  // Everything the renderer can paint for the garden, in world pixels: each
+  // lantern's dot 10 pixels up with a margin wider than its selection ring,
+  // and points along a garland between every pair of cells, since any two
+  // lanterns can be joined.
+  const RING = 8;
+  const painted = (p: ReturnType<typeof gardenPatch>) => {
+    const points: { at: Point; what: string }[] = [];
+    const centre = (c: { col: number; row: number }) =>
+      toScreen(p.x + c.col + 0.5, p.y + c.row + 0.5);
+    for (const cell of cells) {
+      const c = centre(cell);
+      const what = `lantern at column ${cell.col + 1}, row ${cell.row + 1}`;
+      points.push({ at: c, what });
+      for (const [dx, dy] of [
+        [0, 0],
+        [RING, 0],
+        [-RING, 0],
+        [0, RING],
+        [0, -RING],
+      ])
+        points.push({ at: { x: c.x + dx, y: c.y - 10 + dy }, what });
+    }
+    for (const a of cells) {
+      for (const b of cells) {
+        const from = centre(a);
+        const to = centre(b);
+        for (let s = 0; s <= 1; s += 0.125) {
+          points.push({
+            at: { x: from.x + (to.x - from.x) * s, y: from.y + (to.y - from.y) * s - 10 },
+            what: `garland from column ${a.col + 1}, row ${a.row + 1} to column ${b.col + 1}, row ${b.row + 1}`,
+          });
+        }
+      }
+    }
+    return points;
+  };
+  const inside = (point: Point, shape: readonly Point[]) => {
+    let hit = false;
+    for (let i = 0, j = shape.length - 1; i < shape.length; j = i++) {
+      const a = shape[i];
+      const b = shape[j];
+      if (
+        a.y > point.y !== b.y > point.y &&
+        point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
+      )
+        hit = !hit;
+    }
+    return hit;
+  };
+
+  it('keeps every cell and every possible garland clear of the entrance arch on screen', () => {
+    // Zoom scales the whole world uniformly, so clear in world pixels is clear
+    // at every step in VIEW_SCALES; this checks each step's scaled geometry too.
+    for (const scale of VIEW_SCALES) {
+      const zoomed = (q: Point) => ({ x: q.x * scale, y: q.y * scale });
+      const arch = archSilhouette(map).map((shape) => shape.map(zoomed));
+      const hidden = painted(patch)
+        .filter(({ at }) => arch.some((shape) => inside(zoomed(at), shape)))
+        .map(({ what }) => what);
+      expect([...new Set(hidden)], `zoom ${scale}`).toEqual([]);
+    }
+  });
+
+  it('would catch the arch hiding the old patch, so the check is real', () => {
+    const old = { x: map.avenueX - 2, y: map.height - 10, w: GARDEN_COLUMNS, h: GARDEN_ROWS };
+    const arch = archSilhouette({ ...map, height: map.height - 4 });
+    const hidden = painted(old).filter(({ at }) => arch.some((shape) => inside(at, shape)));
+    expect(hidden.map((h) => h.what)).toContain('lantern at column 1, row 2');
+  });
+
+  it('keeps every lantern and garland clear of the arch, booths and props, however many games there are', () => {
+    for (const count of [0, 4, 9, 12, 20]) {
+      const ids = Array.from({ length: count }, (_, i) => `game-${i}`);
+      const grown = layoutMidway(ids);
+      const where = gardenPatch(grown);
+      const arch = archSilhouette(grown);
+      const shapes = [
+        ...grown.booths.map((b) => ({ name: `booth ${b.index}`, box: boothBounds(b) })),
+        ...grown.props.map((p) => ({ name: p.kind, box: propBounds(p) })),
+      ];
+      const over = new Set<string>();
+      for (const { at, what } of painted(where)) {
+        if (arch.some((shape) => inside(at, shape))) over.add(`arch over ${what}`);
+        for (const { name, box } of shapes) {
+          if (at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom)
+            over.add(`${name} over ${what}`);
+        }
+      }
+      expect([...over], `${count} games`).toEqual([]);
     }
   });
 
