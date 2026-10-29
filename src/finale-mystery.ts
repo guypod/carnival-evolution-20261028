@@ -1,148 +1,314 @@
 import type { LandmarkId } from './midway/discovery';
+import type { LandmarkDetail } from './midway/render';
 
 /**
- * The missing finale ticket: a short, optional mystery across the three
- * discovery landmarks. Walking up to a landmark and pressing a button in the
- * Guide both go through `mysteryStep`, so the map and the text route share one
- * state machine. Progress is kept under its own key and never touches scores,
- * stamps or discovery finds. There is no timer and no wrong answer that ends it.
+ * The missing finale ticket: an optional mystery across the three discovery
+ * landmarks. At each landmark the player picks one of two ways to look into
+ * it, and what they learn decides which theories they can put to Mara and
+ * Otto, and which endings are open. Walking up to a landmark and pressing a
+ * button in the Guide both go through `mysteryStep`, so the map and the text
+ * route share one state machine. Progress is kept under its own key and never
+ * touches scores, stamps or discovery finds. There is no timer, and a wrong
+ * guess only sends the player back to look again.
  */
-export type MysteryClue = LandmarkId;
-export type MysteryEnding = 'returned' | 'gifted';
 export type MysteryNpc = 'mara' | 'otto';
+export type Approach = 'tin' | 'ledger' | 'star' | 'otto' | 'top' | 'log';
+export type Evidence = 'paint' | 'lamp' | 'bridle';
+export type Theory = 'stencil' | 'rescue' | 'wind';
+export type MysteryEnding = 'returned' | 'gifted' | 'shared';
 
 export interface MysteryState {
   started: boolean;
-  clues: MysteryClue[];
-  /** Whom the player trusts, once they choose. */
-  trusted?: MysteryNpc;
-  /** Set after "I'm not sure yet": an extra hint, then back to choosing. */
-  rethought: boolean;
+  /** How the player looked into each landmark, once they chose. */
+  approaches: Partial<Record<LandmarkId, Approach>>;
+  /** The theory Mara and Otto both accepted. */
+  theory?: Theory;
+  /** The last theory the evidence did not support, for the hint. */
+  misread?: Theory;
+  ending?: MysteryEnding;
 }
 
-export const NEW_MYSTERY: MysteryState = { started: false, clues: [], rethought: false };
+export const NEW_MYSTERY: MysteryState = { started: false, approaches: {} };
 
 export type MysteryAction =
   | { type: 'start' }
-  | { type: 'inspect'; at: LandmarkId }
-  | { type: 'trust'; npc: MysteryNpc }
-  | { type: 'unsure' }
+  | { type: 'investigate'; at: LandmarkId; approach: Approach }
+  | { type: 'look-again'; at: LandmarkId }
+  | { type: 'theorize'; theory: Theory }
+  | { type: 'resolve'; ending: MysteryEnding }
   | { type: 'restart' };
 
-export const CLUE_ORDER: MysteryClue[] = ['entrance', 'carousel', 'ferris-wheel'];
+export const LANDMARK_ORDER: LandmarkId[] = ['entrance', 'carousel', 'ferris-wheel'];
 
 export const NPC_NAMES: Record<MysteryNpc, string> = {
   mara: 'Mara, the ticket seller',
   otto: 'Otto, the carousel keeper',
 };
 
-export const CLUES: Record<MysteryClue, { title: string; text: string }> = {
-  entrance: {
-    title: 'The empty tin',
-    text: 'The finale ticket tin at the Ticket booth is empty. A thumbprint of gold paint is on the lid.',
+export interface ApproachInfo {
+  at: LandmarkId;
+  label: string;
+  title: string;
+  text: string;
+  evidence: Evidence[];
+}
+
+export const APPROACHES: Record<Approach, ApproachInfo> = {
+  tin: {
+    at: 'entrance',
+    label: 'Examine the empty tin',
+    title: 'The painted tin',
+    text: 'The finale ticket tin is empty. A thumbprint of wet gold paint is on the lid.',
+    evidence: ['paint'],
   },
-  carousel: {
+  ledger: {
+    at: 'entrance',
+    label: 'Ask Mara about last night',
+    title: 'Mara’s confession',
+    text: 'Mara admits her booth lamp went out at nine, and she left the counter to find oil.',
+    evidence: ['lamp'],
+  },
+  star: {
+    at: 'carousel',
+    label: 'Look closely at the star horse',
     title: 'The fresh star',
-    text: 'The star on the carousel horse is still tacky. Beside it, a ticket-shaped patch of saddle has no paint at all.',
+    text: 'The gold star on the lead horse is still tacky. Beside it is a ticket-shaped patch with no paint at all.',
+    evidence: ['paint'],
   },
-  'ferris-wheel': {
-    title: 'The view from the top car',
-    text: 'From the top car you can see a paper rectangle tucked into the carousel horse’s bridle, not blowing about anywhere.',
+  otto: {
+    at: 'carousel',
+    label: 'Ask Otto what he saw',
+    title: 'Otto’s story',
+    text: 'Otto says he saw the booth go dark and walked over with his oil can. A ticket was on the step.',
+    evidence: ['lamp'],
+  },
+  top: {
+    at: 'ferris-wheel',
+    label: 'Ride to the top car',
+    title: 'The view from the top',
+    text: 'From the top car you can see a gold paper tucked into the lead horse’s bridle, not blowing about anywhere.',
+    evidence: ['bridle'],
+  },
+  log: {
+    at: 'ferris-wheel',
+    label: 'Read the operator’s log',
+    title: 'The operator’s log',
+    text: 'The log says: “9 pm, Ticket booth lamp out. Otto went over with oil.”',
+    evidence: ['lamp'],
   },
 };
+
+/** The two ways to look into each landmark. */
+export function approachesAt(at: LandmarkId): Approach[] {
+  return (Object.keys(APPROACHES) as Approach[]).filter((a) => APPROACHES[a].at === at);
+}
+
+export const THEORIES: Record<Theory, { label: string; needs?: Evidence }> = {
+  stencil: { label: 'Otto borrowed the ticket as a stencil for his star', needs: 'paint' },
+  rescue: { label: 'Otto picked it up to keep it safe while the lamp was out', needs: 'lamp' },
+  wind: { label: 'The wind blew it away' },
+};
+
+export const ENDINGS: Record<MysteryEnding, { title: string; label: string; text: string }> = {
+  returned: {
+    title: 'Back in the tin',
+    label: 'Put the ticket back in Mara’s tin',
+    text: 'You fetch the ticket from the bridle and Mara sets it in the tin. Her booth lamp burns for the last visitor through the gate.',
+  },
+  gifted: {
+    title: 'The star horse ride',
+    label: 'Leave it in the bridle for the last rider',
+    text: 'The ticket stays in the bridle and Otto ties a red ribbon on the star horse. Whoever comes last rides it, no queue.',
+  },
+  shared: {
+    title: 'The lamp-lit finale',
+    label: 'Hang Mara’s lamp at the carousel with the ticket',
+    text: 'Mara carries her lamp to the carousel and Otto hangs the ticket beneath it. The finale starts where both of them can see it.',
+  },
+};
+
+/** Everything the player has learned so far. */
+export function evidenceOf(state: MysteryState): Evidence[] {
+  const found = new Set<Evidence>();
+  for (const id of LANDMARK_ORDER) {
+    const approach = state.approaches[id];
+    if (approach) APPROACHES[approach].evidence.forEach((e) => found.add(e));
+  }
+  return (['paint', 'lamp', 'bridle'] as Evidence[]).filter((e) => found.has(e));
+}
+
+export function supports(state: MysteryState, theory: Theory): boolean {
+  const needs = THEORIES[theory].needs;
+  return needs !== undefined && evidenceOf(state).includes(needs);
+}
+
+export function investigated(state: MysteryState): boolean {
+  return LANDMARK_ORDER.every((id) => state.approaches[id] !== undefined);
+}
+
+/** The theory can be put once every landmark has been looked into. */
+export function canTheorize(state: MysteryState): boolean {
+  return state.started && !state.theory && investigated(state);
+}
+
+/** The endings open for this theory. The shared one needs both paint and lamp. */
+export function openEndings(state: MysteryState): MysteryEnding[] {
+  if (!state.theory || state.ending) return [];
+  const evidence = evidenceOf(state);
+  const endings: MysteryEnding[] = ['returned', 'gifted'];
+  if (evidence.includes('paint') && evidence.includes('lamp')) endings.push('shared');
+  return endings;
+}
 
 /** One step of the mystery. Anything that does not fit the current state changes nothing. */
 export function mysteryStep(state: MysteryState, action: MysteryAction): MysteryState {
   switch (action.type) {
     case 'start':
       return state.started ? state : { ...state, started: true };
-    case 'inspect':
-      if (!state.started || state.trusted || state.clues.includes(action.at)) return state;
-      return {
-        ...state,
-        clues: CLUE_ORDER.filter((c) => c === action.at || state.clues.includes(c)),
-      };
-    case 'trust':
-      return canChoose(state) ? { ...state, trusted: action.npc } : state;
-    case 'unsure':
-      return canChoose(state) ? { ...state, rethought: true } : state;
+    case 'investigate': {
+      const info = APPROACHES[action.approach];
+      if (!info || info.at !== action.at) return state;
+      if (!state.started || state.theory || state.approaches[action.at]) return state;
+      return { ...state, approaches: { ...state.approaches, [action.at]: action.approach } };
+    }
+    case 'look-again': {
+      if (!state.started || state.theory || !state.approaches[action.at]) return state;
+      const approaches = { ...state.approaches };
+      delete approaches[action.at];
+      return { ...state, approaches };
+    }
+    case 'theorize':
+      if (!canTheorize(state)) return state;
+      if (!supports(state, action.theory)) {
+        return state.misread === action.theory ? state : { ...state, misread: action.theory };
+      }
+      return { started: true, approaches: state.approaches, theory: action.theory };
+    case 'resolve':
+      return openEndings(state).includes(action.ending)
+        ? { ...state, ending: action.ending }
+        : state;
     case 'restart':
       return NEW_MYSTERY;
   }
 }
 
-/** The choice opens once all three clues are seen, and stays open until made. */
-export function canChoose(state: MysteryState): boolean {
-  return state.started && !state.trusted && state.clues.length === CLUE_ORDER.length;
+/** Why a theory did not hold up, and where to look again. Never a dead end. */
+export function misreadHint(state: MysteryState): string | undefined {
+  if (!state.misread) return undefined;
+  const evidence = evidenceOf(state);
+  if (state.misread === 'wind')
+    return evidence.includes('bridle')
+      ? 'Otto laughs: “Blown away? You saw it yourself from the wheel, tucked in my bridle.” Try another theory.'
+      : 'Mara shakes her head: “There was no wind last night.” Try another theory, or look again somewhere.';
+  return state.misread === 'stencil'
+    ? 'Otto frowns: “Paint? What paint?” You have no sign of paint yet. The tin or the star horse might show some, if you look again.'
+    : 'Mara: “The lamp? Nobody said anything about my lamp.” Asking Mara, Otto or the wheel’s log might tell you more, if you look again.';
 }
 
-export function mysteryEnding(state: MysteryState): MysteryEnding | undefined {
-  if (!state.trusted) return undefined;
-  return state.trusted === 'mara' ? 'returned' : 'gifted';
-}
-
-/** What each NPC says now. Their words change with the clues and with whom you trusted. */
+/** What each NPC says now. Their words follow how you investigated, what you think and how it ended. */
 export function npcLine(state: MysteryState, npc: MysteryNpc): string {
-  const ending = mysteryEnding(state);
+  const a = state.approaches;
   if (npc === 'mara') {
     if (!state.started) return 'Mara keeps glancing at an empty tin behind the counter.';
-    if (ending === 'returned')
-      return 'Mara: “Back in its tin, where the last visitor will look for it. Thank you for believing me.”';
-    if (ending === 'gifted')
-      return 'Mara: “A free ride for the last visitor instead of a ticket? Fine. I’ll leave my lamp lit so they find the carousel.”';
-    if (state.clues.includes('carousel'))
-      return 'Mara: “Gold paint on my tin and on that horse? Otto borrowed it, I’m sure. It belongs at the gate.”';
+    switch (state.ending) {
+      case 'returned':
+        return 'Mara: “Back in its tin, where the last visitor will look. And my lamp stays lit tonight.”';
+      case 'gifted':
+        return 'Mara: “A free ride instead of a ticket? Fine. I’ll point the last visitor to the star horse.”';
+      case 'shared':
+        return 'Mara: “My lamp looks better on the carousel anyway. Don’t tell Otto I said so.”';
+    }
+    if (state.theory === 'stencil')
+      return 'Mara: “A stencil! He could have asked. Still, it’s a lovely star.”';
+    if (state.theory === 'rescue')
+      return 'Mara: “He kept it safe while I was off looking for oil? Then I owe Otto a thank you.”';
+    if (a.entrance === 'ledger')
+      return 'Mara: “I shouldn’t have left the counter. Please, find out where it went.”';
+    if (a.entrance === 'tin')
+      return 'Mara: “Gold paint on my tin? Somebody with painty fingers took it, I’m sure.”';
     return 'Mara: “The finale ticket is gone from my tin. Will you look around the midway for me?”';
   }
-  if (!state.clues.includes('carousel')) return 'Otto hums to himself and oils a carousel pole.';
-  if (ending === 'gifted')
-    return 'Otto: “The ticket stays in the bridle. Whoever comes last rides the star horse, no queue.”';
-  if (ending === 'returned')
-    return 'Otto: “Fair enough, it was Mara’s. I’ll paint the star free-hand next time.”';
-  return 'Otto: “I used it as a stencil for the star, then tucked it in the bridle so the last rider would find it. Is that so wrong?”';
+  if (!state.started || !a.carousel) return 'Otto hums to himself and oils a carousel pole.';
+  switch (state.ending) {
+    case 'returned':
+      return state.theory === 'stencil'
+        ? 'Otto: “Fair enough, it was Mara’s. I’ll paint the next star free-hand.”'
+        : 'Otto: “Back where it belongs. I’m glad I picked it up off that step.”';
+    case 'gifted':
+      return 'Otto: “Red ribbon on, star horse ready. The last rider goes round for free.”';
+    case 'shared':
+      return 'Otto: “Her lamp, my horses, one ticket. Best finale we’ve had.”';
+  }
+  if (state.theory === 'stencil')
+    return 'Otto: “Guilty. I traced round it for the star, then tucked it in the bridle. Is that so wrong?”';
+  if (state.theory === 'rescue')
+    return 'Otto: “It was on the step in the dark. I put it somewhere it wouldn’t blow off.”';
+  if (a.carousel === 'otto') return 'Otto: “Ask anyone, I only went over to help with the lamp.”';
+  return 'Otto: “Admiring my star? Took me all morning.” He doesn’t meet your eye.';
 }
 
-/** The extra hint after "I'm not sure yet". */
-export const RETHINK_HINT =
-  'Both of them want the last visitor looked after. Mara wants the ticket where people expect it; Otto wants it where the ride is. Either is a kind ending.';
+/** What the map shows at the landmarks, so the world and the text agree. */
+export function landmarkDetail(state: MysteryState): LandmarkDetail {
+  switch (state.ending) {
+    case 'returned':
+      return { tin: true, bridle: false, lamp: 'booth-lit', ribbon: false };
+    case 'gifted':
+      return { tin: false, bridle: true, lamp: 'booth-out', ribbon: true };
+    case 'shared':
+      return { tin: false, bridle: false, lamp: 'carousel', ribbon: false };
+    default:
+      return { tin: false, bridle: true, lamp: 'booth-out', ribbon: false };
+  }
+}
 
-export const ENDINGS: Record<MysteryEnding, { title: string; text: string }> = {
-  returned: {
-    title: 'Ending: Back in the tin',
-    text: 'You fetch the ticket from the bridle and Mara sets it in the tin. Tonight the booth lamp burns for the last visitor through the gate.',
-  },
-  gifted: {
-    title: 'Ending: The star horse ride',
-    text: 'The ticket stays tucked in the bridle. Otto slows the carousel for the last rider, and Mara points the way from her booth.',
-  },
-};
+/** The same details in words, one line per landmark, for the Guide. */
+export function landmarkScene(state: MysteryState): Record<LandmarkId, string> {
+  const d = landmarkDetail(state);
+  return {
+    entrance: `Ticket booth: the tin on the counter is ${d.tin ? 'holding the gold finale ticket' : 'empty'}, and the booth lamp is ${d.lamp === 'booth-lit' ? 'lit' : d.lamp === 'carousel' ? 'gone from its hook' : 'out'}.`,
+    carousel: `Carousel: the lead horse has a gold star${d.bridle ? ' and a gold ticket in its bridle' : ''}${d.ribbon ? ', with a red ribbon tied on' : ''}${d.lamp === 'carousel' ? '. Mara’s lamp hangs at the front, lit, with the ticket beneath it' : ''}.`,
+    'ferris-wheel':
+      'Ferris wheel: from the top car you can see the whole midway, down to the carousel.',
+  };
+}
 
 /** One line for the Guide: where the mystery stands. */
 export function mysteryStatus(state: MysteryState): string {
   if (!state.started) return 'Not started. Mara at the Ticket booth needs a hand.';
-  const ending = mysteryEnding(state);
-  if (ending) return `Solved: ${ENDINGS[ending].title.replace('Ending: ', '')}.`;
-  if (canChoose(state)) return 'All three clues found. Whom do you trust?';
-  return `${state.clues.length} of ${CLUE_ORDER.length} clues found.`;
+  if (state.ending) return `Solved: ${ENDINGS[state.ending].title}.`;
+  if (state.theory) return 'Mara and Otto agree on what happened. How should it end?';
+  if (state.misread) return 'That theory didn’t hold up. Try another, or look again.';
+  if (investigated(state)) return 'All three landmarks looked into. What do you think happened?';
+  const done = LANDMARK_ORDER.filter((id) => state.approaches[id]).length;
+  return `${done} of ${LANDMARK_ORDER.length} landmarks looked into.`;
 }
 
 export const MYSTERY_KEY = 'tessl-carnival:finale-mystery';
 
-/** Reads saved progress. Anything malformed reads as a new mystery. */
+/** Reads saved progress. Anything malformed or impossible reads as safely as it can. */
 export function parseMystery(raw: string | null): MysteryState {
   if (!raw) return NEW_MYSTERY;
   try {
-    const value = JSON.parse(raw) as Partial<MysteryState> | null;
+    const value = JSON.parse(raw) as Record<string, unknown> | null;
     if (!value || typeof value !== 'object' || value.started !== true) return NEW_MYSTERY;
-    const clues = Array.isArray(value.clues) ? value.clues : [];
-    const state: MysteryState = {
-      started: true,
-      clues: CLUE_ORDER.filter((c) => clues.includes(c)),
-      rethought: value.rethought === true,
-    };
-    if (value.trusted === 'mara' || value.trusted === 'otto') {
-      if (state.clues.length === CLUE_ORDER.length) state.trusted = value.trusted;
+    const saved = (
+      value.approaches && typeof value.approaches === 'object' ? value.approaches : {}
+    ) as Record<string, unknown>;
+    // Replay the save through the state machine, so only reachable states load.
+    let state = mysteryStep(NEW_MYSTERY, { type: 'start' });
+    for (const at of LANDMARK_ORDER) {
+      const approach = saved[at];
+      if (typeof approach === 'string' && approach in APPROACHES)
+        state = mysteryStep(state, { type: 'investigate', at, approach: approach as Approach });
     }
+    for (const key of ['misread', 'theory'] as const) {
+      const theory = value[key];
+      if (typeof theory === 'string' && theory in THEORIES)
+        state = mysteryStep(state, { type: 'theorize', theory: theory as Theory });
+    }
+    const ending = value.ending;
+    if (typeof ending === 'string' && ending in ENDINGS)
+      state = mysteryStep(state, { type: 'resolve', ending: ending as MysteryEnding });
     return state;
   } catch {
     return NEW_MYSTERY;
@@ -155,10 +321,10 @@ type MysteryStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export function sameMystery(a: MysteryState, b: MysteryState): boolean {
   return (
     a.started === b.started &&
-    a.rethought === b.rethought &&
-    a.trusted === b.trusted &&
-    a.clues.length === b.clues.length &&
-    a.clues.every((c, i) => b.clues[i] === c)
+    a.theory === b.theory &&
+    a.misread === b.misread &&
+    a.ending === b.ending &&
+    LANDMARK_ORDER.every((id) => a.approaches[id] === b.approaches[id])
   );
 }
 

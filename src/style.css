@@ -106,6 +106,7 @@ body[data-view='midway'] main {
 .midway-credit,
 .discovery-toast,
 .midway-route,
+.mystery-card,
 .booth-card {
   position: absolute;
   margin: 0;
@@ -1777,19 +1778,68 @@ kbd {
 }
 
 .finale-mystery h3,
-.finale-mystery p {
+.finale-mystery p,
+.mystery-card h2,
+.mystery-card p {
   margin: 0;
 }
 
-.finale-mystery .mystery-body {
+.finale-mystery .mystery-body,
+.finale-mystery .mystery-landmark,
+.mystery-card,
+.mystery-card-body {
   display: grid;
   gap: 0.4rem;
 }
 
-.finale-mystery .npc {
+.mystery-card {
+  top: 64px;
+  left: 16px;
+  width: min(320px, calc(100% - 32px));
+  max-height: calc(100% - 160px);
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+.mystery-card[hidden] {
+  display: none;
+}
+
+.mystery-card h2 {
+  font-size: 16px;
+}
+
+.finale-mystery button,
+.mystery-card button {
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finale-mystery button:hover,
+.finale-mystery button:focus-visible,
+.mystery-card button:hover,
+.mystery-card button:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.finale-mystery .npc,
+.mystery-card .npc {
   font-style: italic;
 }
 
-.finale-mystery .ending {
+.finale-mystery .scene {
+  color: var(--color-muted);
+}
+
+.finale-mystery .ending,
+.mystery-card .ending {
   font-weight: bold;
 }

@@ -1,25 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import {
-  canChoose,
+  approachesAt,
+  canTheorize,
   createMysteryStore,
+  evidenceOf,
+  landmarkDetail,
+  landmarkScene,
+  misreadHint,
   MYSTERY_KEY,
-  mysteryEnding,
   mysteryStatus,
   mysteryStep,
   NEW_MYSTERY,
   npcLine,
+  openEndings,
   parseMystery,
   sameMystery,
   type MysteryAction,
 } from './finale-mystery';
 
 const play = (...actions: MysteryAction[]) => actions.reduce(mysteryStep, NEW_MYSTERY);
-const allClues: MysteryAction[] = [
-  { type: 'start' },
-  { type: 'inspect', at: 'ferris-wheel' },
-  { type: 'inspect', at: 'entrance' },
-  { type: 'inspect', at: 'carousel' },
-];
+const start: MysteryAction = { type: 'start' };
+const tin: MysteryAction = { type: 'investigate', at: 'entrance', approach: 'tin' };
+const ledger: MysteryAction = { type: 'investigate', at: 'entrance', approach: 'ledger' };
+const star: MysteryAction = { type: 'investigate', at: 'carousel', approach: 'star' };
+const askOtto: MysteryAction = { type: 'investigate', at: 'carousel', approach: 'otto' };
+const top: MysteryAction = { type: 'investigate', at: 'ferris-wheel', approach: 'top' };
+const log: MysteryAction = { type: 'investigate', at: 'ferris-wheel', approach: 'log' };
+const stencil: MysteryAction = { type: 'theorize', theory: 'stencil' };
+const rescue: MysteryAction = { type: 'theorize', theory: 'rescue' };
+const wind: MysteryAction = { type: 'theorize', theory: 'wind' };
+
+/** The paint trail: tin, star and the view from the top. */
+const paintTrail = [start, tin, star, top];
+/** The lamp trail: Mara, Otto and the operator's log. */
+const lampTrail = [start, ledger, askOtto, log];
+/** A bit of both: paint at the tin, the lamp from Otto. */
+const mixedTrail = [start, tin, askOtto, top];
 
 function memoryStorage() {
   const data = new Map<string, string>();
@@ -31,72 +47,207 @@ function memoryStorage() {
   };
 }
 
-describe('finale mystery', () => {
-  it('ignores clues until Mara asks for help', () => {
-    expect(play({ type: 'inspect', at: 'carousel' })).toEqual(NEW_MYSTERY);
+describe('finale mystery: investigating', () => {
+  it('offers two ways to look into every landmark', () => {
+    expect(approachesAt('entrance')).toEqual(['tin', 'ledger']);
+    expect(approachesAt('carousel')).toEqual(['star', 'otto']);
+    expect(approachesAt('ferris-wheel')).toEqual(['top', 'log']);
   });
 
-  it('collects clues in any order, once each, and then opens the choice', () => {
-    const state = play(...allClues, { type: 'inspect', at: 'entrance' });
-    expect(state.clues).toEqual(['entrance', 'carousel', 'ferris-wheel']);
-    expect(canChoose(state)).toBe(true);
-    expect(mysteryStatus(state)).toBe('All three clues found. Whom do you trust?');
+  it('ignores investigating until Mara asks for help', () => {
+    expect(play(star)).toBe(NEW_MYSTERY);
   });
 
-  it('will not let the player choose before seeing every clue', () => {
-    const state = play({ type: 'start' }, { type: 'trust', npc: 'otto' });
-    expect(state.trusted).toBeUndefined();
+  it('takes one approach per landmark, in any order, and ignores repeats as no-ops', () => {
+    const state = play(start, top, tin);
+    expect(state.approaches).toEqual({ 'ferris-wheel': 'top', entrance: 'tin' });
+    expect(mysteryStep(state, ledger)).toBe(state);
+    expect(mysteryStep(state, tin)).toBe(state);
+    expect(mysteryStep(state, start)).toBe(state);
+    expect(mysteryStatus(state)).toBe('2 of 3 landmarks looked into.');
   });
 
-  it('trusting Mara and trusting Otto lead to different endings and dialogue', () => {
-    const returned = play(...allClues, { type: 'trust', npc: 'mara' });
-    const gifted = play(...allClues, { type: 'trust', npc: 'otto' });
-    expect(mysteryEnding(returned)).toBe('returned');
-    expect(mysteryEnding(gifted)).toBe('gifted');
-    expect(npcLine(returned, 'mara')).not.toBe(npcLine(gifted, 'mara'));
-    expect(npcLine(returned, 'otto')).not.toBe(npcLine(gifted, 'otto'));
+  it('rejects an approach at the wrong landmark', () => {
+    const state = play(start);
+    expect(mysteryStep(state, { type: 'investigate', at: 'carousel', approach: 'tin' })).toBe(
+      state,
+    );
   });
 
-  it('changes what Mara says once the carousel clue is found', () => {
-    const before = play({ type: 'start' });
-    const after = mysteryStep(before, { type: 'inspect', at: 'carousel' });
-    expect(npcLine(after, 'mara')).not.toBe(npcLine(before, 'mara'));
+  it('gathers different evidence depending on how you look', () => {
+    expect(evidenceOf(play(...paintTrail))).toEqual(['paint', 'bridle']);
+    expect(evidenceOf(play(...lampTrail))).toEqual(['lamp']);
+    expect(evidenceOf(play(...mixedTrail))).toEqual(['paint', 'lamp', 'bridle']);
   });
 
-  it('lets an unsure player take a hint and still choose', () => {
-    const unsure = play(...allClues, { type: 'unsure' });
-    expect(unsure.rethought).toBe(true);
-    expect(canChoose(unsure)).toBe(true);
-    expect(mysteryEnding(mysteryStep(unsure, { type: 'trust', npc: 'otto' }))).toBe('gifted');
+  it('only lets you put a theory once every landmark is looked into', () => {
+    const partial = play(start, tin, star);
+    expect(canTheorize(partial)).toBe(false);
+    expect(mysteryStep(partial, stencil)).toBe(partial);
+    expect(canTheorize(play(...paintTrail))).toBe(true);
+  });
+});
+
+describe('finale mystery: characters respond to your choices', () => {
+  it('Mara answers how you investigated her booth', () => {
+    const byTin = npcLine(play(start, tin), 'mara');
+    const byLedger = npcLine(play(start, ledger), 'mara');
+    expect(byTin).toContain('paint');
+    expect(byLedger).toContain('counter');
+    expect(byTin).not.toBe(byLedger);
+  });
+
+  it('Otto answers how you approached the carousel, and stays quiet before', () => {
+    expect(npcLine(play(start, tin), 'otto')).toContain('hums');
+    expect(npcLine(play(start, star), 'otto')).not.toBe(npcLine(play(start, askOtto), 'otto'));
+  });
+
+  it('both change their story with the theory you put to them', () => {
+    const s = play(...mixedTrail, stencil);
+    const r = play(...mixedTrail, rescue);
+    expect(npcLine(s, 'otto')).toContain('Guilty');
+    expect(npcLine(r, 'otto')).toContain('step');
+    expect(npcLine(s, 'mara')).not.toBe(npcLine(r, 'mara'));
+  });
+
+  it('Otto remembers the theory even after the ending', () => {
+    const s = play(...mixedTrail, stencil, { type: 'resolve', ending: 'returned' });
+    const r = play(...mixedTrail, rescue, { type: 'resolve', ending: 'returned' });
+    expect(npcLine(s, 'otto')).not.toBe(npcLine(r, 'otto'));
+  });
+});
+
+describe('finale mystery: theories and recovery', () => {
+  it('a theory the evidence does not support is a hint, not a dead end', () => {
+    const state = play(...lampTrail, stencil);
+    expect(state.theory).toBeUndefined();
+    expect(state.misread).toBe('stencil');
+    expect(misreadHint(state)).toContain('look again');
+    expect(canTheorize(state)).toBe(true);
+    expect(mysteryStatus(state)).toContain('didn’t hold up');
+    expect(mysteryStep(state, stencil)).toBe(state);
+  });
+
+  it('the wind theory never holds, and the hint uses what you saw', () => {
+    expect(play(...paintTrail, wind).theory).toBeUndefined();
+    expect(misreadHint(play(...paintTrail, wind))).toContain('bridle');
+    expect(misreadHint(play(...lampTrail, wind))).toContain('no wind');
+  });
+
+  it('looking again swaps an approach, and the new evidence opens the theory', () => {
+    const stuck = play(...lampTrail, stencil);
+    const swapped = play(
+      ...lampTrail,
+      stencil,
+      { type: 'look-again', at: 'carousel' },
+      star,
+      stencil,
+    );
+    expect(stuck.theory).toBeUndefined();
+    expect(swapped.approaches.carousel).toBe('star');
+    expect(swapped.theory).toBe('stencil');
+    expect(swapped.misread).toBeUndefined();
+  });
+
+  it('looking again at a landmark you have not looked into changes nothing', () => {
+    const state = play(start, tin);
+    expect(mysteryStep(state, { type: 'look-again', at: 'carousel' })).toBe(state);
+  });
+
+  it('locks the investigation once a theory is accepted', () => {
+    const state = play(...paintTrail, stencil);
+    expect(mysteryStep(state, { type: 'look-again', at: 'entrance' })).toBe(state);
+    expect(mysteryStep(state, rescue)).toBe(state);
+  });
+});
+
+describe('finale mystery: endings', () => {
+  it('opens two endings, and a third only with both paint and lamp', () => {
+    expect(openEndings(play(...paintTrail, stencil))).toEqual(['returned', 'gifted']);
+    expect(openEndings(play(...lampTrail, rescue))).toEqual(['returned', 'gifted']);
+    expect(openEndings(play(...mixedTrail, rescue))).toEqual(['returned', 'gifted', 'shared']);
+    expect(openEndings(play(...paintTrail))).toEqual([]);
+  });
+
+  it('will not accept an ending that is not open', () => {
+    const state = play(...paintTrail, stencil);
+    expect(mysteryStep(state, { type: 'resolve', ending: 'shared' })).toBe(state);
+  });
+
+  it('each ending changes both characters and the drawn world', () => {
+    const endings = (['returned', 'gifted', 'shared'] as const).map((ending) =>
+      play(...mixedTrail, rescue, { type: 'resolve', ending }),
+    );
+    const maras = new Set(endings.map((s) => npcLine(s, 'mara')));
+    const ottos = new Set(endings.map((s) => npcLine(s, 'otto')));
+    const details = new Set(endings.map((s) => JSON.stringify(landmarkDetail(s))));
+    expect(maras.size).toBe(3);
+    expect(ottos.size).toBe(3);
+    expect(details.size).toBe(3);
+    expect(mysteryStatus(endings[2])).toBe('Solved: The lamp-lit finale.');
+  });
+
+  it('shows the clue in the world before the ending and the outcome after', () => {
+    const before = landmarkDetail(play(...paintTrail));
+    expect(before).toEqual({ tin: false, bridle: true, lamp: 'booth-out', ribbon: false });
+    const returned = play(...paintTrail, stencil, { type: 'resolve', ending: 'returned' });
+    expect(landmarkDetail(returned)).toMatchObject({ tin: true, bridle: false, lamp: 'booth-lit' });
+    expect(landmarkScene(returned).entrance).toContain('holding the gold finale ticket');
+    const gifted = play(...paintTrail, stencil, { type: 'resolve', ending: 'gifted' });
+    expect(landmarkScene(gifted).carousel).toContain('red ribbon');
   });
 
   it('keeps an ending until a deliberate restart', () => {
-    const done = play(...allClues, { type: 'trust', npc: 'mara' });
-    expect(mysteryStep(done, { type: 'trust', npc: 'otto' })).toBe(done);
+    const done = play(...paintTrail, stencil, { type: 'resolve', ending: 'gifted' });
+    expect(mysteryStep(done, { type: 'resolve', ending: 'returned' })).toBe(done);
+    expect(mysteryStep(done, top)).toBe(done);
     expect(mysteryStep(done, { type: 'restart' })).toEqual(NEW_MYSTERY);
   });
+});
 
-  it('resumes saved progress under its own key', () => {
+describe('finale mystery: saving', () => {
+  it('resumes saved progress under its own key, including theory and ending', () => {
     const storage = memoryStorage();
     const store = createMysteryStore(storage);
-    const midway = play({ type: 'start' }, { type: 'inspect', at: 'carousel' });
-    expect(store.save(midway)).toBe(true);
+    const done = play(...mixedTrail, wind, rescue, { type: 'resolve', ending: 'shared' });
+    expect(store.save(done)).toBe(true);
     expect([...storage.data.keys()]).toEqual([MYSTERY_KEY]);
-    expect(store.load()).toEqual(midway);
+    expect(sameMystery(createMysteryStore(storage).load(), done)).toBe(true);
+  });
+
+  it('resumes a misread theory so the hint is still there', () => {
+    const misread = play(...lampTrail, stencil);
+    const loaded = parseMystery(JSON.stringify(misread));
+    expect(sameMystery(loaded, misread)).toBe(true);
+    expect(misreadHint(loaded)).toBe(misreadHint(misread));
   });
 
   it('reads malformed or impossible saves safely', () => {
     expect(parseMystery('nope')).toEqual(NEW_MYSTERY);
-    expect(parseMystery('{"started":true,"clues":["x"],"trusted":"otto"}')).toEqual({
+    expect(parseMystery('null')).toEqual(NEW_MYSTERY);
+    // An ending without a theory, a theory the evidence does not support, and a bad approach.
+    const impossible = parseMystery(
+      JSON.stringify({
+        started: true,
+        approaches: { entrance: 'ledger', carousel: 'tin', 'ferris-wheel': 'log' },
+        theory: 'stencil',
+        ending: 'shared',
+      }),
+    );
+    expect(impossible).toEqual({
       started: true,
-      clues: [],
-      rethought: false,
+      approaches: { entrance: 'ledger', 'ferris-wheel': 'log' },
+    });
+    // An old save from the first version of the mystery still starts cleanly.
+    expect(parseMystery('{"started":true,"clues":["entrance"],"trusted":"otto"}')).toEqual({
+      started: true,
+      approaches: {},
     });
   });
 
   it("keeps this session's progress when storage is missing or fails", () => {
     const none = createMysteryStore(undefined);
-    const started = play({ type: 'start' });
+    const started = play(start);
     expect(none.save(started)).toBe(false);
     expect(none.load()).toEqual(started);
 
@@ -106,7 +257,7 @@ describe('finale mystery', () => {
     storage.setItem = () => {
       throw new Error('quota');
     };
-    const next = mysteryStep(flaky.load(), { type: 'inspect', at: 'carousel' });
+    const next = mysteryStep(flaky.load(), tin);
     expect(flaky.save(next)).toBe(false);
     expect(flaky.load()).toEqual(next);
 
@@ -119,8 +270,8 @@ describe('finale mystery', () => {
   it("still picks up another tab's saved steps", () => {
     const storage = memoryStorage();
     const store = createMysteryStore(storage);
-    store.save(play({ type: 'start' }));
-    const other = play({ type: 'start' }, { type: 'inspect', at: 'entrance' });
+    store.save(play(start));
+    const other = play(start, ledger);
     storage.setItem(MYSTERY_KEY, JSON.stringify(other));
     expect(store.load()).toEqual(other);
   });
@@ -128,13 +279,12 @@ describe('finale mystery', () => {
   it('treats an equal reloaded state as no change', () => {
     const storage = memoryStorage();
     const store = createMysteryStore(storage);
-    const state = play({ type: 'start' }, { type: 'inspect', at: 'carousel' });
+    const state = play(start, star);
     store.save(state);
     const reloaded = store.load();
     expect(reloaded).not.toBe(state);
-    expect(sameMystery(mysteryStep(reloaded, { type: 'inspect', at: 'carousel' }), state)).toBe(
-      true,
-    );
-    expect(sameMystery(reloaded, play({ type: 'start' }))).toBe(false);
+    expect(sameMystery(mysteryStep(reloaded, star), state)).toBe(true);
+    expect(sameMystery(reloaded, play(start, askOtto))).toBe(false);
+    expect(sameMystery(reloaded, play(start))).toBe(false);
   });
 });
