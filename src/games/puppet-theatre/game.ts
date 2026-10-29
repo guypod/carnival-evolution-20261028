@@ -108,7 +108,8 @@ export function createTheatre(
     stage: cloneStage(stage),
     history: [],
     sceneStart: cloneStage(sceneStart),
-    scoreTaken: false,
+    // A restored finished performance was scored before it was saved.
+    scoreTaken: stage.scene === 'curtain',
   };
 }
 

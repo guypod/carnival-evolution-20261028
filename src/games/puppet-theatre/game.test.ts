@@ -306,3 +306,12 @@ describe('saved stage', () => {
     expect(stage?.caption).toMatch(/Scene 1/);
   });
 });
+
+describe('restored curtain', () => {
+  it('does not score a restored finished performance again', () => {
+    const theatre = createTheatre({ ...createStage(), scene: 'curtain' });
+    const scores: number[] = [];
+    recordFinalScore(theatre, (score) => scores.push(score));
+    expect(scores).toEqual([]);
+  });
+});
