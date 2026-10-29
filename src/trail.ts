@@ -1,4 +1,5 @@
 import { bestScore, type CarnivalGame } from './carnival';
+import { boothMaxScore } from './prize-pavilion';
 
 /** One Carnival Trail mission, worked out from best scores. Nothing is stored. */
 export interface TrailMission {
@@ -59,6 +60,16 @@ function explorer(games: readonly CarnivalGame[], best: Best): TrailMission {
 /** Midway Master's score, needed at every registered booth. */
 export const MIDWAY_MASTER_SCORE = 100;
 
+/**
+ * The score a booth needs for a mission: `minScore`, or the booth's best
+ * possible round when that is lower, or undefined when the booth cannot count.
+ */
+function boothGoal(game: CarnivalGame, minScore: number, everyBooth: boolean): number | undefined {
+  const max = boothMaxScore(game.id);
+  if (max === undefined || max >= minScore) return minScore;
+  return everyBooth ? max : undefined;
+}
+
 function scoreMission(
   id: 'crowd-pleaser' | 'headliner' | 'midway-master',
   name: string,
@@ -67,29 +78,41 @@ function scoreMission(
   best: Best,
   everyBooth = false,
 ): TrailMission {
-  const target = everyBooth ? games.length : Math.min(TRAIL_BOOTHS_NEEDED, games.length);
-  const below = games.filter((game) => (best(game.id) ?? 0) < minScore);
+  // A booth whose best round is below the score counts at its own best for an
+  // every-booth mission, and not at all otherwise.
+  const eligible = games.filter((game) => boothGoal(game, minScore, everyBooth) !== undefined);
+  const goalFor = (game: CarnivalGame) => boothGoal(game, minScore, everyBooth) ?? minScore;
+  const target = everyBooth ? games.length : Math.min(TRAIL_BOOTHS_NEEDED, eligible.length);
+  const below = eligible.filter((game) => (best(game.id) ?? 0) < goalFor(game));
   // The unfinished booth closest to the threshold; ties keep registry order.
+  const gap = (game: CarnivalGame) => goalFor(game) - (best(game.id) ?? 0);
   const pick = below.reduce<CarnivalGame | undefined>(
-    (closest, game) =>
-      closest === undefined || (best(game.id) ?? 0) > (best(closest.id) ?? 0) ? game : closest,
+    (closest, game) => (closest === undefined || gap(game) < gap(closest) ? game : closest),
     undefined,
   );
   const boothWord = target === 1 ? 'booth' : 'booths';
+  if (target === 0 && games.length > 0) {
+    const goal = `Score at least ${minScore} at ${TRAIL_BOOTHS_NEEDED} booths.`;
+    const base = { id, name, goal, progress: 0, target: 0, complete: false, next: undefined };
+    return { ...base, nextAction: 'No open booth can score this high yet.' };
+  }
   return finish(
     {
       id,
       name,
       goal: everyBooth
-        ? `Score at least ${minScore} at every booth.`
+        ? games.some((game) => goalFor(game) < minScore)
+          ? `Score at least ${minScore} at every booth, or a booth's best possible round where that is lower.`
+          : `Score at least ${minScore} at every booth.`
         : `Score at least ${minScore} at ${target} ${boothWord}.`,
-      progress: games.length - below.length,
+      progress: eligible.length - below.length,
       target,
     },
     pick,
     (game) => {
-      const points = minScore - (best(game.id) ?? 0);
-      return `Score ${points} more ${points === 1 ? 'point' : 'points'} at ${game.name} to reach ${minScore}.`;
+      const goal = goalFor(game);
+      const points = goal - (best(game.id) ?? 0);
+      return `Score ${points} more ${points === 1 ? 'point' : 'points'} at ${game.name} to reach ${goal}.`;
     },
   );
 }

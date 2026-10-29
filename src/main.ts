@@ -1872,7 +1872,7 @@ function renderPrizes() {
     </section>`;
 
   app.querySelector('.pavilion-intro')!.textContent =
-    'Win prizes at every booth with your best score. Each booth has its own Bronze, Silver and Gold goals, set by how it scores. Prizes you already won stay won.';
+    'Win prizes at every booth with your best score. Each booth has its own Bronze, Silver and Gold goals, set by how it scores. A booth with a small top score, like the two endings of the Puppet Theatre, has only the tiers a round can reach. Prizes you already won stay won.';
   const collector = app.querySelector<HTMLElement>('.pavilion-collector')!;
   collector.classList.toggle('won', collection.collector);
   collector.querySelector('h2')!.textContent = CARNIVAL_COLLECTOR;
