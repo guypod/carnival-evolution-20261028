@@ -19,6 +19,25 @@ cake the knight is covered in frosting under a few sprinkles, and after the
 umbrella the dragon holds it inside out overhead while confetti hangs across the
 stage. The picture does not move, so it reads the same with motion turned down.
 
+### The audience
+
+Three small spectators sit in the front row, bottom left. They react only to
+what you perform, each thing once per performance, and a caption in the top
+right says the same in words:
+
+| You perform                                | Audience  | Caption says             |
+| ------------------------------------------ | --------- | ------------------------ |
+| Nothing yet                                | patient   | they wait patiently      |
+| The knight meets the dragon (scene 1 ends) | surprised | they gasp at the meeting |
+| The dragon takes a gift (scene 2 ends)     | amused    | they cheer the gift      |
+| A puppet drops into the hide pose (a fall) | amused    | they laugh at the tumble |
+
+Taking your time never upsets them, and a refused bell or a missed drop earns
+nothing. Undo takes back the reaction with the event, and each new performance
+starts with a patient audience. The faces are still drawings and the theatre
+has no sound, so the reactions read the same with motion turned down or audio
+off.
+
 ### Controls
 
 | Pointer                               | Keyboard           | Does                                       |
@@ -49,7 +68,7 @@ is never recorded.
 
 ## Saved stage
 
-The stage (scene, positions, poses, gift and endings found), and the stage as
+The stage (scene, positions, poses, gift, endings found and the audience's reactions), and the stage as
 the current scene began, are saved after every change under their own key,
 separate from scores, and restored when you come back. Rehearse after a restore
 still goes back to the start of the scene. A saved stage that is malformed is ignored and the play starts over.
