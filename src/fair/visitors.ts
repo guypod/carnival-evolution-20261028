@@ -53,6 +53,8 @@ export type Group = {
   visits: number;
   mood: number;
   intention: string;
+  /** The need this group was turned away for, when no connected stall or bench served it. */
+  unmet?: Need;
 };
 
 export type Sim = {
@@ -65,6 +67,10 @@ export type Sim = {
   paused: boolean;
   carry: number;
   log: string[];
+  /** How many groups arrive in total. */
+  spawns: number;
+  /** Every group that has left, as it was on its last tick. */
+  left: Group[];
 };
 
 /** A small seeded random number generator (mulberry32), returning [value, next state]. */
@@ -76,8 +82,8 @@ export function nextRandom(state: number): [number, number] {
   return [((t ^ (t >>> 14)) >>> 0) / 4294967296, s];
 }
 
-/** `paused` starts the visitors still, which is how the plaza opens in quiet mode. */
-export function createSim(layout: Layout, seed = 1, paused = false): Sim {
+/** `paused` starts the visitors still, which is how the plaza opens in quiet mode. `spawns` caps how many groups arrive. */
+export function createSim(layout: Layout, seed = 1, paused = false, spawns = MAX_SPAWNS): Sim {
   return {
     layout,
     groups: [],
@@ -88,12 +94,14 @@ export function createSim(layout: Layout, seed = 1, paused = false): Sim {
     paused,
     carry: 0,
     log: [],
+    spawns,
+    left: [],
   };
 }
 
 /** Resets only the visitors, with the same seed, so a rerun is identical. */
 export function resetSim(sim: Sim): Sim {
-  return { ...createSim(sim.layout, sim.seed), paused: sim.paused };
+  return createSim(sim.layout, sim.seed, sim.paused, sim.spawns);
 }
 
 const STEPS: readonly Cell[] = [
@@ -182,7 +190,10 @@ function leave(sim: Sim, g: Group, why: string): Group {
 function decide(sim: Sim, g: Group): Group {
   if (g.visits >= MAX_VISITS) return leave(sim, g, 'Had a full visit, so heading home.');
   const c = choose(sim.layout, g);
-  if ('reason' in c) return { ...leave(sim, g, c.reason), mood: c.need ? g.mood - 10 : g.mood };
+  if ('reason' in c)
+    return c.need
+      ? { ...leave(sim, g, c.reason), mood: g.mood - 10, unmet: g.unmet ?? c.need }
+      : leave(sim, g, c.reason);
   return {
     ...g,
     phase: 'walking',
@@ -250,12 +261,15 @@ function spawn(sim: Sim): Sim {
 
 /** Advances one fixed tick: groups move or stay, the gone are dropped, a new group may arrive. */
 export function tick(sim: Sim): Sim {
+  const stepped = sim.groups.map((g) => stepGroup(sim, g));
+  const gone = stepped.filter((g) => g.phase === 'gone');
   let next: Sim = {
     ...sim,
     tick: sim.tick + 1,
-    groups: sim.groups.map((g) => stepGroup(sim, g)).filter((g) => g.phase !== 'gone'),
+    groups: stepped.filter((g) => g.phase !== 'gone'),
+    left: gone.length ? [...sim.left, ...gone] : sim.left,
   };
-  if (next.tick % SPAWN_EVERY === 1 && next.groups.length < MAX_GROUPS && next.spawned < MAX_SPAWNS)
+  if (next.tick % SPAWN_EVERY === 1 && next.groups.length < MAX_GROUPS && next.spawned < sim.spawns)
     next = spawn(next);
   return next;
 }
