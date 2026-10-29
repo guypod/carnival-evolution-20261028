@@ -15,6 +15,7 @@ import {
   faultyToy,
   gearRadius,
   hitTarget,
+  releaseTarget,
   movePart,
   openBench,
   partLabel,
@@ -86,6 +87,8 @@ export function startWorkshop(
   /** The part picked up with the hand, and where the pointer is dragging it. */
   let held: string | undefined;
   let drag: { x: number; y: number } | undefined;
+  /** Where the pointer pressed to pick up the held part, so a release can tell a click from a drag. */
+  let downAt: { x: number; y: number } | undefined;
   let run: { result: Run; startedAt: number } | undefined;
   let frame = 0;
 
@@ -530,17 +533,15 @@ export function startWorkshop(
   const pointAt = (event: PointerEvent) =>
     benchPoint({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect());
   const hit = (p: { x: number; y: number }) => hitTarget(bench.toy, p, held);
-  let downOn: string | undefined;
   const onDown = (event: PointerEvent) => {
     canvas.focus();
     const target = hit(pointAt(event));
-    downOn = target && keyOf(target);
     if (!target) return;
     focusKey = keyOf(target);
     if (tool === 'hand' && !held && target.kind === 'part') {
       canvas.setPointerCapture?.(event.pointerId);
       act(target);
-      drag = pointAt(event);
+      drag = downAt = pointAt(event);
     } else act(target);
   };
   const onMove = (event: PointerEvent) => {
@@ -549,12 +550,11 @@ export function startWorkshop(
     draw();
   };
   const onUp = (event: PointerEvent) => {
-    if (!held || !drag) return;
-    const target = hit(pointAt(event));
-    drag = undefined;
-    // Released where it was picked up: a click. Keep holding, so the next click places it.
-    const home = target?.kind === 'slot' && bench.toy.parts[held] === target.id;
-    if (!target || home || keyOf(target) === downOn) return draw();
+    if (!held || !drag || !downAt) return;
+    const target = releaseTarget(bench.toy, held, downAt, pointAt(event));
+    drag = downAt = undefined;
+    // A click, or a drag back home: keep holding, so the next click places it.
+    if (!target) return draw();
     act(target);
   };
   // A cancelled drag (a scroll, a lost pointer) puts the part back down.

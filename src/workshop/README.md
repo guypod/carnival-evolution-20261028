@@ -23,7 +23,8 @@ toy's mechanism, so what moves follows from where the parts are.
 
 ## Controls
 
-- Pointer: drag a part onto a spot, or click a part then click a spot. A part
+- Pointer: drag a part onto a spot, or click a part then click a spot. A press
+  released without moving is a click, so the part stays in hand. A part
   dropped on a taken spot swaps with the part there. Click a pin or pebble with
   the screwdriver or tweezers chosen. A part is drawn at its own size wherever
   it sits, every tray spot has room for the largest part, and a click picks the

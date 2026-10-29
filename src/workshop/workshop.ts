@@ -202,6 +202,28 @@ export function hitTarget(
   return all.find((t) => t.kind === 'fixture' && inside(t)) ?? top ?? slot;
 }
 
+/** How far, in bench pixels, a pointer moves between press and release before it counts as a drag. */
+export const DRAG_DISTANCE = 6;
+
+/**
+ * Where a part picked up on pointer-down goes on pointer-up: the target to drop
+ * it on, or nothing to keep holding it. A release that barely moved is a click,
+ * so the part stays in hand for the next click to place, even when its edge lies
+ * over another spot. A real drag drops on what is under the pointer, unless that
+ * is the spot the part came from.
+ */
+export function releaseTarget(
+  toy: ToyState,
+  held: string,
+  down: { x: number; y: number },
+  up: { x: number; y: number },
+): Target | undefined {
+  if (Math.hypot(up.x - down.x, up.y - down.y) < DRAG_DISTANCE) return undefined;
+  const target = hitTarget(toy, up, held);
+  if (target?.kind === 'slot' && toy.parts[held] === target.id) return undefined;
+  return target;
+}
+
 /** Maps a pointer's page position onto bench pixels, for a canvas shown at any size. */
 export function benchPoint(
   client: { x: number; y: number },

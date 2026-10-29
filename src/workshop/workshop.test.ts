@@ -26,6 +26,7 @@ import {
   recordRepair,
   resetBench,
   partRadius,
+  releaseTarget,
   runToy,
   targets,
   undo,
@@ -402,6 +403,33 @@ describe('picking parts with the pointer', () => {
     const medium = at(toy, 'medium');
     const over = hitTarget(toy, { x: medium.x, y: medium.y - 40 }, 'large')!;
     expect(dropSlot(toy, over)).toBe('peg-4');
+  });
+
+  it('keeps a part in hand after a click on its edge over a neighbouring spot', () => {
+    const toy = faultyToy('music-box');
+    const medium = at(toy, 'medium');
+    const peg5 = at(toy, 'peg-5');
+    // A point on the medium gear on peg 4 that also lies inside peg 5.
+    const edge = { x: peg5.x, y: medium.y };
+    expect(Math.hypot(edge.x - medium.x, edge.y - medium.y)).toBeLessThan(medium.r);
+    expect(hitTarget(toy, edge)?.id).toBe('medium');
+    expect(hitTarget(toy, edge, 'medium')?.id).toBe('peg-5');
+    // Pressed and released without moving: a click, so nothing drops.
+    expect(releaseTarget(toy, 'medium', edge, edge)).toBeUndefined();
+    expect(releaseTarget(toy, 'medium', edge, { x: edge.x + 3, y: edge.y + 2 })).toBeUndefined();
+  });
+
+  it('drops a part dragged onto a nearby spot, but not one dragged back home', () => {
+    const toy = faultyToy('music-box');
+    const medium = at(toy, 'medium');
+    const peg5 = at(toy, 'peg-5');
+    const onto = releaseTarget(toy, 'medium', medium, peg5)!;
+    expect(dropSlot(toy, onto)).toBe('peg-5');
+    // A short drag that ends on the edge over peg 5 is still a drag.
+    const edge = { x: peg5.x, y: medium.y };
+    expect(releaseTarget(toy, 'medium', { x: edge.x - 20, y: edge.y }, edge)?.id).toBe('peg-5');
+    // Dragged around and released on its own peg: it stays in hand.
+    expect(releaseTarget(toy, 'medium', peg5, at(toy, 'peg-4'))).toBeUndefined();
   });
 
   it('reaches fixtures before the parts around them', () => {
