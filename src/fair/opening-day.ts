@@ -9,6 +9,7 @@ import { PIECE_NAME, attractions, spent, type Layout } from './fair';
 import {
   KIND_NAME,
   SERVES,
+  besideTree,
   createSim,
   tick,
   type Group,
@@ -47,6 +48,30 @@ export const FORECASTS: Record<Weather, { name: string; rule: string }> = {
   },
 };
 
+/** What the forecast does to one square, drawn on the grid: a wet or sheltered bench, a sunny or shaded path. */
+export type Cue = { x: number; y: number; cue: 'wet' | 'sheltered' | 'sun' | 'shade' };
+
+/**
+ * The squares a forecast changes, read from the same rules the visitors follow.
+ * It depends only on the layout and the forecast, never on time, so it is
+ * drawn still in every mode, Quiet included.
+ */
+export function atmosphere(layout: Layout, weather?: Weather): Cue[] {
+  const cues: Cue[] = [];
+  for (const [k, piece] of Object.entries(layout)) {
+    const [x, y] = k.split(',').map(Number);
+    const covered = besideTree(layout, { x, y });
+    if (weather === 'rain' && piece === 'bench')
+      cues.push({ x, y, cue: covered ? 'sheltered' : 'wet' });
+    if (weather === 'heat' && piece === 'path') cues.push({ x, y, cue: covered ? 'shade' : 'sun' });
+  }
+  return cues;
+}
+
+/** The forecast's name for the debrief, with no forecast read as clear skies. */
+export const forecastName = (weather?: Weather) =>
+  weather ? FORECASTS[weather].name.toLowerCase() : 'clear skies';
+
 /** Starts the gates on `layout`, with the same seeded visitors every time, under an optional forecast. */
 export function openGates(layout: Layout, weather?: Weather): Sim {
   return createSim(layout, OPENING_SEED, false, OPENING_GROUPS, weather);
@@ -80,6 +105,8 @@ export type Outcome = {
   unmet: Record<Need, number>;
   /** Groups turned away, by kind, for the need that turned away the most. */
   worst?: { need: Need; count: number; kinds: string[] };
+  /** The forecast the day actually ran under, kept so a later change to the selector cannot relabel it. */
+  weather?: Weather;
 };
 
 /** Measures a day from what the simulation recorded. `complete` is false when the player ended early. */
@@ -107,6 +134,7 @@ export function measure(sim: Sim, complete = finished(sim)): Outcome {
       count: unmet[worstNeed],
       kinds: [...new Set(all.filter((g) => g.unmet === worstNeed).map((g) => KIND_NAME[g.kind]))],
     },
+    ...(sim.weather ? { weather: sim.weather } : {}),
   };
 }
 
@@ -160,9 +188,13 @@ export function debrief(layout: Layout, o: Outcome, previous?: Outcome): Debrief
   else if (o.spent > OPENING_BUDGET)
     lines.push(`Bottleneck: the plaza is ${o.spent - OPENING_BUDGET} over the Opening Day budget.`);
   lines.push(`Try: ${improvement(layout, o)}`);
+  // With no forecast on either try, the debrief reads exactly as it did before forecasts existed.
+  const forecasts = Boolean(o.weather || previous?.weather);
+  const label = (w?: Weather) => (forecasts ? ` (${forecastName(w)})` : '');
+  if (forecasts) lines.push(`Forecast this try: ${forecastName(o.weather)}.`);
   if (previous)
     lines.push(
-      `Last try: served ${previous.served}, happy ${previous.happy}, turned away ${previous.unreachable}, spent ${previous.spent}. This try: served ${o.served}, happy ${o.happy}, turned away ${o.unreachable}, spent ${o.spent}.`,
+      `Last try${label(previous.weather)}: served ${previous.served}, happy ${previous.happy}, turned away ${previous.unreachable}, spent ${previous.spent}. This try${label(o.weather)}: served ${o.served}, happy ${o.happy}, turned away ${o.unreachable}, spent ${o.spent}.${previous.weather === o.weather ? '' : ' The forecasts differ, so this is not a same-weather comparison.'}`,
     );
   lines.push(DEFINITIONS.served, DEFINITIONS.happy, DEFINITIONS.unreachable);
   return { headline, lines };

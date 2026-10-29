@@ -7,6 +7,7 @@ import {
   OPENING_BUDGET,
   OPENING_GROUPS,
   PENNANT_KEY,
+  atmosphere,
   createPennantStore,
   debrief,
   finished,
@@ -231,5 +232,43 @@ describe('forecasts', () => {
     const shaded = { ...base, '1,4': 'tree', '2,4': 'tree', '4,4': 'tree' } as Layout;
     expect(at(base, 'heat')).toBeGreaterThan(at(base));
     expect(at(shaded, 'heat')).toBeLessThan(at(base, 'heat'));
+  });
+
+  it('keeps the forecast each try ran under, so the debrief labels both tries', () => {
+    const rain = measure(runToEnd(openGates(base, 'rain')));
+    const clear = measure(runToEnd(openGates(base)));
+    expect(rain.weather).toBe('rain');
+    expect(clear.weather).toBeUndefined();
+    const text = debrief(base, clear, rain).lines.join(' ');
+    expect(text).toMatch(/Forecast this try: clear skies\./);
+    expect(text).toMatch(/Last try \(light rain\): served/);
+    expect(text).toMatch(/This try \(clear skies\): served/);
+    expect(text).toMatch(/not a same-weather comparison/);
+    const same = debrief(base, rain, rain).lines.join(' ');
+    expect(same).toMatch(/Last try \(light rain\).*This try \(light rain\)/);
+    expect(same).not.toMatch(/not a same-weather comparison/);
+  });
+
+  it('leaves the debrief with no forecast on either try exactly as it was', () => {
+    const clear = measure(runToEnd(openGates(base)));
+    const text = debrief(base, clear, clear).lines.join(' ');
+    expect(text).toMatch(/Last try: served .* This try: served/);
+    expect(text).not.toMatch(/Forecast|clear skies|same-weather/);
+  });
+
+  it('marks only the squares the forecast changes, from the visitors own rules', () => {
+    const sheltered = { ...base, '3,5': 'tree' } as Layout;
+    expect(atmosphere(base)).toEqual([]);
+    expect(atmosphere(base, 'rain')).toEqual([{ x: 3, y: 4, cue: 'wet' }]);
+    expect(atmosphere(sheltered, 'rain')).toEqual([{ x: 3, y: 4, cue: 'sheltered' }]);
+    const heat = atmosphere({ ...base, '1,4': 'tree' } as Layout, 'heat');
+    expect(heat).toContainEqual({ x: 1, y: 3, cue: 'shade' });
+    expect(heat).toContainEqual({ x: 4, y: 3, cue: 'sun' });
+    expect(heat.every((c) => c.cue === 'sun' || c.cue === 'shade')).toBe(true);
+  });
+
+  it('draws the same cues every time, so Quiet mode needs no other picture', () => {
+    expect(atmosphere(base, 'rain')).toEqual(atmosphere(base, 'rain'));
+    expect(atmosphere(base, 'heat')).toEqual(atmosphere(base, 'heat'));
   });
 });
