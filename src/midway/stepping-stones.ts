@@ -1,6 +1,6 @@
 /**
  * The chime stones: a row of flat stones on the promenade. Stand by them and
- * press C, or tap the sign stone, and they glow a short call one after another.
+ * press C, or tap a stone, and they glow a short call one after another.
  * Answer by stepping on the stones, or tapping them, in the same order. A
  * wrong stone just starts the answer again: there are no points and no timer,
  * and nothing is kept. The stones are silent; the glow is the whole chime.
@@ -73,6 +73,15 @@ export function touchStone(stones: ChimeStones, i: number, now: number): ChimeSt
   return { ...stones, touchedAt, answered, doneAt };
 }
 
+/**
+ * Taps stone `i` with a pointer. Before any call, or once the call has been
+ * answered, a tap plays the call; otherwise it touches the stone.
+ */
+export function tapStone(stones: ChimeStones, i: number, now: number): ChimeStones {
+  if (stones.calledAt === undefined || stones.doneAt !== undefined) return playCall(stones, now);
+  return touchStone(stones, i, now);
+}
+
 /** How brightly stone `i` glows at `now`, from 0 to 1. It fades, never flashes. */
 export function stoneGlow(stones: ChimeStones, i: number, now: number): number {
   const fade = (since: number) => (since >= 0 && since < GLOW_TIME ? 1 - since / GLOW_TIME : 0);
@@ -104,8 +113,8 @@ export function stonesInReach(stones: ChimeStones, player: Point, reach = STONES
 
 /** What the prompt over the stones says. */
 export function stonesPrompt(stones: ChimeStones, now: number): string {
-  if (stones.calledAt === undefined) return 'Press C to hear the stones';
+  if (stones.calledAt === undefined) return 'Press C or tap a stone to hear the stones';
   if (calling(stones, now)) return 'Watch the stones';
-  if (stones.doneAt !== undefined) return 'Answered! Press C for the call again';
+  if (stones.doneAt !== undefined) return 'Answered! Press C or tap a stone for the call again';
   return `Step on the stones in order (${stones.answered}/${CALL_PATTERN.length}), C to repeat`;
 }

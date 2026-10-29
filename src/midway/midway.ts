@@ -61,6 +61,7 @@ import {
   stoneUnder,
   stonesInReach,
   stonesPrompt,
+  tapStone,
   touchStone,
   type ChimeStones,
 } from './stepping-stones';
@@ -679,7 +680,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     }
     const stone = booth ? -1 : chimeAt(point);
     if (stone >= 0) {
-      chimes = touchStone(chimes, stone, gustClock);
+      chimes = tapStone(chimes, stone, gustClock);
       return;
     }
     if (!booth && billboardAt(point)) {

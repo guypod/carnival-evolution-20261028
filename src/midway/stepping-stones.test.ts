@@ -10,6 +10,7 @@ import {
   stoneUnder,
   stonesInReach,
   stonesPrompt,
+  tapStone,
   touchStone,
 } from './stepping-stones';
 
@@ -19,7 +20,7 @@ describe('chime stones', () => {
   it('stays dark until someone plays the call', () => {
     const stones = createStones({ x: 10, y: 10 });
     expect(stones.stones.map((_, i) => stoneGlow(stones, i, 5))).toEqual([0, 0, 0, 0]);
-    expect(stonesPrompt(stones, 0)).toBe('Press C to hear the stones');
+    expect(stonesPrompt(stones, 0)).toBe('Press C or tap a stone to hear the stones');
   });
 
   it('lights the call one stone at a time in order', () => {
@@ -85,5 +86,20 @@ describe('chime stones', () => {
     expect(stoneUnder(stones, { x: 4.45, y: 4.45 })).toBeUndefined();
     expect(stonesInReach(stones, { x: 5, y: 5 })).toBe(true);
     expect(stonesInReach(stones, { x: 9, y: 9 })).toBe(false);
+  });
+
+  it('plays the call when a stone is tapped before any call or after an answer', () => {
+    const tapped = tapStone(createStones({ x: 0, y: 0 }), 1, 2);
+    expect(tapped.calledAt).toBe(2);
+    expect(calling(tapped, 2.1)).toBe(true);
+    let stones = tapped;
+    CALL_PATTERN.forEach((stone, step) => {
+      stones = tapStone(stones, stone, 2 + afterCall + step);
+    });
+    expect(stones.doneAt).toBeDefined();
+    const again = tapStone(stones, 0, 20);
+    expect(again.calledAt).toBe(20);
+    expect(again.doneAt).toBeUndefined();
+    expect(again.answered).toBe(0);
   });
 });
