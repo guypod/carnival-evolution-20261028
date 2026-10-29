@@ -437,7 +437,7 @@ function setUpRoute(cancelWalk: () => void) {
       message.textContent = routeMessage(route);
       box.hidden = route.phase === 'idle';
       cancel.hidden = route.phase !== 'walking';
-      if (route.phase === 'arrived' || route.phase === 'cancelled')
+      if (route.phase !== 'idle' && route.phase !== 'walking')
         timer = window.setTimeout(() => (box.hidden = true), 4000);
     },
     stop: () => window.clearTimeout(timer),
