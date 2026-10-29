@@ -40,9 +40,10 @@ export function defaultPlacard(): Placard {
   return { name: DEFAULT_NAME, emblem: EMBLEMS[0], palette: PALETTES[0].id };
 }
 
-/** Plain text on one line, trimmed and cut to NAME_MAX characters. */
+/** Plain text on one line, without zero-width characters, trimmed and cut to NAME_MAX characters. */
 export function cleanName(value: string): string {
-  const plain = Array.from(value, (c) => (c < ' ' || c === '\u007f' ? ' ' : c)).join('');
+  const visible = value.replace(/[\u200b-\u200d\u2060\ufeff]/g, '');
+  const plain = Array.from(visible, (c) => (c < ' ' || c === '\u007f' ? ' ' : c)).join('');
   const flat = Array.from(plain.replace(/\s+/g, ' ').trim());
   return flat.slice(0, NAME_MAX).join('').trim();
 }

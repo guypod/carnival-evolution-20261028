@@ -37,6 +37,7 @@ describe('coaster placard', () => {
 
   it('refuses empty names, unknown emblems and unknown palettes', () => {
     expect(draftPlacard('  ', EMBLEMS[0], PALETTES[0].id)).toBeUndefined();
+    expect(draftPlacard('\u200b\u2060', EMBLEMS[0], PALETTES[0].id)).toBeUndefined();
     expect(draftPlacard('Loop', '💥', PALETTES[0].id)).toBeUndefined();
     expect(draftPlacard('Loop', EMBLEMS[0], 'neon')).toBeUndefined();
     expect(

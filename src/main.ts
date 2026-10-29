@@ -2951,10 +2951,10 @@ function renderCoaster() {
     onExit: () => (location.hash = '#/'),
     onStatus: (text, saved) => {
       const next = saved ? text : `${text} This browser would not save your layout.`;
-      if (status.textContent === next) return;
-      status.textContent = next;
       const toyTest = app.querySelector('.placard-status');
       if (toyTest) toyTest.textContent = placardStatus(coasterStore.load());
+      if (status.textContent === next) return;
+      status.textContent = next;
     },
   });
   const onClick = (event: Event) => {
@@ -2997,8 +2997,10 @@ function renderCoaster() {
       placardNote.textContent = `Placard saved: ${placard.name}.`;
     }
   };
-  // Typing in the placard form must not drive the workshop's letter keys.
-  const onFormKey = (event: Event) => event.stopPropagation();
+  // Typing in the placard form must not drive the workshop's letter keys; Escape still stops or exits.
+  const onFormKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') event.stopPropagation();
+  };
   form.addEventListener('submit', onSubmit);
   form.addEventListener('keydown', onFormKey);
   app.querySelector<HTMLElement>('h1')!.focus();
