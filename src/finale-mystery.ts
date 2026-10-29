@@ -374,3 +374,7 @@ function browserStorage(): MysteryStorage | undefined {
 export const mysteryStore = createMysteryStore(
   typeof window === 'undefined' ? undefined : browserStorage(),
 );
+
+// The Guide's panel for one landmark. render() replaces every panel, so focus
+// is restored by finding the new panel with this selector.
+export const mysteryPanelSelector = (id: string) => `.mystery-landmark[data-landmark="${id}"]`;

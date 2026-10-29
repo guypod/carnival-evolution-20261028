@@ -120,6 +120,7 @@ import {
   THEORIES,
   type MysteryAction,
   type Theory,
+  mysteryPanelSelector,
 } from './finale-mystery';
 import {
   CLOSED_STORY,
@@ -695,6 +696,7 @@ function setUpMystery(landmarks: readonly Landmark[], setDetail: (d: LandmarkDet
       for (const id of LANDMARK_ORDER) {
         const group = document.createElement('div');
         group.className = 'mystery-landmark';
+        group.dataset.landmark = id;
         para(group, landmarkScene(state)[id], 'scene');
         landmarkControls(group, id);
         body.append(group);
@@ -704,15 +706,23 @@ function setUpMystery(landmarks: readonly Landmark[], setDetail: (d: LandmarkDet
     renderCard();
   };
 
-  // Focus stays in the panel that was used, on its first button.
+  // Focus stays in the panel that was used, on its first button. render()
+  // replaces the panel, so find the newly rendered one by its landmark id.
   const step = (action: MysteryAction, from?: HTMLElement) => {
+    const landmark = from?.dataset.landmark;
     // Read the saved progress again first, so another tab's steps are kept.
     const next = mysteryStep(mysteryStore.load(), action);
     if (sameMystery(next, state)) return;
     state = next;
     mysteryStore.save(state);
     render();
-    if (from) (from.querySelector<HTMLElement>('button') ?? from).focus();
+    if (!from) return;
+    const panel = landmark
+      ? (body.querySelector<HTMLElement>(mysteryPanelSelector(landmark)) ?? body)
+      : from;
+    (
+      panel.querySelector<HTMLElement>('button') ?? body.querySelector<HTMLElement>('button')
+    )?.focus();
   };
 
   const onClose = () => {

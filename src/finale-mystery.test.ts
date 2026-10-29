@@ -16,6 +16,8 @@ import {
   parseMystery,
   sameMystery,
   type MysteryAction,
+  LANDMARK_ORDER,
+  mysteryPanelSelector,
 } from './finale-mystery';
 
 const play = (...actions: MysteryAction[]) => actions.reduce(mysteryStep, NEW_MYSTERY);
@@ -301,5 +303,14 @@ describe('finale mystery: saving', () => {
     expect(sameMystery(mysteryStep(reloaded, star), state)).toBe(true);
     expect(sameMystery(reloaded, play(start, askOtto))).toBe(false);
     expect(sameMystery(reloaded, play(start))).toBe(false);
+  });
+});
+
+describe('mysteryPanelSelector', () => {
+  it('names the same landmark panel on every render, so repeated Guide actions can refocus it', () => {
+    for (const id of LANDMARK_ORDER) {
+      expect(mysteryPanelSelector(id)).toBe(`.mystery-landmark[data-landmark="${id}"]`);
+      expect(mysteryPanelSelector(id)).toBe(mysteryPanelSelector(id));
+    }
   });
 });
