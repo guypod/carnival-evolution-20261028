@@ -48,7 +48,8 @@ export type PropKind =
   | 'planter'
   | 'balloons'
   | 'bunting-pole'
-  | 'billboard';
+  | 'billboard'
+  | 'fair-gate';
 
 export interface Prop extends Rect {
   kind: PropKind;
@@ -212,6 +213,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('balloons', 22, entrance + 4);
   add('planter', 15, entrance);
   add('planter', 1, height - 2);
+  // The gateway to Run Your Own Fair, on the grass east of the gate's cross path.
+  add('fair-gate', width - 2, entrance);
 
   return {
     width,
@@ -425,6 +428,17 @@ export function distanceToRect(point: Point, rect: Rect): number {
   const dx = Math.max(rect.x - point.x, 0, point.x - (rect.x + rect.w));
   const dy = Math.max(rect.y - point.y, 0, point.y - (rect.y + rect.h));
   return Math.hypot(dx, dy);
+}
+
+/** The gateway to Run Your Own Fair on this map. */
+export function fairGate(map: MidwayMap): Prop | undefined {
+  return map.props.find((prop) => prop.kind === 'fair-gate');
+}
+
+/** Whether the walker is close enough to the fair gateway to go through it. */
+export function fairGateInReach(map: MidwayMap, point: Point, reach = BOOTH_REACH): boolean {
+  const gate = fairGate(map);
+  return gate !== undefined && distanceToRect(point, gate) <= reach;
 }
 
 /** The booth the walker is close enough to use, if any. */

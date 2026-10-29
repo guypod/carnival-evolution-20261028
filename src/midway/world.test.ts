@@ -4,6 +4,8 @@ import {
   canStand,
   createVisitors,
   createWalker,
+  fairGate,
+  fairGateInReach,
   findPath,
   followPath,
   inputDirection,
@@ -179,5 +181,36 @@ describe('visitors', () => {
       expect(isBlocked(map, Math.floor(visitor.x), Math.floor(visitor.y))).toBe(false);
       expect(visitor.stride).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('the fair gateway', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'];
+  const map = layoutMidway(ids);
+  const gate = fairGate(map)!;
+
+  it('sits on the map, on grass, clear of every booth and landmark', () => {
+    expect(gate).toBeDefined();
+    expect(map.ground[gate.y * map.width + gate.x]).toBe('grass');
+    for (const prop of map.props.filter((p) => p !== gate)) {
+      const overlaps =
+        prop.x < gate.x + gate.w &&
+        gate.x < prop.x + prop.w &&
+        prop.y < gate.y + gate.h &&
+        gate.y < prop.y + prop.h;
+      expect(overlaps).toBe(false);
+    }
+    for (const booth of map.booths)
+      expect(boothInReach(map, { x: gate.x, y: gate.y })).not.toBe(booth);
+  });
+
+  it('leaves every booth reachable from the spawn', () => {
+    for (const booth of map.booths) expect(pathToBooth(map, map.spawn, booth)).toBeDefined();
+  });
+
+  it('can be walked up to, and is out of reach from the spawn', () => {
+    expect(fairGateInReach(map, map.spawn)).toBe(false);
+    expect(fairGateInReach(map, { x: gate.x - 0.5, y: gate.y + 0.5 })).toBe(true);
+    expect(findPath(map, map.spawn, { x: gate.x - 1, y: gate.y })).toBeDefined();
   });
 });

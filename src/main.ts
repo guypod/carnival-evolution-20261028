@@ -136,6 +136,8 @@ applyTheme();
 
 const app = document.querySelector<HTMLElement>('#app')!;
 let stop: (() => void) | undefined;
+/** True when the midway is being drawn again after Run Your Own Fair. */
+let backFromFair = false;
 
 function bestText(game: CarnivalGame): string {
   const best = bestScore(game.id);
@@ -305,11 +307,41 @@ function renderMidway() {
     link.hidden = !game;
     if (game) link.href = `#/play/${game.id}`;
   };
+  // The fair gateway shares the booth card, with its own words and link.
+  const showFairGate = (near: boolean) => {
+    if (!near) {
+      if (card.dataset.gate) {
+        delete card.dataset.gate;
+        card.hidden = true;
+      }
+      return;
+    }
+    card.dataset.gate = 'fair';
+    card.hidden = false;
+    card.classList.remove('closed');
+    card.querySelector('h2')!.textContent = 'Run Your Own Fair';
+    card.querySelector('.description')!.textContent =
+      'The fairgrounds gateway. Lay out your own plaza, then come back here. Scores are never touched.';
+    card.querySelector('.best')!.textContent = '';
+    const prompt = card.querySelector<HTMLElement>('.prompt')!;
+    prompt.hidden = false;
+    prompt.textContent = 'Press E, Enter or Space, or click the gateway, to go in.';
+    const link = card.querySelector<HTMLAnchorElement>('.play')!;
+    link.hidden = false;
+    link.href = '#/fair';
+    link.textContent = 'Enter';
+  };
 
   const midway = startMidway(app.querySelector('canvas')!, {
     games: registry.all(),
     onPlay: (gameId) => (location.hash = `#/play/${gameId}`),
-    onReach: showBooth,
+    onReach: (booth) => {
+      if (booth) delete card.dataset.gate;
+      card.querySelector<HTMLAnchorElement>('.play')!.textContent = 'Play';
+      showBooth(booth);
+    },
+    onFairGate: () => (location.hash = '#/fair'),
+    onFairGateReach: showFairGate,
     scene: scenePreference.load(),
     onLandmark: (landmark) => discovery.found(landmark),
     motion: motionPreference.load(),
@@ -325,6 +357,11 @@ function renderMidway() {
   const stopGuide = setUpGuide();
   const tour = setUpTour();
   const stopHelp = setUpHelp(tour.start);
+  if (backFromFair) {
+    // Back by the gateway: give the map focus so walking works straight away.
+    backFromFair = false;
+    app.querySelector<HTMLElement>('.midway-map')!.focus();
+  }
   stop = () => {
     stopSound();
     tour.stop();
@@ -1450,6 +1487,7 @@ function renderFair() {
       <p class="note">Your plaza is kept in this browser only. Resetting it never touches scores or other progress.</p>
     </section>`;
   const stopFair = startFair(app.querySelector<HTMLElement>('.fair-body')!, browserFairStorage());
+  backFromFair = true;
   app.querySelector<HTMLElement>('h1')!.focus();
   const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
   stop = () => {

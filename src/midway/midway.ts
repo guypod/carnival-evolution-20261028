@@ -46,6 +46,8 @@ import {
   boothInReach,
   createVisitors,
   createWalker,
+  fairGate,
+  fairGateInReach,
   findPath,
   followPath,
   inputDirection,
@@ -75,6 +77,10 @@ export interface MidwayOptions {
   motion?: MotionPreference;
   /** Called when a walk to a booth or landmark starts, arrives or is cancelled. */
   onRoute?(route: RouteState): void;
+  /** Called when the player goes through the gateway to Run Your Own Fair. */
+  onFairGate?(): void;
+  /** Called when the player walks up to, or away from, the fair gateway. */
+  onFairGateReach?(near: boolean): void;
 }
 
 export interface MidwayControls {
@@ -215,6 +221,14 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     options.onPlay(booth.gameId);
   };
 
+  const gate = fairGate(map);
+  let nearGate = false;
+  const enterFair = () => {
+    if (!options.onFairGate) return;
+    returnTo = { x: player.x, y: player.y };
+    options.onFairGate();
+  };
+
   const keys = new Set<string>();
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -226,6 +240,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     } else if (PLAY_KEYS.has(event.code) && inReach?.gameId) {
       event.preventDefault();
       play(inReach);
+    } else if (PLAY_KEYS.has(event.code) && nearGate && !inReach) {
+      event.preventDefault();
+      enterFair();
     }
   };
   const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
@@ -249,6 +266,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       const b = propBounds(prop);
       return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
     });
+
+  const gateAt = (point: Point) => {
+    if (!gate) return false;
+    const b = propBounds(gate);
+    return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+  };
 
   const walkToBooth = (booth: BoothSlot) => {
     player.path = pathToBooth(map, player, booth) ?? [];
@@ -294,6 +317,23 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       else walkToBooth(booth);
       return;
     }
+    if (gate && gateAt(point)) {
+      if (nearGate) enterFair();
+      else {
+        const path = pathToLandmark(
+          map,
+          player,
+          { id: 'entrance', name: '', clue: '', area: gate },
+          1,
+        );
+        if (path) {
+          player.path = path;
+          destination = path.at(-1);
+          setRoute(path.length > 0 ? startRoute('Run Your Own Fair') : IDLE_ROUTE);
+        }
+      }
+      return;
+    }
     const path = findPath(map, player, toTile(point.x, point.y));
     if (path) {
       player.path = path;
@@ -306,7 +346,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   };
   const onPointerMove = (event: PointerEvent) => {
     const point = toWorld(event);
-    canvas.style.cursor = boothAt(point) || billboardAt(point) ? 'pointer' : 'default';
+    canvas.style.cursor =
+      boothAt(point) || billboardAt(point) || gateAt(point) ? 'pointer' : 'default';
   };
 
   window.addEventListener('keydown', onKeyDown);
@@ -503,6 +544,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         (c.x - cam.x) * zoom,
         (c.y - BOOTH_SIGN_HEIGHT - 46 - cam.y) * zoom,
       );
+    } else if (nearGate && gate) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = toScreen(gate.x + 0.5, gate.y + 0.5);
+      label(ctx, 'Press E to run your fair', (c.x - cam.x) * zoom, (c.y - 76 - cam.y) * zoom);
     }
   };
 
@@ -544,6 +589,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (reach !== inReach) {
       inReach = reach;
       options.onReach(reach);
+    }
+
+    const gateReach = !inReach && fairGateInReach(map, player);
+    if (gateReach !== nearGate) {
+      nearGate = gateReach;
+      options.onFairGateReach?.(gateReach);
     }
 
     const landmark = landmarkInReach(landmarks, player);
