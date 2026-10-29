@@ -5,7 +5,12 @@ import { onEscapeKey } from './escape';
 import {
   CLOSED_GUIDE,
   escapeGuide,
+  GUIDE_SECTIONS,
+  guideContentsLinkId,
+  guideSectionHeadingId,
   guideToggleLabel,
+  jumpToSection,
+  returnToContents,
   toggleGuide,
   type GuideState,
 } from './visitor-guide';
@@ -183,22 +188,19 @@ function renderMidway() {
           </div>
         </section>
         <div class="visitor-guide" id="visitor-guide" role="region" aria-label="Visitor guide" hidden>
-          <nav class="guide-destinations" aria-label="Destinations">
+          <nav class="guide-contents" aria-label="Guide sections"><ul></ul></nav>
+          <nav class="guide-destinations" aria-label="Destinations" data-guide-section="destinations">
+            <h2 class="guide-section-title" id="guide-destinations-title" tabindex="-1">Destinations</h2>
             <a class="directory-link" href="#/booths">🔎 Booth Directory</a>
             <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
             <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
             <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
             <a class="records-link" href="#/records">📜 Hall of Records</a>
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
+            <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </nav>
-          <button type="button" class="scene-toggle" aria-pressed="false"></button>
-          <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
-          <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
-          <button type="button" class="sound-toggle" aria-pressed="false" aria-describedby="sound-note"></button>
-          <label class="sound-volume">Volume <input type="range" min="0" max="1" step="0.05" value="${DEFAULT_SOUNDSCAPE_VOLUME}" /></label>
-          <p class="note" id="sound-note">A soft hum made in your browser. Starts off, stops when you leave the midway or hide the page. Nothing on the map depends on it.</p>
-          <section class="midway-visit" aria-label="Choose my visit">
-            <h2>Choose my visit</h2>
+          <section class="midway-visit" aria-label="Choose my visit" data-guide-section="visit">
+            <h2 id="guide-visit-title" tabindex="-1">Choose my visit</h2>
             <div class="visit-moods"></div>
             <div class="visit-plan" hidden>
               <p class="visit-progress" role="status"></p>
@@ -217,13 +219,14 @@ function renderMidway() {
               </div>
             </div>
             <p class="note">Optional, with no timer. Separate from scores and stamps, and forgotten when you close the tab.</p>
+            <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </section>
           <nav class="midway-guide" aria-label="Booths">
             <h2>Booths</h2>
             <ul></ul>
           </nav>
-          <section class="midway-discovery" aria-label="Discovery trail">
-            <h2>Discovery trail</h2>
+          <section class="midway-discovery" aria-label="Discovery trail" data-guide-section="discovery">
+            <h2 id="guide-discovery-title" tabindex="-1">Discovery trail</h2>
             <p class="discovery-progress" role="status"></p>
             <ul></ul>
             <p class="discovery-clue"></p>
@@ -235,12 +238,24 @@ function renderMidway() {
               <button type="button" class="story-close">Back to the trail</button>
             </section>
             <p class="note">Optional, and separate from scores and stamps. Kept in this browser only.</p>
+            <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </section>
-          <details class="midway-passport">
-            <summary><h2>Passport</h2> <span class="summary"></span></summary>
+          <details class="midway-passport" data-guide-section="passport">
+            <summary id="guide-passport-title"><h2>Passport</h2> <span class="summary"></span></summary>
             <ul></ul>
             <p class="note">Stamps are kept in this browser only.</p>
+            <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </details>
+          <section class="guide-settings" aria-label="Settings" data-guide-section="settings">
+            <h2 id="guide-settings-title" tabindex="-1">Settings</h2>
+            <button type="button" class="scene-toggle" aria-pressed="false"></button>
+            <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
+            <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
+            <button type="button" class="sound-toggle" aria-pressed="false" aria-describedby="sound-note"></button>
+            <label class="sound-volume">Volume <input type="range" min="0" max="1" step="0.05" value="${DEFAULT_SOUNDSCAPE_VOLUME}" /></label>
+            <p class="note" id="sound-note">A soft hum made in your browser. Starts off, stops when you leave the midway or hide the page. Nothing on the map depends on it.</p>
+  <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
+          </section>
         </div>
       </div>
       <p class="discovery-toast" role="status" hidden></p>
@@ -691,6 +706,37 @@ function setUpGuide(): () => void {
   };
   show(state);
   toggle.addEventListener('click', () => show(toggleGuide(state)));
+
+  // The contents: one link per section. A link scrolls its section into view
+  // inside the guide's one scroll area and focuses its heading; each section's
+  // "Contents" button brings focus back to the link the player came from.
+  const contents = drawer.querySelector('.guide-contents ul')!;
+  for (const section of GUIDE_SECTIONS) {
+    const item = document.createElement('li');
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.id = guideContentsLinkId(section.id);
+    link.textContent = section.label;
+    link.setAttribute('aria-controls', guideSectionHeadingId(section.id));
+    link.addEventListener('click', () => {
+      show(jumpToSection(state, section.id));
+      const target = drawer.querySelector<HTMLElement>(`[data-guide-section="${section.id}"]`)!;
+      if (target instanceof HTMLDetailsElement) target.open = true;
+      document.getElementById(guideSectionHeadingId(section.id))?.focus({ preventScroll: true });
+      target.scrollIntoView({ block: 'start' });
+    });
+    item.append(link);
+    contents.append(item);
+  }
+  for (const back of drawer.querySelectorAll<HTMLButtonElement>('.guide-back')) {
+    back.addEventListener('click', () => {
+      const result = returnToContents(state);
+      show(result.state);
+      const link = document.getElementById(result.focusId);
+      link?.focus({ preventScroll: true });
+      drawer.scrollTo({ top: 0 });
+    });
+  }
   return onEscapeKey(window, () => {
     const result = escapeGuide(state, drawer.contains(document.activeElement));
     if (!result.handled) return;
