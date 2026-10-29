@@ -637,6 +637,7 @@ kbd {
 .circuit-link,
 .records-link,
 .postcard-link,
+.fair-link,
 .directory-link {
   display: block;
   padding: 10px 14px;
@@ -658,6 +659,8 @@ kbd {
 .records-link:focus-visible,
 .postcard-link:hover,
 .postcard-link:focus-visible,
+.fair-link:hover,
+.fair-link:focus-visible,
 .directory-link:hover,
 .directory-link:focus-visible {
   outline: 3px solid var(--color-text);
@@ -1670,4 +1673,27 @@ kbd {
 .help-tour:focus-visible {
   outline: 2px solid var(--color-text);
   outline-offset: 2px;
+}
+
+.fair-tools,
+.fair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.fair-tools button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.fair-grid {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+
+.fair-grid:focus-visible {
+  outline: 3px solid var(--color-accent);
 }
