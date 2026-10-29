@@ -23,6 +23,15 @@ import {
   type Piece,
   type PlaceResult,
 } from './fair';
+import {
+  KIND_NAME,
+  advance,
+  createSim,
+  describeGroup,
+  relayout,
+  resetSim,
+  type Sim,
+} from './visitors';
 
 const CELL = 64;
 const ICON: Record<Piece, string> = { path: '', game: '🎯', food: '🍿', bench: '🪑', tree: '🌳' };
@@ -36,7 +45,7 @@ export function startFair(
     <p class="fair-intro">Lay paths from the entrance (the gate on the left), then place stalls and benches beside them. Visitors only reach a piece that touches a path connected to the entrance.</p>
     <div class="fair-tools" role="group" aria-label="Piece to place"></div>
     <canvas class="fair-grid" tabindex="0" role="application" aria-label="Fair plaza grid. Arrow keys move the cursor."></canvas>
-    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza.</p>
+    <p class="fair-help">Keys: arrows move, 1 to 5 pick a piece, Enter places, Delete removes, M picks up and drops a piece, U undoes, W walks your plaza, G selects a visitor group, P pauses visitors.</p>
     <div class="fair-actions">
       <button type="button" data-act="undo">Undo</button>
       <button type="button" data-act="walk" aria-pressed="false">Walk my plaza</button>
@@ -44,6 +53,12 @@ export function startFair(
       <button type="button" data-act="reload">Reload saved layout</button>
       <button type="button" data-act="reset">Reset this plaza</button>
     </div>
+    <div class="fair-actions" role="group" aria-label="Visitors">
+      <button type="button" data-act="pause" aria-pressed="false">Pause visitors</button>
+      <button type="button" data-act="next-group">Select next group (G)</button>
+      <button type="button" data-act="reset-visitors">Restart visitors</button>
+    </div>
+    <p class="fair-visitor" aria-live="polite"></p>
     <p class="fair-status" role="status" aria-live="polite"></p>
     <p class="fair-summary"></p>`;
 
@@ -55,6 +70,8 @@ export function startFair(
   let piece: Piece = 'path';
   let carrying: Carried | undefined;
   let walker: Cell | undefined;
+  let sim: Sim = createSim(layout, 1);
+  let selected: number | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   canvas.width = FAIR_WIDTH * CELL;
@@ -62,6 +79,8 @@ export function startFair(
   const ctx = canvas.getContext('2d');
   const status = root.querySelector('.fair-status')!;
   const summaryLine = root.querySelector('.fair-summary')!;
+  const visitorCard = root.querySelector('.fair-visitor')!;
+  const pauseButton = root.querySelector<HTMLButtonElement>('[data-act="pause"]')!;
   const walkButton = root.querySelector<HTMLButtonElement>('[data-act="walk"]')!;
   const tools = root.querySelector('.fair-tools')!;
   const toolButtons = PIECES.map((p, i) => {
@@ -91,6 +110,7 @@ export function startFair(
     layout = next;
     carrying = undefined;
     walker = settleWalker(layout, walker);
+    sim = relayout(sim, layout);
   }
 
   function apply(result: PlaceResult, done: string) {
@@ -123,6 +143,19 @@ export function startFair(
           : 'Back to building.',
       );
       canvas.focus();
+    } else if (name === 'pause') {
+      sim = { ...sim, paused: !sim.paused, carry: 0 };
+      pauseButton.setAttribute('aria-pressed', String(sim.paused));
+      pauseButton.textContent = sim.paused ? 'Resume visitors' : 'Pause visitors';
+    } else if (name === 'next-group') {
+      const ids = sim.groups.map((g) => g.id);
+      if (!ids.length) return say('No visitor groups on the plaza right now.');
+      const at = selected === undefined ? -1 : ids.indexOf(selected);
+      selected = ids[(at + 1) % ids.length];
+    } else if (name === 'reset-visitors') {
+      sim = resetSim(sim);
+      selected = undefined;
+      say('Visitors restarted from the same seed. Your layout is unchanged.');
     } else if (name === 'save') {
       say(
         store.save(layout)
@@ -190,6 +223,8 @@ export function startFair(
     if (digit >= 1 && digit <= PIECES.length) return pick(PIECES[digit - 1]);
     const k = event.key.toLowerCase();
     if (k === 'w') return act('walk');
+    if (k === 'g') return act('next-group');
+    if (k === 'p') return act('pause');
     if (k === 'u' || (k === 'z' && (event.ctrlKey || event.metaKey))) return act('undo');
     if (walker) return;
     if (event.key === 'Enter' || event.key === ' ') {
@@ -224,8 +259,19 @@ export function startFair(
     apply(place(layout, cursor, piece), `Placed a ${PIECE_NAME[piece].toLowerCase()}.`);
   }
 
+  function describeVisitors(): string {
+    const g = sim.groups.find((x) => x.id === selected);
+    const kinds = sim.groups.map((x) => KIND_NAME[x.kind]).join(', ');
+    const head = `${sim.paused ? 'Paused. ' : ''}Visitors: ${kinds || 'none right now'}.`;
+    return g
+      ? `${head} Selected: ${describeGroup(g)}`
+      : `${head} Press G to select a group and read its plan.`;
+  }
+
   function draw() {
     summaryLine.textContent = summary(layout);
+    const card = describeVisitors();
+    if (visitorCard.textContent !== card) visitorCard.textContent = card;
     toolButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(PIECES[i] === piece)));
     if (!ctx) return;
     const c = theme.colors;
@@ -270,6 +316,31 @@ export function startFair(
         }
       }
     }
+    sim.groups.forEach((g, i) => {
+      const gx = g.at.x * CELL + CELL / 2 + ((i % 2) * 2 - 1) * 8;
+      const gy = g.at.y * CELL + CELL / 2 + (i < 2 ? -8 : 8);
+      ctx.fillStyle = g.kind === 'thrill' ? c.danger : c.water;
+      ctx.beginPath();
+      ctx.arc(gx, gy, CELL / 7, 0, Math.PI * 2);
+      ctx.fill();
+      if (g.id === selected) {
+        ctx.strokeStyle = c.text;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.font = canvasFont('small');
+        ctx.fillStyle = c.text;
+        const bubble =
+          g.phase === 'leaving'
+            ? '👋'
+            : g.target?.need === 'thirst'
+              ? '🥤'
+              : g.target?.need === 'rest'
+                ? '💤'
+                : '🎯';
+        ctx.fillText(bubble, gx, gy - CELL / 4);
+      }
+    });
     if (walker) {
       ctx.fillStyle = c.accent;
       ctx.beginPath();
@@ -297,7 +368,23 @@ export function startFair(
   );
   draw();
 
+  let frame = 0;
+  let last = performance.now();
+  let lastTick = sim.tick;
+  const loop = (now: number) => {
+    sim = advance(sim, now - last);
+    last = now;
+    if (selected !== undefined && !sim.groups.some((g) => g.id === selected)) selected = undefined;
+    if (sim.tick !== lastTick) {
+      lastTick = sim.tick;
+      draw();
+    }
+    frame = requestAnimationFrame(loop);
+  };
+  frame = requestAnimationFrame(loop);
+
   return () => {
+    cancelAnimationFrame(frame);
     actions.removeEventListener('click', onAction);
     canvas.removeEventListener('keydown', onKey);
     canvas.removeEventListener('click', onClick);
