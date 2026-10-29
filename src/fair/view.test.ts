@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindActions, type ActionBar } from './view';
+import { bindActions, tourStartText, type ActionBar } from './view';
 
 type Listener = (event: Event) => void;
 
@@ -37,5 +37,14 @@ describe('toolbar wiring', () => {
     const stop = bindActions([builder.bar, visitors.bar], () => {});
     stop();
     expect(builder.listeners.size + visitors.listeners.size).toBe(0);
+  });
+});
+
+describe('tour start wording', () => {
+  it('asks for the first stop on a new tour and the next stop once keepsakes exist', () => {
+    expect(tourStartText({ keepsakes: [] })).toContain('Choose the first stop');
+    const between = tourStartText({ keepsakes: ['meadow' as never, 'pier' as never] });
+    expect(between).toContain('Choose the next stop');
+    expect(between).not.toContain('first stop');
   });
 });

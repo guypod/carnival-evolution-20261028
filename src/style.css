@@ -2115,3 +2115,8 @@ kbd {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+.pocket-card ul {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}

@@ -77,6 +77,15 @@ import {
 } from './booth-directory';
 import { favorites } from './favorites';
 import {
+  dealPocket,
+  dismissPocket,
+  findDestination,
+  markPocketVisit,
+  pocketStatus,
+  swapPocket,
+  type PocketCard,
+} from './pocket-itinerary';
+import {
   circuit,
   circuitHistory,
   circuitProgress,
@@ -398,6 +407,20 @@ function renderMidway() {
                 <button type="button" class="visit-exit">Exit visit</button>
               </div>
             </div>
+            <div class="pocket-card" aria-labelledby="pocket-title">
+              <h3 id="pocket-title">🃏 Surprise my visit</h3>
+              <button type="button" class="pocket-deal">Deal a pocket card</button>
+              <div class="pocket-body" hidden>
+                <p>One booth and one place to wander, whenever you like:</p>
+                <ul>
+                  <li><a class="pocket-booth" href="#/"></a></li>
+                  <li><a class="pocket-destination" href="#/"></a></li>
+                </ul>
+                <p class="pocket-status" role="status"></p>
+                <button type="button" class="pocket-swap">Swap suggestion</button>
+                <button type="button" class="pocket-dismiss">Dismiss card</button>
+              </div>
+            </div>
             <p class="note">Optional, with no timer. Separate from scores and stamps, and forgotten when you close the tab.</p>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </section>
@@ -538,6 +561,7 @@ function renderMidway() {
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
   const mystery = setUpMystery(midway.landmarks, midway.setLandmarkDetail);
   setUpVisit(midway.walkTo, midway.walkToLandmark);
+  setUpPocket();
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
@@ -991,6 +1015,62 @@ function setUpVisit(walkTo: (gameId: string) => void, walkToLandmark: (id: Landm
   };
   section.querySelector('.visit-exit')!.addEventListener('click', leave);
   another.addEventListener('click', leave);
+  render();
+}
+
+let pocketCard: PocketCard | undefined;
+
+// Surprise my visit: the card is kept in memory only, so it is still there
+// when the player comes back to the midway from one of its links.
+function setUpPocket() {
+  const card = app.querySelector<HTMLElement>('.pocket-card')!;
+  const deal = card.querySelector<HTMLButtonElement>('.pocket-deal')!;
+  const body = card.querySelector<HTMLElement>('.pocket-body')!;
+  const booth = card.querySelector<HTMLAnchorElement>('.pocket-booth')!;
+  const place = card.querySelector<HTMLAnchorElement>('.pocket-destination')!;
+  const booths = registry.all().map((g) => ({ id: g.id, name: g.name }));
+
+  const render = () => {
+    deal.hidden = pocketCard !== undefined;
+    body.hidden = pocketCard === undefined;
+    if (!pocketCard) return;
+    const game = registry.get(pocketCard.gameId)!;
+    const destination = findDestination(pocketCard.destination)!;
+    booth.href = `#/play/${game.id}`;
+    booth.textContent = `${game.name}: ${game.description}`;
+    place.href = destination.href;
+    place.textContent = `${destination.name}: ${destination.intent}`;
+    card.querySelector('.pocket-status')!.textContent = pocketStatus(pocketCard);
+  };
+  deal.addEventListener('click', () => {
+    pocketCard = dealPocket(booths);
+    render();
+    booth.focus();
+  });
+  card.querySelector('.pocket-swap')!.addEventListener('click', () => {
+    if (pocketCard) pocketCard = swapPocket(pocketCard, booths);
+    render();
+    booth.focus();
+  });
+  card.querySelector('.pocket-dismiss')!.addEventListener('click', () => {
+    pocketCard = dismissPocket();
+    render();
+    deal.focus();
+  });
+  // Plain, Ctrl/Cmd and middle clicks all open the link, so all of them count,
+  // and the status updates for a link opened in a new tab.
+  const markVisit = (link: HTMLAnchorElement, part: 'booth' | 'destination') => {
+    const mark = () => {
+      if (pocketCard) pocketCard = markPocketVisit(pocketCard, part);
+      render();
+    };
+    link.addEventListener('click', mark);
+    link.addEventListener('auxclick', (event) => {
+      if (event.button === 1) mark();
+    });
+  };
+  markVisit(booth, 'booth');
+  markVisit(place, 'destination');
   render();
 }
 
