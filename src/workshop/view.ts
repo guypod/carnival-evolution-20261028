@@ -1,13 +1,20 @@
 import { canvasFont, theme } from '../carnival/theme';
 import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../midway/motion';
 import {
+  BENCH,
   GEAR_RADII,
   TOOLS,
   TOYS,
+  benchPoint,
+  benchStops,
   camLift,
   commit,
   createRepairsStore,
+  drawOrder,
+  dropSlot,
   faultyToy,
+  gearRadius,
+  hitTarget,
   movePart,
   openBench,
   partLabel,
@@ -26,8 +33,7 @@ import {
   type ToyId,
 } from './workshop';
 
-const WIDTH = 720;
-const HEIGHT = 340;
+const { width: WIDTH, height: HEIGHT } = BENCH;
 /** How long a test run animates, in milliseconds. */
 const RUN_MS = 2400;
 const { colors } = theme;
@@ -93,10 +99,7 @@ export function startWorkshop(
 
   const bits = () => targets(bench.toy);
   /** What the arrow keys step through: every part and fixture, and the empty slots. */
-  const navTargets = () => {
-    const filled = new Set(Object.values(bench.toy.parts));
-    return bits().filter((t) => t.kind !== 'slot' || !filled.has(t.id));
-  };
+  const navTargets = () => benchStops(bench.toy);
   const keyOf = (t: Target) => `${t.kind}:${t.id}`;
   const focusedTarget = (): Target | undefined => {
     const all = navTargets();
@@ -144,7 +147,7 @@ export function startWorkshop(
     if (held) {
       const part = held;
       held = drag = undefined;
-      const slot = target.kind === 'slot' ? target.id : (bench.toy.parts[target.id] ?? target.id);
+      const slot = dropSlot(bench.toy, target);
       if (slot === bench.toy.parts[part]) {
         say(`Put the ${partLabel(part)} back down.`);
         return refresh();
@@ -249,7 +252,7 @@ export function startWorkshop(
   function drawPart(part: string, x: number, y: number, angle: number, lifted = false) {
     ctx.save();
     ctx.globalAlpha = lifted ? 0.75 : 1;
-    if (part in GEAR_RADII) gear(x, y, GEAR_RADII[part] * 30 - 3, angle, colors.accent);
+    if (part in GEAR_RADII) gear(x, y, gearRadius(part), angle, colors.accent);
     else if (part === 'rod') {
       ctx.fillStyle = colors.muted;
       ctx.fillRect(x - 6, y - 6, 12, 12);
@@ -303,8 +306,9 @@ export function startWorkshop(
     ctx.beginPath();
     ctx.arc(360, 34, 11, 0, Math.PI * 2);
     ctx.fill();
-    for (const t of bits()) {
-      if (t.kind !== 'part' || t.id === held) continue;
+    // Drawn in the same order the pointer picks them, so the gear on top is the one clicked.
+    for (const t of drawOrder(bits())) {
+      if (t.id === held) continue;
       const onPeg = bench.toy.parts[t.id].startsWith('peg');
       drawPart(t.id, t.x + (onPeg ? shake : 0), t.y, onPeg ? turn * (spin[t.id] ?? 0) : 0);
     }
@@ -423,8 +427,8 @@ export function startWorkshop(
       ctx.arc(t.x, t.y, t.id === 'shaft' ? 5 : t.r, 0, Math.PI * 2);
       ctx.fill();
     }
-    for (const t of bits()) {
-      if (t.kind !== 'part' || t.id === held) continue;
+    for (const t of drawOrder(bits())) {
+      if (t.id === held) continue;
       const onShaft = bench.toy.parts[t.id] === 'shaft';
       drawPart(t.id, t.x, t.y, onShaft ? turns * Math.PI * 2 : 0);
     }
@@ -522,27 +526,10 @@ export function startWorkshop(
     refresh();
   }
 
-  const pointAt = (event: PointerEvent) => {
-    const box = canvas.getBoundingClientRect();
-    return {
-      x: ((event.clientX - box.left) / box.width) * WIDTH,
-      y: ((event.clientY - box.top) / box.height) * HEIGHT,
-    };
-  };
-  /** The target under a point: parts before slots, so a click on a gear picks it up. */
-  const hit = (p: { x: number; y: number }) => {
-    const near = bits().filter((t) => Math.hypot(t.x - p.x, t.y - p.y) <= t.r);
-    // While a part is held, an empty spot under a big gear still takes it.
-    const slot = held
-      ? near.find((t) => t.kind === 'slot' && !Object.values(bench.toy.parts).includes(t.id))
-      : undefined;
-    return (
-      slot ??
-      near.find((t) => t.kind === 'part' && t.id !== held) ??
-      near.find((t) => t.kind !== 'part') ??
-      near[0]
-    );
-  };
+  // The canvas may be shown smaller than the bench; pointers map back onto bench pixels.
+  const pointAt = (event: PointerEvent) =>
+    benchPoint({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect());
+  const hit = (p: { x: number; y: number }) => hitTarget(bench.toy, p, held);
   let downOn: string | undefined;
   const onDown = (event: PointerEvent) => {
     canvas.focus();

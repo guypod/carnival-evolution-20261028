@@ -68,6 +68,12 @@ export function toyInfo(id: ToyId): ToyInfo {
   return TOYS.find((t) => t.id === id)!;
 }
 
+/**
+ * The bench canvas in pixels. Every target below is in these units; a pointer is
+ * mapped onto them with benchPoint, whatever size the canvas is shown at.
+ */
+export const BENCH = { width: 720, height: 470 };
+
 // The music box: a crank gear and the bear's gear, with five pegs between.
 /** Gear radii in peg units; one peg unit is GEAR_UNIT pixels on the bench. */
 export const GEAR_RADII: Record<string, number> = { small: 1, medium: 2, large: 3 };
@@ -77,6 +83,8 @@ export const PEGS = [3, 4, 5, 6, 7];
 const GEAR_UNIT = 30;
 const GEAR_LEFT = 60;
 const GEAR_Y = 150;
+/** The music box tray: a row on the bench below the pegs, each spot as wide as the large gear. */
+const GEAR_TRAY = { left: 150, gap: 210, y: 360 };
 
 // The rooster bell: a lever with three holes, a link rod, and the hammer.
 export const HOLES = [1, 2, 3];
@@ -86,6 +94,26 @@ const RING_HOLE = 2;
 // The hopping frog: a shaft, three cams to choose from, and a pebble.
 export const CAMS = ['round', 'snail', 'tall'] as const;
 export type Cam = (typeof CAMS)[number];
+/** How far each cam reaches from the shaft at its widest, as drawn. */
+export const CAM_REACH: Record<Cam, number> = { round: 22, snail: 30, tall: 34 };
+const ROD_REACH = 12;
+
+/** A gear's drawn radius to its teeth's base; the teeth stand GEAR_TEETH further out. */
+export function gearRadius(gear: string): number {
+  return GEAR_RADII[gear] * GEAR_UNIT - 3;
+}
+export const GEAR_TEETH = 2;
+
+/**
+ * How far a part reaches from its centre as drawn: a gear's tooth tips, a cam's
+ * widest lobe. A part is the same size on a peg, on the shaft or in the tray,
+ * and a click picks it up anywhere inside this outline.
+ */
+export function partRadius(part: string): number {
+  if (part in GEAR_RADII) return gearRadius(part) + GEAR_TEETH;
+  if (part === 'rod') return ROD_REACH;
+  return CAM_REACH[part as Cam];
+}
 
 export function faultyToy(id: ToyId): ToyState {
   switch (id) {
@@ -119,23 +147,81 @@ export function targets(toy: ToyState): Target[] {
   };
   if (toy.id === 'music-box') {
     for (const p of PEGS) slot(`peg-${p}`, `peg ${p - 2}`, GEAR_LEFT + p * GEAR_UNIT, GEAR_Y, 14);
-    [1, 2, 3].forEach((n) => slot(`tray-${n}`, `tray spot ${n}`, 140 + n * 90, 280, 30));
+    // Each tray spot holds the largest gear whole, inside the bench and clear of the others.
+    const room = Math.max(...Object.keys(GEAR_RADII).map(partRadius));
+    [1, 2, 3].forEach((n) =>
+      slot(
+        `tray-${n}`,
+        `tray spot ${n}`,
+        GEAR_TRAY.left + (n - 1) * GEAR_TRAY.gap,
+        GEAR_TRAY.y,
+        room,
+      ),
+    );
   } else if (toy.id === 'rooster-bell') {
     HOLES.forEach((h) => slot(`hole-${h}`, `lever hole ${h}`, 120 + h * 40, 200 - h * 20, 12));
     out.push({ id: 'pin', kind: 'fixture', label: 'pivot pin', x: 120, y: 200, r: 14 });
   } else {
-    slot('shaft', 'cam shaft', 200, 200, 34);
-    [1, 2, 3].forEach((n) => slot(`tray-${n}`, `tray spot ${n}`, 330 + n * 70, 280, 28));
+    const room = Math.max(...CAMS.map(partRadius));
+    slot('shaft', 'cam shaft', 200, 200, room);
+    [1, 2, 3].forEach((n) => slot(`tray-${n}`, `tray spot ${n}`, 330 + n * 70, 280, room));
     if (toy.pebble)
       out.push({ id: 'pebble', kind: 'fixture', label: 'pebble', x: 236, y: 172, r: 12 });
   }
   for (const [part, at] of Object.entries(toy.parts)) {
     const s = slotAt.get(at)!;
-    // A gear is picked up anywhere inside its drawn outline, not just on its peg.
-    const r = part in GEAR_RADII ? Math.max(s.r, GEAR_RADII[part] * GEAR_UNIT - 3) : s.r;
-    out.push({ ...s, id: part, kind: 'part', label: partLabel(part), r });
+    out.push({ ...s, id: part, kind: 'part', label: partLabel(part), r: partRadius(part) });
   }
   return out;
+}
+
+/** The parts in the order they are drawn: larger first, so a smaller part lying across a larger one stays on top. */
+export function drawOrder(all: readonly Target[]): Target[] {
+  return all.filter((t) => t.kind === 'part').sort((a, b) => b.r - a.r);
+}
+
+/**
+ * The target a pointer at `p` (in bench pixels) lands on, using the same outlines
+ * the bench draws. With nothing held: a fixture, else the topmost part, else a
+ * spot. With a part held: the spot under the pointer, else the spot of the
+ * topmost other part there, so it swaps. Spots never overlap, so each answer is
+ * unambiguous.
+ */
+export function hitTarget(
+  toy: ToyState,
+  p: { x: number; y: number },
+  held?: string,
+): Target | undefined {
+  const all = targets(toy);
+  const inside = (t: Target) => Math.hypot(t.x - p.x, t.y - p.y) <= t.r;
+  const top = drawOrder(all)
+    .filter((t) => t.id !== held && inside(t))
+    .pop();
+  const slot = all.find((t) => t.kind === 'slot' && inside(t));
+  if (held) return slot ?? top;
+  return all.find((t) => t.kind === 'fixture' && inside(t)) ?? top ?? slot;
+}
+
+/** Maps a pointer's page position onto bench pixels, for a canvas shown at any size. */
+export function benchPoint(
+  client: { x: number; y: number },
+  box: { left: number; top: number; width: number; height: number },
+): { x: number; y: number } {
+  return {
+    x: ((client.x - box.left) / box.width) * BENCH.width,
+    y: ((client.y - box.top) / box.height) * BENCH.height,
+  };
+}
+
+/** What the arrow keys step through: every part and fixture, and the empty spots. */
+export function benchStops(toy: ToyState): Target[] {
+  const filled = new Set(Object.values(toy.parts));
+  return targets(toy).filter((t) => t.kind !== 'slot' || !filled.has(t.id));
+}
+
+/** The spot a held part goes to when placed on a target: the spot itself, or the spot of the part there. */
+export function dropSlot(toy: ToyState, target: Target): string {
+  return target.kind === 'slot' ? target.id : (toy.parts[target.id] ?? target.id);
 }
 
 export function partLabel(part: string): string {

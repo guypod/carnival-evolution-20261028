@@ -4,13 +4,20 @@ import { layoutMidway } from '../midway/world';
 import { toySpots } from '../midway/repaired-toys';
 import { registry } from '../games';
 import {
+  BENCH,
+  CAMS,
+  GEAR_RADII,
   NO_REPAIRS,
   REPAIRS_KEY,
   TOYS,
+  benchPoint,
+  benchStops,
   camLift,
   commit,
   createRepairsStore,
+  dropSlot,
   faultyToy,
+  hitTarget,
   midwayToys,
   movePart,
   openBench,
@@ -18,9 +25,12 @@ import {
   parseToy,
   recordRepair,
   resetBench,
+  partRadius,
   runToy,
+  targets,
   undo,
   useTool,
+  type Target,
   type ToyState,
 } from './workshop';
 
@@ -268,5 +278,199 @@ describe('repaired toys on the midway', () => {
     const all = toySpots(map, ['music-box', 'rooster-bell', 'hopping-frog']);
     const frogOnly = toySpots(map, ['hopping-frog']);
     expect(frogOnly).toEqual([all[2]]);
+  });
+});
+
+describe('bench geometry', () => {
+  /** Every part a toy has, each placed in turn on every spot it can reach by a swap-free move. */
+  const parts = (id: ToyState['id']) => Object.keys(faultyToy(id).parts);
+  const spots = (id: ToyState['id']) =>
+    targets(faultyToy(id)).filter((t) => t.kind === 'slot' && !t.id.startsWith('peg-'));
+  const inBench = (x: number, y: number, r: number) =>
+    x - r >= 0 && y - r >= 0 && x + r <= BENCH.width && y + r <= BENCH.height;
+  const apart = (a: Target, b: Target) => Math.hypot(a.x - b.x, a.y - b.y) >= a.r + b.r;
+
+  it('draws each part at its own size wherever it sits', () => {
+    for (const gear of Object.keys(GEAR_RADII))
+      expect(partRadius(gear)).toBe(GEAR_RADII[gear] * 30 - 3 + 2);
+    const box = faultyToy('music-box');
+    const large = targets(box).find((t) => t.id === 'large')!;
+    const mounted = targets(movePart(box, 'large', 'peg-5').toy).find((t) => t.id === 'large')!;
+    expect(large.r).toBe(mounted.r);
+  });
+
+  it.each(['music-box', 'hopping-frog'] as const)(
+    '%s: every tray spot holds its largest part wholly on the bench',
+    (id) => {
+      const largest = Math.max(...parts(id).map(partRadius));
+      for (const s of spots(id)) {
+        expect(s.r, s.id).toBeGreaterThanOrEqual(largest);
+        expect(inBench(s.x, s.y, largest), s.id).toBe(true);
+      }
+    },
+  );
+
+  it.each(TOYS.map((t) => t.id))('%s: no two spots overlap', (id) => {
+    const all = targets(faultyToy(id)).filter((t) => t.kind === 'slot');
+    all.forEach((a, i) =>
+      all.slice(i + 1).forEach((b) => expect(apart(a, b), `${a.id}/${b.id}`).toBe(true)),
+    );
+  });
+
+  it('keeps every parked gear clear of the others and of the gears on the pegs, in any arrangement', () => {
+    const pegs = targets(faultyToy('music-box')).filter((t) => t.id.startsWith('peg-'));
+    const trays = spots('music-box');
+    // Every way to park the three gears across the tray and pegs, one gear per spot.
+    const all = [...trays, ...pegs].map((t) => t.id);
+    for (const a of all)
+      for (const b of all)
+        for (const c of all) {
+          if (new Set([a, b, c]).size < 3) continue;
+          const toy: ToyState = {
+            ...faultyToy('music-box'),
+            parts: { small: a, medium: b, large: c },
+          };
+          const placed = targets(toy).filter((t) => t.kind === 'part');
+          for (const p of placed)
+            expect(inBench(p.x, p.y, p.r), `${p.id} at ${toy.parts[p.id]}`).toBe(true);
+          const parked = placed.filter((p) => toy.parts[p.id].startsWith('tray-'));
+          for (const p of parked)
+            for (const q of placed) if (p !== q) expect(apart(p, q), `${p.id}/${q.id}`).toBe(true);
+        }
+  });
+
+  it('keeps every cam on the bench and the parked ones apart', () => {
+    for (const shaft of CAMS) {
+      const rest = CAMS.filter((c) => c !== shaft);
+      const toy: ToyState = {
+        ...faultyToy('hopping-frog'),
+        pebble: false,
+        parts: { [shaft]: 'shaft', [rest[0]]: 'tray-1', [rest[1]]: 'tray-3' },
+      };
+      const placed = targets(toy).filter((t) => t.kind === 'part');
+      for (const p of placed) expect(inBench(p.x, p.y, p.r), p.id).toBe(true);
+      placed.forEach((a, i) => placed.slice(i + 1).forEach((b) => expect(apart(a, b)).toBe(true)));
+    }
+  });
+});
+
+describe('picking parts with the pointer', () => {
+  const at = (toy: ToyState, id: string) => targets(toy).find((t) => t.id === id)!;
+
+  it('picks a parked gear anywhere inside its drawn outline, and nothing just outside it', () => {
+    const toy = faultyToy('music-box');
+    const large = at(toy, 'large');
+    expect(hitTarget(toy, { x: large.x, y: large.y + large.r - 1 })?.id).toBe('large');
+    expect(hitTarget(toy, { x: large.x - large.r + 1, y: large.y })?.id).toBe('large');
+    // Just past the large gear's teeth, towards its neighbour, is bare bench between spots.
+    expect(hitTarget(toy, { x: large.x - large.r - 1, y: large.y })).toBeUndefined();
+  });
+
+  it('picks each tray gear by its own outline, never a neighbour', () => {
+    const toy: ToyState = {
+      ...faultyToy('music-box'),
+      parts: { small: 'tray-1', medium: 'tray-2', large: 'tray-3' },
+    };
+    for (const part of ['small', 'medium', 'large']) {
+      const t = at(toy, part);
+      for (const [dx, dy] of [
+        [0, 0],
+        [t.r - 1, 0],
+        [-(t.r - 1), 0],
+        [0, t.r - 1],
+      ])
+        expect(hitTarget(toy, { x: t.x + dx, y: t.y + dy })?.id, part).toBe(part);
+    }
+  });
+
+  it('picks the gear drawn on top where two mounted gears overlap', () => {
+    const toy = steps(faultyToy('music-box'), (t) => movePart(t, 'small', 'peg-5'));
+    // The small gear on peg 5 lies across the medium gear on peg 4; the small one is drawn last.
+    const small = at(toy, 'small');
+    expect(hitTarget(toy, { x: small.x - 10, y: small.y })?.id).toBe('small');
+    const medium = at(toy, 'medium');
+    expect(hitTarget(toy, { x: medium.x - 40, y: medium.y })?.id).toBe('medium');
+  });
+
+  it('drops a held part on the spot under the pointer, even under a big gear', () => {
+    const toy = faultyToy('music-box');
+    const peg5 = at(toy, 'peg-5');
+    // The medium gear on peg 4 covers peg 5, but a held part still lands on the peg.
+    expect(hitTarget(toy, peg5)?.id).toBe('medium');
+    expect(hitTarget(toy, peg5, 'large')?.id).toBe('peg-5');
+    // Over another part, away from any spot, a held part swaps with it.
+    const medium = at(toy, 'medium');
+    const over = hitTarget(toy, { x: medium.x, y: medium.y - 40 }, 'large')!;
+    expect(dropSlot(toy, over)).toBe('peg-4');
+  });
+
+  it('reaches fixtures before the parts around them', () => {
+    const bell = faultyToy('rooster-bell');
+    expect(hitTarget(bell, { x: 120, y: 200 })?.id).toBe('pin');
+    const frog = faultyToy('hopping-frog');
+    expect(hitTarget(frog, { x: 236, y: 172 })?.id).toBe('pebble');
+  });
+
+  it('maps a pointer onto the same bench pixels at any shown size', () => {
+    const toy = faultyToy('music-box');
+    const large = at(toy, 'large');
+    for (const scale of [1, 0.5, 0.42, 1.5]) {
+      const box = { left: 30, top: 80, width: BENCH.width * scale, height: BENCH.height * scale };
+      const client = { x: box.left + large.x * scale, y: box.top + large.y * scale };
+      const p = benchPoint(client, box);
+      expect(p.x).toBeCloseTo(large.x);
+      expect(p.y).toBeCloseTo(large.y);
+      expect(hitTarget(toy, p)?.id).toBe('large');
+    }
+  });
+});
+
+describe('moving parts by drag or keyboard, then undoing', () => {
+  it('a drag from a tray gear to a peg moves it, and undo puts it back', () => {
+    const toy = faultyToy('music-box');
+    const from = hitTarget(
+      toy,
+      targets(toy).find((t) => t.id === 'large')!,
+    )!;
+    expect(from.id).toBe('large');
+    const onto = hitTarget(
+      toy,
+      targets(toy).find((t) => t.id === 'peg-6')!,
+      from.id,
+    )!;
+    let bench = commit(openBench(toy), movePart(toy, from.id, dropSlot(toy, onto)));
+    expect(bench.toy.parts.large).toBe('peg-6');
+    bench = undo(bench);
+    expect(bench.toy).toEqual(toy);
+  });
+
+  it('the keyboard reaches every part and empty spot, and its moves undo the same way', () => {
+    const toy = faultyToy('music-box');
+    const stops = benchStops(toy).map((t) => `${t.kind}:${t.id}`);
+    expect(stops).toEqual(
+      expect.arrayContaining([
+        'part:small',
+        'part:medium',
+        'part:large',
+        'slot:tray-2',
+        'slot:peg-5',
+      ]),
+    );
+    expect(stops).not.toContain('slot:tray-1');
+    // Pick up the medium gear, step to tray spot 2, press Enter; then the large one onto peg 5.
+    const step1 = movePart(
+      toy,
+      'medium',
+      dropSlot(
+        toy,
+        benchStops(toy).find((t) => t.id === 'tray-2')!,
+      ),
+    );
+    let bench = commit(openBench(toy), step1);
+    const step2 = movePart(bench.toy, 'large', 'peg-5');
+    bench = commit(bench, step2);
+    expect(runToy(bench.toy).working).toBe(true);
+    bench = undo(undo(bench));
+    expect(bench.toy).toEqual(toy);
   });
 });
