@@ -126,7 +126,7 @@ export function startFair(
   const pennants = createPennantStore(storage);
   /** The Opening Day challenge: off, building between tries, or open with the free-build visitors set aside. */
   let day:
-    | { phase: 'build'; last?: Outcome; previous?: Outcome; note?: string }
+    | { phase: 'build'; last?: Outcome; ran?: Layout; previous?: Outcome; note?: string }
     | { phase: 'open'; freeSim: Sim; last?: Outcome }
     | undefined;
 
@@ -200,7 +200,7 @@ export function startFair(
         : undefined;
     sim = day.freeSim;
     selected = undefined;
-    day = { phase: 'build', last: outcome, previous: day.last, note };
+    day = { phase: 'build', last: outcome, ran: layout, previous: day.last, note };
     setPauseButton();
     say(
       `${debrief(layout, outcome).headline} Change your plaza and open the gates again to retry.`,
@@ -226,7 +226,8 @@ export function startFair(
     } else {
       parts.push(`<p>${GOALS_TEXT}${held}</p>`);
       if (day.last) {
-        const d = debrief(layout, day.last, day.previous);
+        // The debrief belongs to the layout the day ran on, not to edits made since.
+        const d = debrief(day.ran ?? layout, day.last, day.previous);
         parts.push(
           `<h2>${d.headline}</h2>`,
           day.note ? `<p><strong>${day.note}</strong></p>` : '',
