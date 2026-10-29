@@ -196,6 +196,16 @@ import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
 import { KEYS_HELP, coasterStore, startCoasterWorkshop } from './coaster-workshop';
 import {
+  EMBLEMS,
+  NAME_MAX,
+  PALETTES,
+  defaultPlacard,
+  draftPlacard,
+  paletteFor,
+  placardStatus,
+  placardStore,
+} from './coaster-placard';
+import {
   BALLOON_COLORS,
   BALLOON_COLOR_NAMES,
   BALLOON_SCENE,
@@ -2913,7 +2923,22 @@ function renderCoaster() {
         <button type="button" data-action="reset">Reset layout (R)</button>
       </div>
       <p class="coaster-status" role="status" aria-live="polite"></p>
-      <p class="note">${KEYS_HELP}. Escape stops a test, or goes back to the midway when nothing is running. With Quiet midway or reduced motion, a test shows its result at once with dots every half second. After each test two made-up riders, Gentle Gail and Thrill Theo, say which stretches they liked or disliked from the toy model's speed, slope and height, and suggest one change. Not scored. Your layout is kept in this browser only.</p>
+      <section class="coaster-placard" aria-labelledby="placard-title">
+        <h2 id="placard-title">Entrance placard</h2>
+        <div class="placard-preview" aria-label="Placard preview">
+          <span class="placard-emblem" aria-hidden="true"></span>
+          <strong class="placard-name"></strong>
+          <span class="placard-status"></span>
+        </div>
+        <form class="placard-form">
+          <label>Ride name <input name="name" maxlength="${NAME_MAX}" required /></label>
+          <label>Emblem <select name="emblem">${EMBLEMS.map((e) => `<option value="${e}">${e}</option>`).join('')}</select></label>
+          <label>Colours <select name="palette">${PALETTES.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}</select></label>
+          <button type="submit">Save placard</button>
+        </form>
+        <p class="placard-note" role="status" aria-live="polite"></p>
+      </section>
+      <p class="note">${KEYS_HELP}. Escape stops a test, or goes back to the midway when nothing is running. With Quiet midway or reduced motion, a test shows its result at once with dots every half second. After each test two made-up riders, Gentle Gail and Thrill Theo, say which stretches they liked or disliked from the toy model's speed, slope and height, and suggest one change. Not scored. Your layout is kept in this browser only. Below the track, name your ride and pick an emblem and colours for its entrance placard; the placard is saved in this browser when you press Save placard, and its test line comes from the toy model, not a safety check.</p>
     </section>
   `;
   const canvas = app.querySelector<HTMLCanvasElement>('.coaster-scene')!;
@@ -2926,7 +2951,10 @@ function renderCoaster() {
     onExit: () => (location.hash = '#/'),
     onStatus: (text, saved) => {
       const next = saved ? text : `${text} This browser would not save your layout.`;
-      if (status.textContent !== next) status.textContent = next;
+      if (status.textContent === next) return;
+      status.textContent = next;
+      const toyTest = app.querySelector('.placard-status');
+      if (toyTest) toyTest.textContent = placardStatus(coasterStore.load());
     },
   });
   const onClick = (event: Event) => {
@@ -2935,9 +2963,49 @@ function renderCoaster() {
     if (action) session.act(action as Parameters<typeof session.act>[0]);
   };
   controls.addEventListener('click', onClick);
+  const form = app.querySelector<HTMLFormElement>('.placard-form')!;
+  const preview = app.querySelector<HTMLElement>('.placard-preview')!;
+  const placardNote = app.querySelector<HTMLElement>('.placard-note')!;
+  const showPlacard = () => {
+    const placard = placardStore.load() ?? defaultPlacard();
+    const palette = paletteFor(placard.palette);
+    preview.style.background = `var(--color-${palette.background})`;
+    preview.style.color = `var(--color-${palette.text})`;
+    preview.querySelector('.placard-emblem')!.textContent = placard.emblem;
+    preview.querySelector('.placard-name')!.textContent = placard.name;
+    preview.querySelector('.placard-status')!.textContent = placardStatus(coasterStore.load());
+    return placard;
+  };
+  const current = showPlacard();
+  (form.elements.namedItem('name') as HTMLInputElement).value = current.name;
+  (form.elements.namedItem('emblem') as HTMLSelectElement).value = current.emblem;
+  (form.elements.namedItem('palette') as HTMLSelectElement).value = current.palette;
+  const onSubmit = (event: Event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const placard = draftPlacard(
+      String(data.get('name') ?? ''),
+      String(data.get('emblem') ?? ''),
+      String(data.get('palette') ?? ''),
+    );
+    if (!placard) placardNote.textContent = 'Give the ride a name first.';
+    else if (!placardStore.save(placard))
+      placardNote.textContent = 'This browser would not save your placard.';
+    else {
+      (form.elements.namedItem('name') as HTMLInputElement).value = placard.name;
+      showPlacard();
+      placardNote.textContent = `Placard saved: ${placard.name}.`;
+    }
+  };
+  // Typing in the placard form must not drive the workshop's letter keys.
+  const onFormKey = (event: Event) => event.stopPropagation();
+  form.addEventListener('submit', onSubmit);
+  form.addEventListener('keydown', onFormKey);
   app.querySelector<HTMLElement>('h1')!.focus();
   stop = () => {
     controls.removeEventListener('click', onClick);
+    form.removeEventListener('submit', onSubmit);
+    form.removeEventListener('keydown', onFormKey);
     session.stop();
   };
 }
