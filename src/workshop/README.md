@@ -42,7 +42,10 @@ toy's mechanism, so what moves follows from where the parts are.
   frame instead of animating. For the frog it is the frame that explains the
   result: the cam pressed on the pebble, the round cam at the top of its bob,
   the frog held by the guard, or the rod at the top of the snail's spiral. The words under the bench always say what
-  happened.
+  happened. For the bell it is the lever at full pull.
+- The bench's holes and the rod ride the bell lever as it turns, and clicks,
+  drops and the keyboard ring follow them to wherever they are drawn, during a
+  test run and in the still frame.
 
 ## Repairs and the midway
 

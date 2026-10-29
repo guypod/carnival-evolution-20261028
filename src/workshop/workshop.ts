@@ -91,6 +91,29 @@ const GEAR_TRAY = { left: 150, gap: 210, y: 360 };
 export const HOLES = [1, 2, 3];
 /** Hammer travel for each hole: the bell rings only at the middle one. */
 const RING_HOLE = 2;
+/** The lever's pivot pin. */
+export const LEVER_PIN = { x: 120, y: 200 };
+
+/** How far the bell lever is pulled at `phase` of a test run: 0 at rest, 1 at full pull. */
+export function bellPull(phase: number): number {
+  return Math.sin(Math.min(1, phase * 2) * Math.PI);
+}
+
+/** How far, in radians, the lever has turned about its pin from rest at `phase` of a run. */
+export function leverTurn(phase: number): number {
+  return -0.25 * bellPull(phase);
+}
+
+/** A point on the lever, carried round the pin as the lever turns at `phase`. */
+export function onLever(p: { x: number; y: number }, phase: number): { x: number; y: number } {
+  const a = leverTurn(phase);
+  const dx = p.x - LEVER_PIN.x;
+  const dy = p.y - LEVER_PIN.y;
+  return {
+    x: LEVER_PIN.x + dx * Math.cos(a) - dy * Math.sin(a),
+    y: LEVER_PIN.y + dx * Math.sin(a) + dy * Math.cos(a),
+  };
+}
 
 // The hopping frog: a shaft, three cams to choose from, and a pebble.
 export const CAMS = ['round', 'snail', 'tall'] as const satisfies readonly CamShape[];
@@ -137,8 +160,12 @@ export function faultyToy(id: ToyId): ToyState {
   }
 }
 
-/** Every slot, part and fixture on the bench for a toy, where it is drawn now. */
-export function targets(toy: ToyState): Target[] {
+/**
+ * Every slot, part and fixture on the bench for a toy, where it is drawn at
+ * `phase` of a test run (0 when nothing runs). The bell's holes, and the rod in
+ * one, ride the turning lever.
+ */
+export function targets(toy: ToyState, phase = 0): Target[] {
   const out: Target[] = [];
   const slotAt = new Map<string, Target>();
   const slot = (id: string, label: string, x: number, y: number, r: number) => {
@@ -160,8 +187,11 @@ export function targets(toy: ToyState): Target[] {
       ),
     );
   } else if (toy.id === 'rooster-bell') {
-    HOLES.forEach((h) => slot(`hole-${h}`, `lever hole ${h}`, 120 + h * 40, 200 - h * 20, 12));
-    out.push({ id: 'pin', kind: 'fixture', label: 'pivot pin', x: 120, y: 200, r: 14 });
+    HOLES.forEach((h) => {
+      const at = onLever({ x: LEVER_PIN.x + h * 40, y: LEVER_PIN.y - h * 20 }, phase);
+      slot(`hole-${h}`, `lever hole ${h}`, at.x, at.y, 12);
+    });
+    out.push({ id: 'pin', kind: 'fixture', label: 'pivot pin', ...LEVER_PIN, r: 14 });
   } else {
     const room = Math.max(...CAMS.map(partRadius));
     slot('shaft', 'cam shaft', SHAFT.x, SHAFT.y, room);
@@ -190,7 +220,7 @@ export function drawOrder(all: readonly Target[]): Target[] {
 
 /**
  * The target a pointer at `p` (in bench pixels) lands on, using the same outlines
- * the bench draws. With nothing held: a fixture, else the topmost part, else a
+ * the bench draws at `phase` of a test run. With nothing held: a fixture, else the topmost part, else a
  * spot. With a part held: the spot under the pointer, else the spot of the
  * topmost other part there, so it swaps. Spots never overlap, so each answer is
  * unambiguous.
@@ -199,8 +229,9 @@ export function hitTarget(
   toy: ToyState,
   p: { x: number; y: number },
   held?: string,
+  phase = 0,
 ): Target | undefined {
-  const all = targets(toy);
+  const all = targets(toy, phase);
   const inside = (t: Target) => Math.hypot(t.x - p.x, t.y - p.y) <= t.r;
   const top = drawOrder(all)
     .filter((t) => t.id !== held && inside(t))
@@ -225,9 +256,10 @@ export function releaseTarget(
   held: string,
   down: { x: number; y: number },
   up: { x: number; y: number },
+  phase = 0,
 ): Target | undefined {
   if (Math.hypot(up.x - down.x, up.y - down.y) < DRAG_DISTANCE) return undefined;
-  const target = hitTarget(toy, up, held);
+  const target = hitTarget(toy, up, held, phase);
   if (target?.kind === 'slot' && toy.parts[held] === target.id) return undefined;
   return target;
 }
@@ -243,10 +275,10 @@ export function benchPoint(
   };
 }
 
-/** What the arrow keys step through: every part and fixture, and the empty spots. */
-export function benchStops(toy: ToyState): Target[] {
+/** What the arrow keys step through, where they are drawn at `phase`: every part and fixture, and the empty spots. */
+export function benchStops(toy: ToyState, phase = 0): Target[] {
   const filled = new Set(Object.values(toy.parts));
-  return targets(toy).filter((t) => t.kind !== 'slot' || !filled.has(t.id));
+  return targets(toy, phase).filter((t) => t.kind !== 'slot' || !filled.has(t.id));
 }
 
 /** The spot a held part goes to when placed on a target: the spot itself, or the spot of the part there. */

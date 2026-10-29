@@ -5,6 +5,8 @@ import { toySpots } from '../midway/repaired-toys';
 import { registry } from '../games';
 import {
   BENCH,
+  LEVER_PIN,
+  bellPull,
   CAMS,
   GEAR_RADII,
   NO_REPAIRS,
@@ -12,6 +14,7 @@ import {
   TOYS,
   benchPoint,
   benchStops,
+  onLever,
   commit,
   createRepairsStore,
   dropSlot,
@@ -106,6 +109,69 @@ describe('music box gear train', () => {
     expect(swapped.toy.parts).toMatchObject({ small: 'peg-4', medium: 'tray-1' });
     expect(movePart(toy, 'small', 'shaft').changed).toBe(false);
     expect(movePart(toy, 'bear', 'peg-3').changed).toBe(false);
+  });
+});
+
+describe('rooster bell lever pose', () => {
+  const rest = (t: { x: number; y: number }) => ({ x: t.x, y: t.y });
+  const atThree = movePart(faultyToy('rooster-bell'), 'rod', 'hole-3').toy;
+  const find = (toy: typeof atThree, id: string, phase: number) =>
+    targets(toy, phase).find((t) => t.id === id)!;
+  // 0.25 is the quiet still frame and the peak of the pull; 0.1 is mid swing.
+  const poses = [0.1, 0.25];
+
+  it('turns the holes and the rod with the lever, keeping each one its distance from the pin', () => {
+    expect(bellPull(0.25)).toBeCloseTo(1);
+    for (const phase of poses) {
+      for (const id of ['hole-1', 'hole-2', 'hole-3', 'rod']) {
+        const still = find(atThree, id, 0);
+        const moved = find(atThree, id, phase);
+        expect(moved).toMatchObject(onLever(rest(still), phase));
+        expect(Math.hypot(moved.x - LEVER_PIN.x, moved.y - LEVER_PIN.y)).toBeCloseTo(
+          Math.hypot(still.x - LEVER_PIN.x, still.y - LEVER_PIN.y),
+        );
+        // Further out than the hit radius from where it rests, except hole 1 close by the pin.
+        if (id !== 'hole-1')
+          expect(Math.hypot(moved.x - still.x, moved.y - still.y)).toBeGreaterThan(12);
+      }
+    }
+    expect(find(atThree, 'pin', 0.25)).toMatchObject(LEVER_PIN);
+    expect(find(atThree, 'hole-3', 1)).toMatchObject(rest(find(atThree, 'hole-3', 0)));
+  });
+
+  it('picks the rod where it is drawn mid swing and in the quiet pose, not where it rests', () => {
+    const still = find(atThree, 'rod', 0);
+    for (const phase of poses) {
+      const shown = find(atThree, 'rod', phase);
+      expect(hitTarget(atThree, shown, undefined, phase)?.id).toBe('rod');
+      expect(hitTarget(atThree, still, undefined, phase)?.id).not.toBe('rod');
+    }
+    expect(hitTarget(atThree, still)?.id).toBe('rod');
+  });
+
+  it('places a held rod on the hole drawn under the pointer', () => {
+    for (const phase of poses) {
+      const hole = find(atThree, 'hole-2', phase);
+      expect(hitTarget(atThree, hole, 'rod', phase)?.id).toBe('hole-2');
+      expect(hitTarget(atThree, rest(find(atThree, 'hole-2', 0)), 'rod', phase)?.id).not.toBe(
+        'hole-2',
+      );
+      // A press and release on the drawn rod keeps it in hand; a drag to a drawn hole drops it there.
+      const rod = find(atThree, 'rod', phase);
+      expect(releaseTarget(atThree, 'rod', rod, rod, phase)).toBeUndefined();
+      expect(releaseTarget(atThree, 'rod', rod, hole, phase)?.id).toBe('hole-2');
+    }
+  });
+
+  it('rings the keyboard focus around the holes and rod where they are drawn', () => {
+    for (const phase of poses) {
+      const stops = benchStops(atThree, phase);
+      expect(stops.map((t) => t.id).sort()).toEqual(['hole-1', 'hole-2', 'pin', 'rod']);
+      for (const t of stops) expect(t).toMatchObject(rest(find(atThree, t.id, phase)));
+      expect(stops.find((t) => t.id === 'rod')).toMatchObject(
+        onLever(rest(find(atThree, 'rod', 0)), phase),
+      );
+    }
   });
 });
 

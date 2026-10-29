@@ -6,6 +6,7 @@ import {
   TOOLS,
   TOYS,
   benchPoint,
+  bellPull,
   benchStops,
   commit,
   createRepairsStore,
@@ -14,6 +15,8 @@ import {
   faultyToy,
   gearRadius,
   hitTarget,
+  LEVER_PIN,
+  leverTurn,
   releaseTarget,
   movePart,
   openBench,
@@ -101,9 +104,10 @@ export function startWorkshop(
   const shown = root.querySelector<HTMLInputElement>('.workshop-shown')!;
   const say = (text: string) => (status.textContent = text);
 
-  const bits = () => targets(bench.toy);
+  // Drawing, the pointer and the focus ring all use the pose the bench shows now.
+  const bits = () => targets(bench.toy, runPhase());
   /** What the arrow keys step through: every part and fixture, and the empty slots. */
-  const navTargets = () => benchStops(bench.toy);
+  const navTargets = () => benchStops(bench.toy, runPhase());
   const keyOf = (t: Target) => `${t.kind}:${t.id}`;
   const focusedTarget = (): Target | undefined => {
     const all = navTargets();
@@ -327,10 +331,10 @@ export function startWorkshop(
 
   function drawBell(phase: number) {
     const travel = run?.result.kind === 'bell' ? run.result.travel : 0;
-    const pull = Math.sin(Math.min(1, phase * 2) * Math.PI);
-    // Lever: pivots at the pin, rises from left to right.
-    const pin = { x: 120, y: 200 };
-    const leverA = -0.46 - pull * 0.25;
+    const pull = bellPull(phase);
+    // Lever: pivots at the pin, rises from left to right, and turns as it is pulled.
+    const pin = LEVER_PIN;
+    const leverA = -0.46 + leverTurn(phase);
     ctx.strokeStyle = colors.wood;
     ctx.lineWidth = 12;
     ctx.lineCap = 'round';
@@ -338,17 +342,12 @@ export function startWorkshop(
     ctx.moveTo(pin.x - 50 * Math.cos(leverA), pin.y - 50 * Math.sin(leverA));
     ctx.lineTo(pin.x + 140 * Math.cos(leverA), pin.y + 140 * Math.sin(leverA));
     ctx.stroke();
-    // The holes ride on the lever: each keeps its distance from the pin as the lever turns.
-    const onLever = (t: { x: number; y: number }) => {
-      const d = Math.hypot(t.x - pin.x, t.y - pin.y);
-      return { x: pin.x + d * Math.cos(leverA), y: pin.y + d * Math.sin(leverA) };
-    };
+    // The holes ride on the lever: `targets` turns them with it, so they are drawn where they are clicked.
     for (const t of bits()) {
       if (t.kind !== 'slot') continue;
-      const at = onLever(t);
       ctx.fillStyle = colors.background;
       ctx.beginPath();
-      ctx.arc(at.x, at.y, 5, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, 5, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.fillStyle = bench.toy.pinTight ? colors.accent : colors.danger;
@@ -366,8 +365,7 @@ export function startWorkshop(
       x: hammerPivot.x + Math.cos(ha) * 130,
       y: hammerPivot.y + Math.sin(ha) * 130,
     };
-    const rodTarget = bits().find((t) => t.id === 'rod');
-    const rodAt = rodTarget && onLever(rodTarget);
+    const rodAt = bits().find((t) => t.id === 'rod');
     if (rodAt && held !== 'rod') {
       ctx.strokeStyle = colors.muted;
       ctx.lineWidth = 4;
@@ -551,7 +549,7 @@ export function startWorkshop(
   // The canvas may be shown smaller than the bench; pointers map back onto bench pixels.
   const pointAt = (event: PointerEvent) =>
     benchPoint({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect());
-  const hit = (p: { x: number; y: number }) => hitTarget(bench.toy, p, held);
+  const hit = (p: { x: number; y: number }) => hitTarget(bench.toy, p, held, runPhase());
   const onDown = (event: PointerEvent) => {
     canvas.focus();
     const target = hit(pointAt(event));
@@ -570,7 +568,7 @@ export function startWorkshop(
   };
   const onUp = (event: PointerEvent) => {
     if (!held || !drag || !downAt) return;
-    const target = releaseTarget(bench.toy, held, downAt, pointAt(event));
+    const target = releaseTarget(bench.toy, held, downAt, pointAt(event), runPhase());
     drag = downAt = undefined;
     // A click, or a drag back home: keep holding, so the next click places it.
     if (!target) return draw();
