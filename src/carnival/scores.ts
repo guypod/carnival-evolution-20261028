@@ -37,9 +37,11 @@ interface Scope {
 const STORAGE_KEY = 'tessl-carnival:scores';
 const MAX_ENTRIES_PER_GAME = 50;
 
+// Shared by every scoreboard, so a round id is unique for the page load.
+let nextRoundId = 1;
+
 export function createScoreBoard(storage: ScoreStorage, now: () => number = Date.now) {
   const listeners = new Set<ScoreListener>();
-  let nextRoundId = 1;
   let active:
     { round: ScopedRound; onComplete?: ScopedRoundListener; result?: ScoreEntry } | undefined;
 

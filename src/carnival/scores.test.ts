@@ -209,6 +209,12 @@ describe('scoped rounds', () => {
     expect(board.best('ring-toss')).toBe(6);
   });
 
+  it('gives rounds on separate scoreboards different ids', () => {
+    const one = createScoreBoard(memoryStorage()).beginScopedRound('ring-toss');
+    const two = createScoreBoard(memoryStorage()).beginScopedRound('ring-toss');
+    expect(two.id).not.toBe(one.id);
+  });
+
   it('closes an interrupted round when a new one starts, and never calls it again', () => {
     const board = createScoreBoard(memoryStorage());
     const first = vi.fn();
