@@ -39,9 +39,10 @@ toy's mechanism, so what moves follows from where the parts are.
 
 A toy counts as repaired the first time its own test works. Repairs are saved
 in this browser under `tessl-carnival:repair-workshop` through the shared save
-slot; a save that cannot be read, or that claims a repair the model says does
-not work, loads as no repairs. When the browser will not save, the workshop
-says so.
+slot. A save that cannot be read loads as no repairs, and a saved toy whose
+set-up the model says does not work is dropped while the rest are kept. When
+the browser will not save, the workshop says so. Switching toys keeps each
+bench's work and undo for the visit; only repairs outlast it.
 
 Each repaired toy stands on the grass beside the midway entrance and plays
 (the bear turns, the rooster rings, the frog hops; still in quiet mode). The

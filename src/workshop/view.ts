@@ -10,6 +10,7 @@ import {
   faultyToy,
   movePart,
   openBench,
+  partLabel,
   recordRepair,
   resetBench,
   runToy,
@@ -70,7 +71,12 @@ export function startWorkshop(
   let repairs: Repairs = store.load();
   let bench: Bench = openBench(repairs.toys['music-box'] ?? faultyToy('music-box'));
   let tool: Tool = 'hand';
-  let focused = 0;
+  /** The ringed bench target, as kind and id, so it stays put when slots fill or empty. */
+  let focusKey: string | undefined;
+  /** Each toy's bench this visit, so switching toys keeps work and undo. */
+  const benches: Partial<Record<ToyId, Bench>> = {};
+  /** Read when a test starts: Quiet midway or reduced motion shows one still frame. */
+  let quiet = quietNow();
   /** The part picked up with the hand, and where the pointer is dragging it. */
   let held: string | undefined;
   let drag: { x: number; y: number } | undefined;
@@ -91,9 +97,18 @@ export function startWorkshop(
     const filled = new Set(Object.values(bench.toy.parts));
     return bits().filter((t) => t.kind !== 'slot' || !filled.has(t.id));
   };
+  const keyOf = (t: Target) => `${t.kind}:${t.id}`;
   const focusedTarget = (): Target | undefined => {
     const all = navTargets();
-    return all[Math.min(focused, all.length - 1)];
+    return all.find((t) => keyOf(t) === focusKey) ?? all[0];
+  };
+  const stepFocus = (delta: number) => {
+    const all = navTargets();
+    const at = Math.max(
+      0,
+      all.findIndex((t) => keyOf(t) === focusKey),
+    );
+    focusKey = keyOf(all[(at + delta + all.length) % all.length]);
   };
 
   function refresh() {
@@ -128,12 +143,14 @@ export function startWorkshop(
     if (tool !== 'hand') return apply(useTool(bench.toy, tool, target.id));
     if (held) {
       const part = held;
-      held = undefined;
-      if (target.kind === 'part' && target.id === part) {
-        say(`Put the ${target.label} back down.`);
+      held = drag = undefined;
+      const slot = target.kind === 'slot' ? target.id : (bench.toy.parts[target.id] ?? target.id);
+      if (slot === bench.toy.parts[part]) {
+        say(`Put the ${partLabel(part)} back down.`);
         return refresh();
       }
-      const slot = target.kind === 'slot' ? target.id : (bench.toy.parts[target.id] ?? target.id);
+      // The ring follows the part to where it lands.
+      focusKey = `part:${part}`;
       return apply(movePart(bench.toy, part, slot));
     }
     if (target.kind === 'part') {
@@ -150,9 +167,10 @@ export function startWorkshop(
   }
 
   function test() {
-    held = undefined;
+    held = drag = undefined;
     const result = runToy(bench.toy);
     run = { result, startedAt: performance.now() };
+    quiet = quietNow();
     let message = result.message;
     if (result.working && !repairs.toys[bench.toy.id]) {
       repairs = recordRepair(repairs, bench.toy);
@@ -165,7 +183,7 @@ export function startWorkshop(
     }
     say(message);
     refresh();
-    if (!quietNow()) animate();
+    if (!quiet) animate();
   }
 
   function animate() {
@@ -178,10 +196,11 @@ export function startWorkshop(
   }
 
   function selectToy(id: ToyId) {
-    held = undefined;
+    held = drag = undefined;
     run = undefined;
-    focused = 0;
-    bench = openBench(repairs.toys[id] ?? faultyToy(id));
+    focusKey = undefined;
+    benches[bench.toy.id] = bench;
+    bench = benches[id] ?? openBench(repairs.toys[id] ?? faultyToy(id));
     say(`${toyInfo(id).name} is on the bench.`);
     refresh();
   }
@@ -191,7 +210,7 @@ export function startWorkshop(
   /** How far through the test run, 0 to 1; in quiet mode a run shows its middle at once. */
   function runPhase(): number {
     if (!run) return 0;
-    if (quietNow()) return 0.25;
+    if (quiet) return 0.25;
     return Math.min(1, (performance.now() - run.startedAt) / RUN_MS);
   }
 
@@ -443,33 +462,29 @@ export function startWorkshop(
   // Input.
 
   const onKey = (event: KeyboardEvent) => {
-    if (event.target instanceof HTMLInputElement) return;
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const all = navTargets();
     const key = event.key;
+    if (event.target instanceof HTMLInputElement && key !== 'Escape') return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    // Holding a key down must not test, undo or reset over and over.
+    if (event.repeat && 'tTuUrR'.includes(key)) return event.preventDefault();
     if (event.target === canvas && (key === 'ArrowRight' || key === 'ArrowDown')) {
-      focused = (focused + 1) % all.length;
+      stepFocus(1);
     } else if (event.target === canvas && (key === 'ArrowLeft' || key === 'ArrowUp')) {
-      focused = (focused - 1 + all.length) % all.length;
+      stepFocus(-1);
     } else if (event.target === canvas && (key === 'Enter' || key === ' ')) {
       const target = focusedTarget();
       if (target) act(target);
     } else if (key === '1' || key === '2' || key === '3') {
       tool = TOOLS[Number(key) - 1];
-      held = undefined;
+      held = drag = undefined;
       say(`Using the ${tool}.`);
       refresh();
     } else if (key === 't' || key === 'T') test();
-    else if (key === 'u' || key === 'U') {
-      held = undefined;
-      bench = undo(bench);
-      run = undefined;
-      say('Undid the last change.');
-      refresh();
-    } else if (key === 'r' || key === 'R') reset();
+    else if (key === 'u' || key === 'U') undoStep();
+    else if (key === 'r' || key === 'R') reset();
     else if (key === 'Escape') {
       if (held) {
-        held = undefined;
+        held = drag = undefined;
         say('Put the part back down.');
         refresh();
       } else onExit();
@@ -484,8 +499,20 @@ export function startWorkshop(
     draw();
   };
 
+  function undoStep() {
+    held = drag = undefined;
+    if (bench.history.length === 0) {
+      say('Nothing to undo.');
+      return refresh();
+    }
+    bench = undo(bench);
+    run = undefined;
+    say('Undid the last change.');
+    refresh();
+  }
+
   function reset() {
-    held = undefined;
+    held = drag = undefined;
     run = undefined;
     bench = resetBench(bench);
     say('The toy is back as it came in, faults and all. Undo brings your work back.');
@@ -508,16 +535,13 @@ export function startWorkshop(
       near[0]
     );
   };
-  let downOn: Target | undefined;
+  let downOn: string | undefined;
   const onDown = (event: PointerEvent) => {
     canvas.focus();
     const target = hit(pointAt(event));
-    downOn = target;
+    downOn = target && keyOf(target);
     if (!target) return;
-    focused = Math.max(
-      0,
-      navTargets().findIndex((t) => t.id === target.id && t.kind === target.kind),
-    );
+    focusKey = keyOf(target);
     if (tool === 'hand' && !held && target.kind === 'part') {
       canvas.setPointerCapture?.(event.pointerId);
       act(target);
@@ -535,8 +559,15 @@ export function startWorkshop(
     drag = undefined;
     // Released where it was picked up: a click. Keep holding, so the next click places it.
     const home = target?.kind === 'slot' && bench.toy.parts[held] === target.id;
-    if (!target || home || target === downOn) return draw();
+    if (!target || home || keyOf(target) === downOn) return draw();
     act(target);
+  };
+  // A cancelled drag (a scroll, a lost pointer) puts the part back down.
+  const onCancel = () => {
+    if (!drag) return;
+    held = drag = undefined;
+    say('Put the part back down.');
+    refresh();
   };
 
   const onClick = (event: MouseEvent) => {
@@ -545,16 +576,12 @@ export function startWorkshop(
     if (button.dataset.toy) selectToy(button.dataset.toy as ToyId);
     else if (button.dataset.tool) {
       tool = button.dataset.tool as Tool;
-      held = undefined;
+      held = drag = undefined;
       say(`Using the ${tool}.`);
       refresh();
     } else if (button.dataset.act === 'test') test();
-    else if (button.dataset.act === 'undo') {
-      bench = undo(bench);
-      run = undefined;
-      say('Undid the last change.');
-      refresh();
-    } else if (button.dataset.act === 'reset') reset();
+    else if (button.dataset.act === 'undo') undoStep();
+    else if (button.dataset.act === 'reset') reset();
   };
   const onShown = () => {
     repairs = { ...repairs, shown: shown.checked };
@@ -573,6 +600,7 @@ export function startWorkshop(
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointercancel', onCancel);
   canvas.addEventListener('focus', onFocus);
   canvas.addEventListener('blur', onFocus);
   shown.addEventListener('change', onShown);
@@ -586,6 +614,7 @@ export function startWorkshop(
     canvas.removeEventListener('pointerdown', onDown);
     canvas.removeEventListener('pointermove', onMove);
     canvas.removeEventListener('pointerup', onUp);
+    canvas.removeEventListener('pointercancel', onCancel);
     canvas.removeEventListener('focus', onFocus);
     canvas.removeEventListener('blur', onFocus);
     shown.removeEventListener('change', onShown);

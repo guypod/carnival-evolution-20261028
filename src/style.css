@@ -1918,6 +1918,14 @@ kbd {
   border-radius: var(--radius);
 }
 
+.workshop-bench {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius);
+  /* Dragging a part must not scroll the page on touch screens. */
+  touch-action: none;
+}
+
 .finale-mystery {
   margin-top: 0.75rem;
   display: grid;
