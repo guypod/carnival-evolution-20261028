@@ -681,6 +681,8 @@ function setUpPhotoMode() {
   const status = panel.querySelector<HTMLElement>('.photo-status')!;
   const preview = panel.querySelector<HTMLImageElement>('.photo-preview')!;
   let open = false;
+  let session = 0;
+  let pending = false;
   let photoUrl: string | undefined;
   let photoName = '';
 
@@ -702,10 +704,19 @@ function setUpPhotoMode() {
   };
   const setOpen = (next: boolean) => {
     open = next;
+    session += 1;
+    pending = false;
+    take.disabled = false;
     toggle.setAttribute('aria-expanded', String(open));
     panel.hidden = !open;
     outline.hidden = !open;
     if (open) {
+      // Finish any light garden editing first, so hidden editing cannot
+      // change the saved garden or catch the Esc meant for photo mode.
+      const gardenBanner = app.querySelector<HTMLElement>('.light-garden-editing');
+      if (gardenBanner && !gardenBanner.hidden) {
+        gardenBanner.querySelector<HTMLButtonElement>('.light-garden-done')?.click();
+      }
       document.body.dataset.photo = 'on';
       placeOutline();
       status.textContent = 'Photo mode is on. The other panels are hidden until you exit.';
@@ -718,6 +729,7 @@ function setUpPhotoMode() {
     }
   };
   const snap = () => {
+    if (pending) return;
     // The canvas is drawn at device pixels; the frame is worked out in them too.
     const rect = frameRect(frameId(), map.width, map.height);
     const shot = document.createElement('canvas');
@@ -729,15 +741,21 @@ function setUpPhotoMode() {
       return;
     }
     ctx.drawImage(map, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+    const name = photoFilename(frameId(), new Date());
+    const owner = session;
+    pending = true;
+    take.disabled = true;
     shot.toBlob((blob) => {
-      if (!open) return;
+      if (!open || owner !== session) return;
+      pending = false;
+      take.disabled = false;
       if (!blob) {
         status.textContent = 'This browser could not make the photo.';
         return;
       }
       clearPhoto();
       photoUrl = URL.createObjectURL(blob);
-      photoName = photoFilename(frameId(), new Date());
+      photoName = name;
       preview.src = photoUrl;
       preview.alt = 'Your photo of the midway';
       preview.hidden = false;
@@ -756,7 +774,7 @@ function setUpPhotoMode() {
     link.href = photoUrl;
     link.download = photoName;
     link.click();
-    status.textContent = `Saved as ${photoName}.`;
+    status.textContent = `Download started as ${photoName}.`;
   });
   // Esc leaves photo mode before the guide or any panel sees the key; P takes
   // a photo unless the key is meant for a field.
@@ -778,6 +796,8 @@ function setUpPhotoMode() {
   return () => {
     window.removeEventListener('keydown', onKeyDown, true);
     window.removeEventListener('resize', placeOutline);
+    open = false;
+    session += 1;
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     delete document.body.dataset.photo;
   };
