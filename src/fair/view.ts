@@ -46,10 +46,13 @@ import {
 import {
   PREVIEW_HEIGHT,
   PREVIEW_WIDTH,
+  bindPreviewKeys,
   drawPreview,
+  intentCue,
   previewItems,
   toggleView,
   unreachableCount,
+  viewState,
   type ViewMode,
 } from './preview';
 
@@ -301,17 +304,17 @@ export function startFair(
     } else if (name === 'view') {
       view = toggleView(view);
       // Only what is shown changes: the layout, budget, visitors and saved copy stay as they are.
-      canvas.hidden = view === 'preview';
-      previewCanvas.hidden = previewNote.hidden = view === 'grid';
-      viewButton.setAttribute('aria-pressed', String(view === 'preview'));
-      viewButton.textContent =
-        view === 'preview' ? 'Back to the grid (V)' : 'Visitor-eye preview (V)';
+      const shown = viewState(view);
+      canvas.hidden = shown.gridHidden;
+      previewCanvas.hidden = previewNote.hidden = shown.previewHidden;
+      viewButton.setAttribute('aria-pressed', String(shown.pressed));
+      viewButton.textContent = shown.label;
       say(
         view === 'preview'
           ? 'Visitor-eye preview. It is read-only and follows your edits. Press V to go back to the grid.'
           : `Back to the grid. ${describe(cursor)}`,
       );
-      (view === 'preview' ? previewCanvas : canvas).focus();
+      (shown.focus === 'preview' ? previewCanvas : canvas).focus();
     } else if (name === 'walk') {
       walker = walker ? undefined : { ...ENTRANCE };
       walkButton.setAttribute('aria-pressed', String(Boolean(walker)));
@@ -446,13 +449,6 @@ export function startFair(
       : `${head} Press G to select a group and read its plan.`;
   }
 
-  function onPreviewKey(event: KeyboardEvent) {
-    const k = event.key.toLowerCase();
-    if (k === 'v' || event.key === 'Escape') act('view');
-    else if (k === 'g') act('next-group');
-    else if (k === 'p') act('pause');
-  }
-
   function drawPreviewView() {
     const items = previewItems(layout, sim);
     const cut = unreachableCount(items);
@@ -530,15 +526,7 @@ export function startFair(
         ctx.lineWidth = 1;
         ctx.font = canvasFont('small');
         ctx.fillStyle = c.text;
-        const bubble =
-          g.phase === 'leaving'
-            ? '👋'
-            : g.target?.need === 'thirst'
-              ? '🥤'
-              : g.target?.need === 'rest'
-                ? '💤'
-                : '🎯';
-        ctx.fillText(bubble, gx, gy - CELL / 4);
+        ctx.fillText(intentCue(g), gx, gy - CELL / 4);
       }
     });
     if (walker) {
@@ -557,7 +545,7 @@ export function startFair(
   const stopActions = bindActions(root.querySelectorAll('.fair-actions'), act);
   canvas.addEventListener('keydown', onKey);
   canvas.addEventListener('click', onClick);
-  previewCanvas.addEventListener('keydown', onPreviewKey);
+  const stopPreviewKeys = bindPreviewKeys(previewCanvas, act);
   setPauseButton();
   say(
     loaded.note ??
@@ -591,6 +579,6 @@ export function startFair(
     stopActions();
     canvas.removeEventListener('keydown', onKey);
     canvas.removeEventListener('click', onClick);
-    previewCanvas.removeEventListener('keydown', onPreviewKey);
+    stopPreviewKeys();
   };
 }

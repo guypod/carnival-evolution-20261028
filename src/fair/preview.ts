@@ -29,6 +29,61 @@ export function toggleView(mode: ViewMode): ViewMode {
   return mode === 'grid' ? 'preview' : 'grid';
 }
 
+/** What the page shows in each mode: one canvas at a time, and focus on the one shown. */
+export function viewState(mode: ViewMode) {
+  const preview = mode === 'preview';
+  return {
+    gridHidden: preview,
+    previewHidden: !preview,
+    pressed: preview,
+    label: preview ? 'Back to the grid (V)' : 'Visitor-eye preview (V)',
+    focus: preview ? ('preview' as const) : ('grid' as const),
+  };
+}
+
+/** The action a key pressed on the preview asks for, if any. */
+export function previewKeyAction(key: string): 'view' | 'next-group' | 'pause' | undefined {
+  if (key === 'Escape') return 'view';
+  const k = key.toLowerCase();
+  if (k === 'v') return 'view';
+  if (k === 'g') return 'next-group';
+  if (k === 'p') return 'pause';
+  return undefined;
+}
+
+/** Anything that takes keydown listeners: the preview canvas, or a stand-in in tests. */
+export type KeyTarget = {
+  addEventListener(type: 'keydown', listener: (event: KeyboardEvent) => void): void;
+  removeEventListener(type: 'keydown', listener: (event: KeyboardEvent) => void): void;
+};
+
+/**
+ * Sends keys pressed on the preview to `act`. Escape is used up here: it only
+ * leaves the preview, and never reaches the page's Escape, which leaves the fair.
+ * Returns a function that removes the listener.
+ */
+export function bindPreviewKeys(target: KeyTarget, act: (name: string) => void): () => void {
+  const onKey = (event: KeyboardEvent) => {
+    const name = previewKeyAction(event.key);
+    if (!name) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    act(name);
+  };
+  target.addEventListener('keydown', onKey);
+  return () => target.removeEventListener('keydown', onKey);
+}
+
+/** The selected group's intent, as the grid and the preview both show it above the group. */
+export function intentCue(group: Pick<Group, 'phase' | 'target'>): string {
+  if (group.phase === 'leaving') return '👋';
+  if (group.target?.need === 'thirst') return '🥤';
+  if (group.target?.need === 'rest') return '💤';
+  return '🎯';
+}
+
 /** The top corner of the ground diamond under a plaza position (cells may be fractional), in canvas pixels. */
 export function project(x: number, y: number): { x: number; y: number } {
   return {
@@ -217,6 +272,9 @@ export function drawPreview(ctx: Ctx, items: readonly PreviewItem[], selected?: 
         ctx.lineWidth = 2;
         ctx.strokeRect(cx + ox - 6, cy + oy - 25, 12, 25);
         ctx.lineWidth = 1;
+        ctx.fillStyle = c.text;
+        ctx.font = canvasFont('small');
+        ctx.fillText(intentCue(item.group), cx + ox, cy + oy - 36);
       }
     }
     if ('unreachable' in item && item.unreachable) {
