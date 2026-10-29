@@ -185,3 +185,51 @@ describe('Opening Day pennant', () => {
     expect(createPennantStore(undefined).award(success())).toEqual({ earned: true, saved: false });
   });
 });
+
+describe('forecasts', () => {
+  // A path from the gate east, a refreshment stall, a game stall and a bench all beside it.
+  const base: Layout = {
+    '1,3': 'path',
+    '2,3': 'path',
+    '3,3': 'path',
+    '4,3': 'path',
+    '1,2': 'game',
+    '2,2': 'food',
+    '3,4': 'bench',
+  };
+
+  it('leaves a day with no forecast exactly as it was', () => {
+    const plain = runToEnd(openGates(base));
+    const none = runToEnd(openGates(base, undefined));
+    expect(none).toEqual(plain);
+    expect(plain.weather).toBeUndefined();
+  });
+
+  it('runs the same forecast the same way every time', () => {
+    expect(runToEnd(openGates(base, 'rain'))).toEqual(runToEnd(openGates(base, 'rain')));
+    expect(runToEnd(openGates(base, 'heat'))).toEqual(runToEnd(openGates(base, 'heat')));
+  });
+
+  it('turns tired visitors away from a wet bench in the rain, and a tree beside it fixes that', () => {
+    const wet = measure(runToEnd(openGates(base, 'rain')));
+    expect(wet.unmet.rest).toBeGreaterThan(0);
+    expect(measure(runToEnd(openGates(base))).unmet.rest).toBe(0);
+    const sheltered = measure(runToEnd(openGates({ ...base, '3,5': 'tree' }, 'rain')));
+    expect(sheltered.unmet.rest).toBe(0);
+    expect(sheltered.happy).toBeGreaterThan(wet.happy);
+    expect(improvement(base, wet)).toMatch(/tree beside a connected bench/);
+  });
+
+  it('makes visitors thirstier in the heat, and shade slows it', () => {
+    const thirst = (s: ReturnType<typeof openGates>) =>
+      [...s.left, ...s.groups].reduce((n, g) => n + g.needs.thirst, 0);
+    const at = (layout: Layout, w?: 'heat') => {
+      let s = openGates(layout, w);
+      for (let i = 0; i < 6; i++) s = tick(s);
+      return thirst(s);
+    };
+    const shaded = { ...base, '1,4': 'tree', '2,4': 'tree', '4,4': 'tree' } as Layout;
+    expect(at(base, 'heat')).toBeGreaterThan(at(base));
+    expect(at(shaded, 'heat')).toBeLessThan(at(base, 'heat'));
+  });
+});

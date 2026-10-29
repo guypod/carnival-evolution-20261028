@@ -6,7 +6,16 @@
  * early exit, retry and the pennant test without a browser.
  */
 import { PIECE_NAME, attractions, spent, type Layout } from './fair';
-import { KIND_NAME, SERVES, createSim, tick, type Group, type Need, type Sim } from './visitors';
+import {
+  KIND_NAME,
+  SERVES,
+  createSim,
+  tick,
+  type Group,
+  type Need,
+  type Sim,
+  type Weather,
+} from './visitors';
 
 export const OPENING_SEED = 11;
 export const OPENING_GROUPS = 8;
@@ -26,9 +35,21 @@ export const DEFINITIONS = {
     'Turned away: the group needed a game, a bench or refreshments, and none touched a path connected to the gate.',
 };
 
-/** Starts the gates on `layout`, with the same seeded visitors every time. */
-export function openGates(layout: Layout): Sim {
-  return createSim(layout, OPENING_SEED, false, OPENING_GROUPS);
+/** The forecasts a player can opt into, and the rule each one changes, told before the gates open. */
+export const FORECASTS: Record<Weather, { name: string; rule: string }> = {
+  heat: {
+    name: 'Sunny heat',
+    rule: 'Sunny heat: visitors get thirsty twice as fast, except while they stand on a path beside a tree, which gives shade. Refreshments matter more; trees along busy paths slow the thirst.',
+  },
+  rain: {
+    name: 'Light rain',
+    rule: 'Light rain: a bench with no tree beside it is wet, and tired visitors will not use it. A tree beside a bench gives shelter, so that bench still works.',
+  },
+};
+
+/** Starts the gates on `layout`, with the same seeded visitors every time, under an optional forecast. */
+export function openGates(layout: Layout, weather?: Weather): Sim {
+  return createSim(layout, OPENING_SEED, false, OPENING_GROUPS, weather);
 }
 
 /** Whether every group has arrived and left, or the gates have closed. */
@@ -98,6 +119,12 @@ export function improvement(layout: Layout, o: Outcome): string {
     const piece = SERVES[o.worst.need];
     const name = PIECE_NAME[piece].toLowerCase();
     const cut = attractions(layout).find((a) => a.piece === piece && !a.connected);
+    if (
+      o.worst.need === 'rest' &&
+      !cut &&
+      attractions(layout).some((a) => a.piece === 'bench' && a.connected)
+    )
+      return 'Plant a tree beside a connected bench: in the rain, only a sheltered bench can be used.';
     return cut
       ? `Lay a path from the gate to the ${name} at ${where(cut)}: it is not connected, so nobody can use it.`
       : `Place a ${name} beside a path connected to the gate.`;

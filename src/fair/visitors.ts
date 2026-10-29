@@ -19,6 +19,10 @@ export type Need = 'fun' | 'rest' | 'thirst';
 export type Kind = 'thrill' | 'family';
 export type Phase = 'walking' | 'enjoying' | 'leaving' | 'gone';
 export type Needs = Record<Need, number>;
+/** An optional forecast for the day. Without one the plaza behaves exactly as before. */
+export type Weather = 'heat' | 'rain';
+/** In heat, thirst grows this many times faster, except for a group standing beside a tree's shade. */
+export const HEAT_THIRST = 2;
 
 export const SERVES: Record<Need, Piece> = { fun: 'game', rest: 'bench', thirst: 'food' };
 const NEED_WORD: Record<Need, string> = { fun: 'bored', rest: 'tired', thirst: 'thirsty' };
@@ -71,6 +75,8 @@ export type Sim = {
   spawns: number;
   /** Every group that has left, as it was on its last tick. */
   left: Group[];
+  /** The forecast, when the player picked one. */
+  weather?: Weather;
 };
 
 /** A small seeded random number generator (mulberry32), returning [value, next state]. */
@@ -83,8 +89,15 @@ export function nextRandom(state: number): [number, number] {
 }
 
 /** `paused` starts the visitors still, which is how the plaza opens in quiet mode. `spawns` caps how many groups arrive. */
-export function createSim(layout: Layout, seed = 1, paused = false, spawns = MAX_SPAWNS): Sim {
+export function createSim(
+  layout: Layout,
+  seed = 1,
+  paused = false,
+  spawns = MAX_SPAWNS,
+  weather?: Weather,
+): Sim {
   return {
+    ...(weather ? { weather } : {}),
     layout,
     groups: [],
     tick: 0,
@@ -101,7 +114,7 @@ export function createSim(layout: Layout, seed = 1, paused = false, spawns = MAX
 
 /** Resets only the visitors, with the same seed, so a rerun is identical. */
 export function resetSim(sim: Sim): Sim {
-  return createSim(sim.layout, sim.seed, sim.paused, sim.spawns);
+  return createSim(sim.layout, sim.seed, sim.paused, sim.spawns, sim.weather);
 }
 
 const STEPS: readonly Cell[] = [
@@ -110,6 +123,16 @@ const STEPS: readonly Cell[] = [
   { x: 0, y: 1 },
   { x: 0, y: -1 },
 ];
+
+/** Whether a tree stands beside `c`: shade in heat, shelter in rain. */
+export function besideTree(layout: Layout, c: Cell): boolean {
+  return STEPS.some((s) => layout[key({ x: c.x + s.x, y: c.y + s.y })] === 'tree');
+}
+
+/** Whether a piece can serve visitors in this weather: in rain, a bench without a tree beside it is wet. */
+export function usable(layout: Layout, c: Cell, piece: Piece, weather?: Weather): boolean {
+  return !(weather === 'rain' && piece === 'bench' && !besideTree(layout, c));
+}
 
 /** Shortest walk over reachable cells from `from` to any cell in `goals`, excluding `from`. Undefined when none. */
 export function route(layout: Layout, from: Cell, goals: Set<string>): Cell[] | undefined {
@@ -144,6 +167,7 @@ export function route(layout: Layout, from: Cell, goals: Set<string>): Cell[] | 
 export function choose(
   layout: Layout,
   group: Pick<Group, 'at' | 'needs'>,
+  weather?: Weather,
 ): { need: Need; target: Cell; route: Cell[] } | { need?: Need; reason: string } {
   const pressing = (Object.keys(group.needs) as Need[])
     .filter((n) => group.needs[n] >= NEED_THRESHOLD)
@@ -151,10 +175,15 @@ export function choose(
   if (!pressing.length) return { reason: 'Content for now, so heading home.' };
   const missing: Need[] = [];
   const all = attractions(layout);
+  let wet = false;
   for (const need of pressing) {
     let best: { target: Cell; route: Cell[] } | undefined;
     for (const a of all) {
       if (a.piece !== SERVES[need] || !a.connected) continue;
+      if (!usable(layout, a, a.piece, weather)) {
+        wet = true;
+        continue;
+      }
       const goals = new Set(
         STEPS.map((s) => key({ x: a.x + s.x, y: a.y + s.y })).filter((k) =>
           reachable(layout).has(k),
@@ -167,6 +196,12 @@ export function choose(
     missing.push(need);
   }
   const first = missing[0];
+  if (first === 'rest' && wet)
+    return {
+      need: first,
+      reason:
+        'Tired, but every reachable bench is wet in the rain with no tree beside it, so heading home.',
+    };
   return {
     need: first,
     reason: `${cap(NEED_WORD[first])}, but ${PLACE_WORD[first]} ${first === 'thirst' ? 'are' : 'is'} not reachable from the paths, so heading home.`,
@@ -189,7 +224,7 @@ function leave(sim: Sim, g: Group, why: string): Group {
 
 function decide(sim: Sim, g: Group): Group {
   if (g.visits >= MAX_VISITS) return leave(sim, g, 'Had a full visit, so heading home.');
-  const c = choose(sim.layout, g);
+  const c = choose(sim.layout, g, sim.weather);
   if ('reason' in c)
     return c.need
       ? { ...leave(sim, g, c.reason), mood: g.mood - 10, unmet: g.unmet ?? c.need }
@@ -203,12 +238,13 @@ function decide(sim: Sim, g: Group): Group {
   };
 }
 
-function grow(g: Group): Needs {
+function grow(sim: Sim, g: Group): Needs {
   const r = GROWTH[g.kind];
+  const heat = sim.weather === 'heat' && !besideTree(sim.layout, g.at) ? HEAT_THIRST : 1;
   return {
     fun: clamp(g.needs.fun + r.fun * 0.25),
     rest: clamp(g.needs.rest + r.rest * 0.25),
-    thirst: clamp(g.needs.thirst + r.thirst * 0.25),
+    thirst: clamp(g.needs.thirst + r.thirst * 0.25 * heat),
   };
 }
 
@@ -216,11 +252,11 @@ function stepGroup(sim: Sim, g: Group): Group {
   if (g.phase === 'gone') return g;
   if (g.phase === 'enjoying') {
     const need = g.target!.need;
-    const needs = { ...grow(g), [need]: clamp(g.needs[need] - 15) };
+    const needs = { ...grow(sim, g), [need]: clamp(g.needs[need] - 15) };
     if (g.timer > 1) return { ...g, needs, timer: g.timer - 1 };
     return decide(sim, { ...g, needs, timer: 0, visits: g.visits + 1, mood: clamp(g.mood + 15) });
   }
-  const needs = grow(g);
+  const needs = grow(sim, g);
   const next = g.route[0];
   if (!next) {
     if (g.phase === 'leaving') return key(g.at) === key(ENTRANCE) ? { ...g, phase: 'gone' } : g;

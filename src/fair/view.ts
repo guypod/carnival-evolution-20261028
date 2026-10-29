@@ -32,6 +32,7 @@ import {
   relayout,
   resetSim,
   type Sim,
+  type Weather,
 } from './visitors';
 import {
   GOALS_TEXT,
@@ -40,6 +41,7 @@ import {
   finished,
   measure,
   openGates,
+  FORECASTS,
   runToEnd,
   type Outcome,
 } from './opening-day';
@@ -118,6 +120,7 @@ export function startFair(
     </div>
     <div class="fair-actions" role="group" aria-label="Opening Day challenge">
       <button type="button" data-act="day" aria-pressed="false">Opening Day challenge</button>
+      <button type="button" data-act="day-forecast" hidden>Forecast: clear skies</button>
       <button type="button" data-act="day-open" hidden>Open the gates</button>
       <button type="button" data-act="day-finish" hidden>Finish the day now</button>
       <button type="button" data-act="day-end" hidden>End early</button>
@@ -145,6 +148,8 @@ export function startFair(
     | { phase: 'build'; last?: Outcome; ran?: Layout; previous?: Outcome; note?: string }
     | { phase: 'open'; freeSim: Sim; last?: Outcome }
     | undefined;
+  /** The forecast the player opted into for Opening Day, if any. */
+  let forecast: Weather | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
   canvas.width = FAIR_WIDTH * CELL;
@@ -235,6 +240,9 @@ export function startFair(
     dayOnly('day-open').hidden = day?.phase !== 'build';
     dayOnly('day-open').textContent =
       day?.phase === 'build' && day.last ? 'Retry: open the gates again' : 'Open the gates';
+    dayOnly('day-forecast').hidden = day?.phase !== 'build';
+    dayOnly('day-forecast').textContent =
+      `Forecast: ${forecast ? FORECASTS[forecast].name.toLowerCase() : 'clear skies'}`;
     dayOnly('day-finish').hidden = !gatesOpen();
     dayOnly('day-end').hidden = !gatesOpen();
     dayPanel.hidden = !day;
@@ -247,6 +255,7 @@ export function startFair(
       );
     } else {
       parts.push(`<p>${GOALS_TEXT}${held}</p>`);
+      if (forecast) parts.push(`<p><strong>Forecast.</strong> ${FORECASTS[forecast].rule}</p>`);
       if (day.last) {
         // The debrief belongs to the layout the day ran on, not to edits made since.
         const d = debrief(day.ran ?? layout, day.last, day.previous);
@@ -280,11 +289,18 @@ export function startFair(
       if (gatesOpen()) closeDay(false);
       day = day ? undefined : { phase: 'build' };
       say(day ? GOALS_TEXT : 'Back to free build. Your plaza is unchanged.');
+    } else if (name === 'day-forecast' && day?.phase === 'build') {
+      forecast = forecast === undefined ? 'heat' : forecast === 'heat' ? 'rain' : undefined;
+      say(
+        forecast
+          ? FORECASTS[forecast].rule
+          : 'Forecast: clear skies. The day runs with no weather rules.',
+      );
     } else if (name === 'day-open' && day?.phase === 'build') {
       const saved = store.save(layout);
       day = { phase: 'open', freeSim: sim, last: day.last };
       carrying = undefined;
-      sim = { ...openGates(layout), paused: quiet };
+      sim = { ...openGates(layout, forecast), paused: quiet };
       selected = undefined;
       setPauseButton();
       say(
