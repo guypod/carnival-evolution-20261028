@@ -32,7 +32,9 @@ toy's mechanism, so what moves follows from where the parts are.
   dropped on a taken spot swaps with the part there. Click a pin or pebble with
   the screwdriver or tweezers chosen. A part is drawn at its own size wherever
   it sits, every tray spot has room for the largest part, and a click picks the
-  part drawn on top under the pointer.
+  part drawn on top under the pointer, by its teeth or lobe as drawn, turning
+  or still. A click in a tooth valley with no other part showing there still
+  picks up that gear.
 - Keyboard: focus the bench, then the arrow keys step through parts, fixtures
   and empty spots, and Enter or Space acts on the ringed one. 1, 2 and 3 choose
   the hand, screwdriver and tweezers. T tests, U undoes, R resets the toy to the

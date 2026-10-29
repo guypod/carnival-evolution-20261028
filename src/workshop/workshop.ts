@@ -8,7 +8,7 @@
 
 import { createSaveSlot, type SaveStorage } from '../carnival';
 import type { RepairedToyId } from '../midway/repaired-toys';
-import { CAM_REACH, PEBBLE, type CamShape } from './cams';
+import { CAM_REACH, PEBBLE, camOutline, frogPose, type CamShape } from './cams';
 
 export type ToyId = RepairedToyId;
 export type Tool = 'hand' | 'screwdriver' | 'tweezers';
@@ -34,6 +34,8 @@ export interface Target {
   x: number;
   y: number;
   r: number;
+  /** A gear's or cam's turn as drawn, in radians; its outline is turned this far. */
+  angle?: number;
 }
 
 export interface ToyInfo {
@@ -127,6 +129,20 @@ export function gearRadius(gear: string): number {
   return GEAR_RADII[gear] * GEAR_UNIT - 3;
 }
 export const GEAR_TEETH = 2;
+/** How far a gear's tooth valleys sit inside its drawn radius. */
+const GEAR_VALLEY = 4;
+
+/** A gear's toothed outline as drawn, around (0, 0) and turned by `angle`. */
+export function gearOutline(r: number, angle: number): { x: number; y: number }[] {
+  const teeth = Math.max(8, Math.round(r / 4));
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < teeth * 2; i++) {
+    const a = angle + (i * Math.PI) / teeth;
+    const rr = i % 2 ? r - GEAR_VALLEY : r + GEAR_TEETH;
+    out.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr });
+  }
+  return out;
+}
 
 /**
  * How far a part reaches from its centre as drawn: a gear's tooth tips, a cam's
@@ -162,10 +178,11 @@ export function faultyToy(id: ToyId): ToyState {
 
 /**
  * Every slot, part and fixture on the bench for a toy, where it is drawn at
- * `phase` of a test run (0 when nothing runs). The bell's holes, and the rod in
- * one, ride the turning lever.
+ * `phase` of a test `run` (none, and phase 0, when nothing runs). The bell's
+ * holes, and the rod in one, ride the turning lever. Mounted gears and the cam
+ * on the shaft carry the turn they are drawn at, and a jammed train's shake.
  */
-export function targets(toy: ToyState, phase = 0): Target[] {
+export function targets(toy: ToyState, phase = 0, run?: Run): Target[] {
   const out: Target[] = [];
   const slotAt = new Map<string, Target>();
   const slot = (id: string, label: string, x: number, y: number, r: number) => {
@@ -208,9 +225,53 @@ export function targets(toy: ToyState, phase = 0): Target[] {
   }
   for (const [part, at] of Object.entries(toy.parts)) {
     const s = slotAt.get(at)!;
-    out.push({ ...s, id: part, kind: 'part', label: partLabel(part), r: partRadius(part) });
+    const t: Target = { ...s, id: part, kind: 'part', label: partLabel(part), r: partRadius(part) };
+    if (run?.kind === 'gears' && at.startsWith('peg')) {
+      t.x += run.jammed && phase < 1 ? Math.sin(phase * 80) * 2 : 0;
+      t.angle = gearTurn(phase) * (run.spin[part] ?? 0);
+    } else if (run?.kind === 'cam' && at === 'shaft') {
+      t.angle = frogPose(run.cam, phase, run.stalled).turns * Math.PI * 2;
+    }
+    out.push(t);
   }
   return out;
+}
+
+/** How far, in radians, a gear with spin 1 (the crank's) has turned at `phase` of a run. */
+export function gearTurn(phase: number): number {
+  return phase * Math.PI * 4;
+}
+
+/** A part's outline as drawn on the bench, or undefined for the rod, which a click finds by its radius. */
+export function partOutline(t: Target): { x: number; y: number }[] | undefined {
+  const angle = t.angle ?? 0;
+  let shape: { x: number; y: number }[];
+  if (t.id in GEAR_RADII) shape = gearOutline(gearRadius(t.id), angle);
+  else if ((CAMS as readonly string[]).includes(t.id))
+    shape = camOutline(t.id as CamShape, angle / (Math.PI * 2));
+  else return undefined;
+  return shape.map((q) => ({ x: t.x + q.x, y: t.y + q.y }));
+}
+
+function inPolygon(
+  p: { x: number; y: number },
+  poly: readonly { x: number; y: number }[],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x)
+      inside = !inside;
+  }
+  return inside;
+}
+
+/** Whether `p` is on a part as drawn: inside a gear's teeth or a cam's outline, or the rod's reach. */
+export function onPart(t: Target, p: { x: number; y: number }): boolean {
+  if (Math.hypot(t.x - p.x, t.y - p.y) > t.r) return false;
+  const outline = partOutline(t);
+  return !outline || inPolygon(p, outline);
 }
 
 /** The parts in the order they are drawn: larger first, so a smaller part lying across a larger one stays on top. */
@@ -220,9 +281,12 @@ export function drawOrder(all: readonly Target[]): Target[] {
 
 /**
  * The target a pointer at `p` (in bench pixels) lands on, using the same outlines
- * the bench draws at `phase` of a test run. With nothing held: a fixture, else the topmost part, else a
- * spot. With a part held: the spot under the pointer, else the spot of the
- * topmost other part there, so it swaps. Spots never overlap, so each answer is
+ * the bench draws at `phase` of a test `run`: a gear's teeth and valleys and a
+ * cam's lobe, turned as drawn, tried from the top of the draw order down. A
+ * point on no outline, such as a tooth valley, falls back to the topmost part
+ * whose reach covers it, so a lone gear is still easy to pick up. With nothing
+ * held: a fixture, else that part, else a spot. With a part held: the spot under the pointer, else the spot of the topmost
+ * other part there, so it swaps. Spots never overlap, so each answer is
  * unambiguous.
  */
 export function hitTarget(
@@ -230,12 +294,15 @@ export function hitTarget(
   p: { x: number; y: number },
   held?: string,
   phase = 0,
+  run?: Run,
 ): Target | undefined {
-  const all = targets(toy, phase);
+  const all = targets(toy, phase, run);
   const inside = (t: Target) => Math.hypot(t.x - p.x, t.y - p.y) <= t.r;
-  const top = drawOrder(all)
-    .filter((t) => t.id !== held && inside(t))
-    .pop();
+  const parts = drawOrder(all)
+    .reverse()
+    .filter((t) => t.id !== held);
+  // The part drawn at the pointer wins; off every outline, the topmost one whose tooth tips reach it.
+  const top = parts.find((t) => onPart(t, p)) ?? parts.find(inside);
   const slot = all.find((t) => t.kind === 'slot' && inside(t));
   if (held) return slot ?? top;
   return all.find((t) => t.kind === 'fixture' && inside(t)) ?? top ?? slot;
@@ -257,9 +324,10 @@ export function releaseTarget(
   down: { x: number; y: number },
   up: { x: number; y: number },
   phase = 0,
+  run?: Run,
 ): Target | undefined {
   if (Math.hypot(up.x - down.x, up.y - down.y) < DRAG_DISTANCE) return undefined;
-  const target = hitTarget(toy, up, held, phase);
+  const target = hitTarget(toy, up, held, phase, run);
   if (target?.kind === 'slot' && toy.parts[held] === target.id) return undefined;
   return target;
 }
@@ -276,9 +344,9 @@ export function benchPoint(
 }
 
 /** What the arrow keys step through, where they are drawn at `phase`: every part and fixture, and the empty spots. */
-export function benchStops(toy: ToyState, phase = 0): Target[] {
+export function benchStops(toy: ToyState, phase = 0, run?: Run): Target[] {
   const filled = new Set(Object.values(toy.parts));
-  return targets(toy, phase).filter((t) => t.kind !== 'slot' || !filled.has(t.id));
+  return targets(toy, phase, run).filter((t) => t.kind !== 'slot' || !filled.has(t.id));
 }
 
 /** The spot a held part goes to when placed on a target: the spot itself, or the spot of the part there. */

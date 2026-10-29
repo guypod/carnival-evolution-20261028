@@ -22,11 +22,16 @@ import {
   hitTarget,
   midwayToys,
   movePart,
+  onPart,
   openBench,
   parseRepairs,
   parseToy,
   recordRepair,
   resetBench,
+  gearOutline,
+  gearRadius,
+  gearTurn,
+  partOutline,
   partRadius,
   releaseTarget,
   runToy,
@@ -449,6 +454,119 @@ describe('picking parts with the pointer', () => {
     expect(hitTarget(toy, { x: small.x - 10, y: small.y })?.id).toBe('small');
     const medium = at(toy, 'medium');
     expect(hitTarget(toy, { x: medium.x - 40, y: medium.y })?.id).toBe('medium');
+  });
+
+  it('picks the gear that shows through a tooth valley of the gear on top', () => {
+    const toy = steps(faultyToy('music-box'), (t) => movePart(t, 'small', 'peg-5'));
+    const small = at(toy, 'small');
+    const p = { x: 184.13, y: 160.72 };
+    // Inside the small gear's tooth tips (29), but in a valley past its drawn edge.
+    expect(Math.hypot(p.x - small.x, p.y - small.y)).toBeLessThan(small.r);
+    expect(onPart(small, p)).toBe(false);
+    expect(onPart(at(toy, 'medium'), p)).toBe(true);
+    expect(hitTarget(toy, p)?.id).toBe('medium');
+    // The reviewer's case: a valley of the medium gear on peg 4 over the large gear on peg 7.
+    const big = steps(faultyToy('music-box'), (t) => movePart(t, 'large', 'peg-7'));
+    const q = { x: 235.6, y: 162.7 };
+    expect(onPart(at(big, 'medium'), q)).toBe(false);
+    expect(hitTarget(big, q)?.id).toBe('large');
+  });
+
+  it("splits overlapping gears along the top gear's drawn teeth", () => {
+    const toy = steps(faultyToy('music-box'), (t) => movePart(t, 'small', 'peg-5'));
+    const small = at(toy, 'small');
+    const r = gearRadius('small');
+    const teeth = gearOutline(r, 0).length / 2;
+    // Facing the medium gear (to the left), just inside and just outside a tooth tip and a valley.
+    const tip = Math.PI;
+    const valley = Math.PI + Math.PI / teeth;
+    const point = (a: number, d: number) => ({
+      x: small.x + Math.cos(a) * d,
+      y: small.y + Math.sin(a) * d,
+    });
+    expect(teeth % 2).toBe(0);
+    expect(hitTarget(toy, point(tip, r + 1))?.id).toBe('small');
+    expect(hitTarget(toy, point(valley, r - 5))?.id).toBe('small');
+    expect(hitTarget(toy, point(valley, r - 3))?.id).toBe('medium');
+    // A tooth's flank, between the two: on the gear's edge either side of the outline.
+    const outline = partOutline(small)!;
+    const mid = {
+      x: (outline[teeth].x + outline[teeth + 1].x) / 2,
+      y: (outline[teeth].y + outline[teeth + 1].y) / 2,
+    };
+    const inward = { x: mid.x + (small.x - mid.x) * 0.05, y: mid.y + (small.y - mid.y) * 0.05 };
+    const outward = { x: mid.x - (small.x - mid.x) * 0.05, y: mid.y - (small.y - mid.y) * 0.05 };
+    expect(hitTarget(toy, inward)?.id).toBe('small');
+    expect(hitTarget(toy, outward)?.id).toBe('medium');
+  });
+
+  it("keeps an easy pickup in a lone gear's tooth valley", () => {
+    const toy = faultyToy('music-box');
+    const large = at(toy, 'large');
+    const r = gearRadius('large');
+    const teeth = gearOutline(r, 0).length / 2;
+    const a = Math.PI / teeth;
+    const p = { x: large.x + Math.cos(a) * (r - 2), y: large.y + Math.sin(a) * (r - 2) };
+    expect(onPart(large, p)).toBe(false);
+    expect(hitTarget(toy, p)?.id).toBe('large');
+  });
+
+  it('picks a turning gear by its teeth where they are drawn mid run and in the quiet frame', () => {
+    const toy = fixedMusicBox();
+    const run = runToy(toy);
+    const r = gearRadius('large');
+    const pitch = (2 * Math.PI) / (gearOutline(r, 0).length / 2);
+    // 0.25 is the quiet still frame; 0.1 and 0.6 are mid run.
+    for (const phase of [0.1, 0.25, 0.6]) {
+      const large = targets(toy, phase, run).find((t) => t.id === 'large')!;
+      const turned = large.angle!;
+      expect(turned).toBeCloseTo(gearTurn(phase) * (run.kind === 'gears' ? run.spin.large : 0));
+      // The outline the pointer is tested against is the one the bench draws at this turn.
+      expect(partOutline(large)).toEqual(
+        gearOutline(r, turned).map((q) => ({ x: large.x + q.x, y: large.y + q.y })),
+      );
+      // Half a tooth on from wherever the teeth are now: a tooth tip as drawn, a valley at rest.
+      const k = Math.round(-turned / pitch);
+      const tip = turned + k * pitch;
+      const shown = { x: large.x + Math.cos(tip) * (r + 1), y: large.y + Math.sin(tip) * (r + 1) };
+      expect(onPart(large, shown), `${phase}`).toBe(true);
+      expect(hitTarget(toy, shown, undefined, phase, run)?.id).toBe('large');
+    }
+  });
+
+  it("follows a jammed gear's shake, still giving the click to the gear that shows", () => {
+    const toy = steps(faultyToy('music-box'), (t) => movePart(t, 'small', 'peg-5'));
+    const run = runToy(toy);
+    expect(run.kind === 'gears' && run.jammed).toBe(true);
+    for (const phase of [0.03, 0.25]) {
+      const small = targets(toy, phase, run).find((t) => t.id === 'small')!;
+      const dx = small.x - at(toy, 'small').x;
+      const p = { x: 184.13 + dx, y: 160.72 };
+      expect(onPart(small, p)).toBe(false);
+      expect(hitTarget(toy, p, undefined, phase, run)?.id).toBe('medium');
+    }
+  });
+
+  it('picks a cam by its lobe, not its widest reach', () => {
+    const toy: ToyState = { ...faultyToy('hopping-frog'), pebble: false };
+    const round = at(toy, 'round');
+    // The round cam sits low on the shaft: its widest reach is below, its narrowest above.
+    const above = { x: round.x, y: round.y - (round.r - 2) };
+    const below = { x: round.x, y: round.y + (round.r - 2) };
+    expect(onPart(round, above)).toBe(false);
+    expect(onPart(round, below)).toBe(true);
+    // Turned half a turn mid run, the lobe and the hit swing round together.
+    const fixed = movePart(toy, 'snail', 'shaft').toy;
+    const run = runToy(fixed);
+    for (const phase of [0.1, 0.25, 0.4]) {
+      const snail = targets(fixed, phase, run).find((t) => t.id === 'snail')!;
+      expect(snail.angle).toBeDefined();
+      const outline = partOutline(snail)!;
+      for (const q of outline.slice(1, -1).filter((_, i) => i % 12 === 0)) {
+        const inner = { x: snail.x + (q.x - snail.x) * 0.9, y: snail.y + (q.y - snail.y) * 0.9 };
+        expect(hitTarget(fixed, inner, undefined, phase, run)?.id).toBe('snail');
+      }
+    }
   });
 
   it('drops a held part on the spot under the pointer, even under a big gear', () => {

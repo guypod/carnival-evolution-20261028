@@ -13,7 +13,9 @@ import {
   drawOrder,
   dropSlot,
   faultyToy,
+  gearOutline,
   gearRadius,
+  gearTurn,
   hitTarget,
   LEVER_PIN,
   leverTurn,
@@ -105,9 +107,9 @@ export function startWorkshop(
   const say = (text: string) => (status.textContent = text);
 
   // Drawing, the pointer and the focus ring all use the pose the bench shows now.
-  const bits = () => targets(bench.toy, runPhase());
+  const bits = () => targets(bench.toy, runPhase(), run?.result);
   /** What the arrow keys step through: every part and fixture, and the empty slots. */
-  const navTargets = () => benchStops(bench.toy, runPhase());
+  const navTargets = () => benchStops(bench.toy, runPhase(), run?.result);
   const keyOf = (t: Target) => `${t.kind}:${t.id}`;
   const focusedTarget = (): Target | undefined => {
     const all = navTargets();
@@ -273,14 +275,9 @@ export function startWorkshop(
   }
 
   function gear(x: number, y: number, r: number, angle: number, fill: string) {
-    const teeth = Math.max(8, Math.round(r / 4));
     ctx.fillStyle = fill;
     ctx.beginPath();
-    for (let i = 0; i < teeth * 2; i++) {
-      const a = angle + (i * Math.PI) / teeth;
-      const rr = i % 2 ? r - 4 : r + 2;
-      ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-    }
+    for (const p of gearOutline(r, angle)) ctx.lineTo(x + p.x, y + p.y);
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = colors.background;
@@ -297,7 +294,7 @@ export function startWorkshop(
 
   function drawGears(phase: number) {
     const spin = run?.result.kind === 'gears' ? run.result.spin : {};
-    const turn = phase * Math.PI * 4;
+    const turn = gearTurn(phase);
     const jammed = run?.result.kind === 'gears' && run.result.jammed;
     const shake = jammed && phase < 1 ? Math.sin(phase * 80) * 2 : 0;
     for (const t of bits()) {
@@ -318,11 +315,10 @@ export function startWorkshop(
     ctx.beginPath();
     ctx.arc(360, 34, 11, 0, Math.PI * 2);
     ctx.fill();
-    // Drawn in the same order the pointer picks them, so the gear on top is the one clicked.
+    // Drawn in the same order, place and turn the pointer picks them by, so the gear on top is the one clicked.
     for (const t of drawOrder(bits())) {
       if (t.id === held) continue;
-      const onPeg = bench.toy.parts[t.id].startsWith('peg');
-      drawPart(t.id, t.x + (onPeg ? shake : 0), t.y, onPeg ? turn * (spin[t.id] ?? 0) : 0);
+      drawPart(t.id, t.x, t.y, t.angle ?? 0);
     }
     ctx.fillStyle = colors.text;
     ctx.fillText('crank', 60, 225);
@@ -439,8 +435,7 @@ export function startWorkshop(
     }
     for (const t of drawOrder(bits())) {
       if (t.id === held) continue;
-      const onShaft = bench.toy.parts[t.id] === 'shaft';
-      drawPart(t.id, t.x, t.y, onShaft ? pose.turns * Math.PI * 2 : 0);
+      drawPart(t.id, t.x, t.y, t.angle ?? 0);
     }
     const { x, y } = SHAFT;
     // The fixed guide the follower slides up and down in, and the safety guard above it.
@@ -549,7 +544,8 @@ export function startWorkshop(
   // The canvas may be shown smaller than the bench; pointers map back onto bench pixels.
   const pointAt = (event: PointerEvent) =>
     benchPoint({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect());
-  const hit = (p: { x: number; y: number }) => hitTarget(bench.toy, p, held, runPhase());
+  const hit = (p: { x: number; y: number }) =>
+    hitTarget(bench.toy, p, held, runPhase(), run?.result);
   const onDown = (event: PointerEvent) => {
     canvas.focus();
     const target = hit(pointAt(event));
@@ -568,7 +564,7 @@ export function startWorkshop(
   };
   const onUp = (event: PointerEvent) => {
     if (!held || !drag || !downAt) return;
-    const target = releaseTarget(bench.toy, held, downAt, pointAt(event), runPhase());
+    const target = releaseTarget(bench.toy, held, downAt, pointAt(event), runPhase(), run?.result);
     drag = downAt = undefined;
     // A click, or a drag back home: keep holding, so the next click places it.
     if (!target) return draw();
