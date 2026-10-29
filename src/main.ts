@@ -1380,6 +1380,8 @@ function renderRoom() {
   let editor = editorFor(reconcileRoom(saved, owned));
   let selected: string | undefined;
   let visitor = 0;
+  // Stays empty until the visitor first walks, then follows every edit.
+  let looking = false;
   let confirmReset = false;
   const canvas = app.querySelector<HTMLCanvasElement>('.room-canvas')!;
   canvas.width = ROOM_SIZE.width;
@@ -1498,12 +1500,14 @@ function renderRoom() {
       }),
     );
     canvas.setAttribute('aria-label', `Prize room picture. ${describeRoom(layout)}`);
+    if (looking)
+      look.textContent = `You look at: ${describeSlot(layout, objects, ROOM_SLOTS[visitor])}`;
     if (ctx) drawRoom(ctx, layout, objects, { selected, visitorSlot: ROOM_SLOTS[visitor].id });
   }
 
   function walk(step: number) {
     visitor = (visitor + step + ROOM_SLOTS.length) % ROOM_SLOTS.length;
-    look.textContent = `You look at: ${describeSlot(editor.current, objects, ROOM_SLOTS[visitor])}`;
+    looking = true;
     update();
   }
 
@@ -1569,8 +1573,7 @@ function renderRoom() {
   });
 
   if (!ctx) canvas.hidden = true;
-  walk(0);
-  look.textContent = '';
+  update();
   app.querySelector<HTMLElement>('h1')!.focus();
   stop = onEscapeKey(window, () => (location.hash = '#/prizes'));
 }

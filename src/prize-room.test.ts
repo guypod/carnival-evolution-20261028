@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CarnivalGame } from './carnival';
+import { createScoreBoard, type CarnivalGame } from './carnival';
 import {
   EMPTY_ROOM,
   ROOM_HISTORY_MAX,
@@ -231,17 +231,20 @@ describe('undo and reset', () => {
 });
 
 describe('saving the room', () => {
-  it('reloads a saved layout from its own key', () => {
+  it('reloads a saved layout from its own key and leaves scores alone', () => {
     const storage = memoryStorage();
-    storage.setItem('carnival:scores', '{"kept":true}');
+    createScoreBoard(storage).record('skee-ball', 70);
+    const scoreKeys = [...storage.items.keys()];
+    const savedScores = [...storage.items.values()];
     const store = createRoomStore(storage);
     const layout: RoomLayout = {
       backdrop: 'starry-night',
       placements: [{ objectId: 'starter:fern', slot: '2-3', rotation: 270 }],
     };
     expect(store.save(layout)).toBe(true);
-    expect([...storage.items.keys()]).toEqual(['carnival:scores', ROOM_KEY]);
-    expect(storage.getItem('carnival:scores')).toBe('{"kept":true}');
+    expect(scoreKeys).not.toContain(ROOM_KEY);
+    expect(scoreKeys.map((key) => storage.getItem(key))).toEqual(savedScores);
+    expect(createScoreBoard(storage).best('skee-ball')).toBe(70);
     expect(createRoomStore(storage).load()).toEqual(layout);
   });
 
