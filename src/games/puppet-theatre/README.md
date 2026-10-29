@@ -40,19 +40,43 @@ off.
 
 ### Controls
 
-| Pointer                               | Keyboard           | Does                                       |
-| ------------------------------------- | ------------------ | ------------------------------------------ |
-| Press on a puppet or prop             | `1` to `5`         | Select it                                  |
-| Drag left or right                    | `Left` / `Right`   | Move the selected puppet or prop           |
-| Pose buttons (stand, wave, bow, hide) | `Up` / `Down`      | Change the selected puppet's pose          |
-| Release a dragged prop                | `Space` or `Enter` | Drop the selected prop                     |
-| Undo button                           | `Z`                | Undo the last change                       |
-| Rehearse button                       | `R`                | Put the current scene back to how it began |
-| Click after the curtain               | `Space` or `Enter` | Perform it again                           |
+| Pointer                               | Keyboard           | Does                                              |
+| ------------------------------------- | ------------------ | ------------------------------------------------- |
+| Press on a puppet or prop             | `1` to `5`         | Select it                                         |
+| Drag left or right                    | `Left` / `Right`   | Move the selected puppet or prop                  |
+| Pose buttons (stand, wave, bow, hide) | `Up` / `Down`      | Change the selected puppet's pose                 |
+| Release a dragged prop                | `Space` or `Enter` | Drop the selected prop                            |
+| Undo button                           | `Z`                | Undo the last change                              |
+| Reset scene button                    | `R`                | Ask to put the current scene back to how it began |
+| Yes, reset button (while asked)       | `Enter` or `Y`     | Reset the scene                                   |
+| No button (while asked)               | `N`                | Keep the scene as it is                           |
+| Rehearse in private / go live button  | `P`                | Lower or raise the rehearsal curtain              |
+| Click after the curtain               | `Space` or `Enter` | Perform it again                                  |
 
 Props stay on the shelf until the gift scene. A drag counts as one change for
-undo, including a prop drop and any scene change it causes. Undo or Rehearse
-during a drag ends the drag.
+undo, including a prop drop and any scene change it causes. Undo, a scene
+reset or the rehearsal switch during a drag ends the drag.
+
+### Rehearsal curtain
+
+**Rehearse in private** (`P`) lowers the rehearsal curtain so you can practise
+the current scene. While it is down the audience is away and never reacts, no
+scene ends (a move that would finish one is held back and the caption says so),
+and nothing is saved. **Go live** (`P` again) puts the live performance back
+exactly as you left it, with its undo history, so nothing practised carries
+over. Leaving the theatre with Escape while rehearsing drops the rehearsal, and
+you come back to the live performance.
+
+**Reset scene** (`R`) asks first. While it asks, the Undo and Reset scene
+buttons become **No** and **Yes, reset**, and everything else waits for the
+answer: other keys, the rehearsal switch and any drag are ignored. A reset puts only the scene on stage back to how
+it began, and can be undone. It keeps the endings you have found, and never
+touches your scores or any other game. Reset during rehearsal resets the
+rehearsal only.
+
+In rehearsal, undo works within the scene on stage. It never goes back into an
+earlier scene: it stops at the scene start, says so, and keeps the live undo
+history untouched.
 
 ## Scoring
 
@@ -70,5 +94,5 @@ is never recorded.
 
 The stage (scene, positions, poses, gift, endings found and the audience's reactions), and the stage as
 the current scene began, are saved after every change under their own key,
-separate from scores, and restored when you come back. Rehearse after a restore
+separate from scores, and restored when you come back. A scene reset after a restore
 still goes back to the start of the scene. A saved stage that is malformed is ignored and the play starts over.

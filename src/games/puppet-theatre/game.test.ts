@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   CENTRE,
+  HOLD_CAPTION,
+  PRACTICE_BUTTON,
+  REHEARSE_BUTTON,
+  UNDO_BUTTON,
+  UNDO_HOLD_CAPTION,
   DISCARD_BUTTON,
   RETRY_BUTTON,
   ENDINGS,
@@ -163,6 +168,7 @@ describe('undo and rehearse', () => {
     expect(rewinds({ type: 'undo' })).toBe(true);
     expect(rewinds({ type: 'rehearse' })).toBe(true);
     expect(rewinds({ type: 'replay' })).toBe(true);
+    expect(rewinds({ type: 'askReset' })).toBe(true);
     expect(rewinds({ type: 'move', id: 'knight', x: 200, record: false })).toBe(false);
   });
 
@@ -471,5 +477,135 @@ describe('audience', () => {
     delete older.audience;
     expect(parseStage(older)?.audience).toEqual(patientAudience());
     expect(parseStage({ ...saved, audience: { reacted: ['boo'] } })).toBeUndefined();
+  });
+});
+
+describe('rehearsal curtain and scene reset', () => {
+  const toMeeting = (theatre: Theatre) =>
+    act(act(theatre, { type: 'move', id: 'knight', x: 600 }), {
+      type: 'pose',
+      id: 'knight',
+      pose: 'wave',
+    });
+
+  it('practises without the audience reacting or the scene ending', () => {
+    const practising = act(createTheatre(), { type: 'practice' });
+    expect(practising.live).not.toBeNull();
+    const tried = toMeeting(practising);
+    expect(tried.stage.scene).toBe(1);
+    expect(tried.stage.audience).toEqual(patientAudience());
+    expect(tried.stage.caption).toBe(HOLD_CAPTION);
+    const hidden = act(practising, { type: 'pose', id: 'dragon', pose: 'hide' });
+    expect(hidden.stage.poses.dragon).toBe('hide');
+    expect(hidden.stage.audience.reacted).toEqual([]);
+  });
+
+  it('going live puts the live performance back exactly as it was', () => {
+    const live = act(createTheatre(), { type: 'move', id: 'knight', x: 300 });
+    const practised = act(act(live, { type: 'practice' }), {
+      type: 'move',
+      id: 'knight',
+      x: 500,
+    });
+    expect(practised.stage.positions.knight).toBe(500);
+    const back = act(practised, { type: 'practice' });
+    expect(back.live).toBeNull();
+    expect(back.stage).toEqual(live.stage);
+    expect(back.history).toEqual(live.history);
+    expect(toMeeting(back).stage.scene).toBe(2);
+  });
+
+  it('resets only after confirmation, and cancel keeps the scene', () => {
+    const moved = act(createTheatre(), { type: 'move', id: 'knight', x: 300 });
+    const asking = act(moved, { type: 'askReset' });
+    expect(asking.confirmReset).toBe(true);
+    expect(asking.stage.positions.knight).toBe(300);
+    const cancelled = act(asking, { type: 'cancel' });
+    expect(cancelled.confirmReset).toBe(false);
+    expect(cancelled.stage.positions.knight).toBe(300);
+    const reset = act(asking, { type: 'rehearse' });
+    expect(reset.confirmReset).toBe(false);
+    expect(reset.stage.positions.knight).toBe(createStage().positions.knight);
+  });
+
+  it('a reset keeps the endings found', () => {
+    const stage = {
+      ...createStage(['cake']),
+      positions: { ...createStage().positions, knight: 300 },
+    };
+    const reset = act(act(createTheatre(stage, createStage(['cake'])), { type: 'askReset' }), {
+      type: 'rehearse',
+    });
+    expect(reset.stage.endingsSeen).toEqual(['cake']);
+  });
+
+  it('resets the rehearsal scene without touching the live one', () => {
+    const live = act(createTheatre(), { type: 'move', id: 'knight', x: 300 });
+    const practised = act(act(live, { type: 'practice' }), { type: 'move', id: 'knight', x: 500 });
+    const reset = act(act(practised, { type: 'askReset' }), { type: 'rehearse' });
+    expect(reset.stage.positions.knight).toBe(createStage().positions.knight);
+    expect(act(reset, { type: 'practice' }).stage.positions.knight).toBe(300);
+  });
+
+  it('maps keys: P switches, R asks, Enter or Y confirms, N cancels', () => {
+    const stage = createStage();
+    expect(keyAction(stage, 'KeyP')).toEqual({ type: 'practice' });
+    expect(keyAction(stage, 'KeyR')).toEqual({ type: 'askReset' });
+    expect(keyAction(stage, 'Enter', false, true)).toEqual({ type: 'rehearse' });
+    expect(keyAction(stage, 'KeyY', false, true)).toEqual({ type: 'rehearse' });
+    expect(keyAction(stage, 'KeyN', false, true)).toEqual({ type: 'cancel' });
+    expect(keyAction(stage, 'ArrowLeft', false, true)).toBeUndefined();
+    expect(keyAction(stage, 'Escape')).toBeUndefined();
+  });
+
+  it('the switch and reset buttons map to their actions', () => {
+    const stage = createStage();
+    const at = (b: { x: number; y: number }) => buttonAction(stage, b.x + 5, b.y + 5);
+    expect(at(PRACTICE_BUTTON)).toEqual({ type: 'practice' });
+    expect(at(REHEARSE_BUTTON)).toEqual({ type: 'askReset' });
+  });
+
+  it('ignores drag events while the reset question is open', () => {
+    const holding = act(toSceneTwo(), { type: 'move', id: 'cake', x: 620, record: false });
+    const asking = act(holding, { type: 'askReset' });
+    const released = run(
+      asking,
+      { type: 'move', id: 'cake', x: 630, record: false },
+      { type: 'drop', id: 'cake', record: false },
+      { type: 'practice' },
+    );
+    expect(released).toBe(asking);
+    expect(released.confirmReset).toBe(true);
+    expect(released.stage.scene).toBe(2);
+    expect(act(released, { type: 'rehearse' }).stage.positions.cake).toBe(
+      createStage().positions.cake,
+    );
+  });
+
+  it('confirms or cancels the reset with the pointer', () => {
+    const stage = createStage();
+    const at = (b: { x: number; y: number }) => buttonAction(stage, b.x + 5, b.y + 5, false, true);
+    expect(at(REHEARSE_BUTTON)).toEqual({ type: 'rehearse' });
+    expect(at(UNDO_BUTTON)).toEqual({ type: 'cancel' });
+    expect(at(PRACTICE_BUTTON)).toBeUndefined();
+  });
+
+  it('rehearsal undo stops at the scene start and keeps the earlier history', () => {
+    const live = toSceneTwo();
+    const practising = act(live, { type: 'practice' });
+    const held = act(act(practising, { type: 'undo' }), { type: 'undo' });
+    expect(held.stage.scene).toBe(2);
+    expect(held.stage.caption).toBe(UNDO_HOLD_CAPTION);
+    expect(held.history).toEqual(live.history);
+    const moved = act(practising, { type: 'move', id: 'cake', x: 500 });
+    expect(act(moved, { type: 'undo' }).stage.positions.cake).toBe(createStage().positions.cake);
+  });
+
+  it('keyboard play in live mode still ends a scene with an audience reaction', () => {
+    let theatre = createTheatre();
+    for (let i = 0; i < 23; i++) theatre = act(theatre, keyAction(theatre.stage, 'ArrowRight')!);
+    theatre = act(theatre, keyAction(theatre.stage, 'ArrowUp')!);
+    expect(theatre.stage.scene).toBe(2);
+    expect(theatre.stage.audience.reacted).toEqual(['reunion']);
   });
 });
