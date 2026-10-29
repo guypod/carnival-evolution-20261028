@@ -76,7 +76,8 @@ export function nextRandom(state: number): [number, number] {
   return [((t ^ (t >>> 14)) >>> 0) / 4294967296, s];
 }
 
-export function createSim(layout: Layout, seed = 1): Sim {
+/** `paused` starts the visitors still, which is how the plaza opens in quiet mode. */
+export function createSim(layout: Layout, seed = 1, paused = false): Sim {
   return {
     layout,
     groups: [],
@@ -84,7 +85,7 @@ export function createSim(layout: Layout, seed = 1): Sim {
     seed,
     rng: seed,
     spawned: 0,
-    paused: false,
+    paused,
     carry: 0,
     log: [],
   };

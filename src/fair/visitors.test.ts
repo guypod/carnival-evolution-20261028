@@ -103,4 +103,11 @@ describe('population, pause and time', () => {
     expect(resetSim(later)).toEqual(createSim(STARTER, 5));
     expect(run(resetSim(later), 50).sim).toEqual(later);
   });
+
+  it('a quiet start stays still until resumed, and normal play starts moving', () => {
+    const quiet = createSim(STARTER, 5, true);
+    expect(advance(quiet, TICK_MS * 30).tick).toBe(0);
+    expect(advance({ ...quiet, paused: false }, TICK_MS * 3).tick).toBe(3);
+    expect(createSim(STARTER, 5).paused).toBe(false);
+  });
 });

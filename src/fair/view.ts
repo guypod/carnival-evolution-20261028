@@ -1,4 +1,5 @@
 import { canvasFont, theme } from '../carnival/theme';
+import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../midway/motion';
 import {
   ENTRANCE,
   FAIR_HEIGHT,
@@ -34,6 +35,38 @@ import {
 } from './visitors';
 
 const CELL = 64;
+
+/** The part of an element `bindActions` needs, so tests can pass a fake. */
+export interface ActionBar {
+  addEventListener(type: 'click', listener: (event: Event) => void): void;
+  removeEventListener(type: 'click', listener: (event: Event) => void): void;
+}
+
+/**
+ * Sends a click on any `[data-act]` button inside any of `bars` to `act`, and
+ * returns a function that removes every listener it added.
+ */
+export function bindActions(bars: Iterable<ActionBar>, act: (name: string) => void): () => void {
+  const list = [...bars];
+  const onAction = (event: Event) => {
+    const name = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-act]')?.dataset
+      .act;
+    if (name) act(name);
+  };
+  list.forEach((bar) => bar.addEventListener('click', onAction));
+  return () => list.forEach((bar) => bar.removeEventListener('click', onAction));
+}
+
+/** Quiet mode, from the guide's saved choice or the system's reduced-motion setting. */
+function quietNow(): boolean {
+  let systemReduces: boolean;
+  try {
+    systemReduces = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
+  } catch {
+    systemReduces = false;
+  }
+  return isQuiet(motionPreference.load(), systemReduces);
+}
 const ICON: Record<Piece, string> = { path: '', game: '🎯', food: '🍿', bench: '🪑', tree: '🌳' };
 
 /** Mounts the plaza editor into `root`. Returns a cleanup that removes every listener. */
@@ -70,7 +103,8 @@ export function startFair(
   let piece: Piece = 'path';
   let carrying: Carried | undefined;
   let walker: Cell | undefined;
-  let sim: Sim = createSim(layout, 1);
+  const quiet = quietNow();
+  let sim: Sim = createSim(layout, 1, quiet);
   let selected: number | undefined;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
@@ -121,6 +155,11 @@ export function startFair(
     draw();
   }
 
+  function setPauseButton() {
+    pauseButton.setAttribute('aria-pressed', String(sim.paused));
+    pauseButton.textContent = sim.paused ? 'Resume visitors' : 'Pause visitors';
+  }
+
   function pick(p: Piece) {
     piece = p;
     say(`Placing: ${PIECE_NAME[p]}, costs ${PIECE_COST[p]}.`);
@@ -145,8 +184,7 @@ export function startFair(
       canvas.focus();
     } else if (name === 'pause') {
       sim = { ...sim, paused: !sim.paused, carry: 0 };
-      pauseButton.setAttribute('aria-pressed', String(sim.paused));
-      pauseButton.textContent = sim.paused ? 'Resume visitors' : 'Pause visitors';
+      setPauseButton();
     } else if (name === 'next-group') {
       const ids = sim.groups.map((g) => g.id);
       if (!ids.length) return say('No visitor groups on the plaza right now.');
@@ -354,17 +392,15 @@ export function startFair(
     }
   }
 
-  const actionBars = root.querySelectorAll('.fair-actions');
-  const onAction = (event: Event) => {
-    const name = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
-    if (name) act(name);
-  };
-  actionBars.forEach((bar) => bar.addEventListener('click', onAction));
+  const stopActions = bindActions(root.querySelectorAll('.fair-actions'), act);
   canvas.addEventListener('keydown', onKey);
   canvas.addEventListener('click', onClick);
+  setPauseButton();
   say(
     loaded.note ??
-      'Your plaza is ready. Focus the grid and use the arrow keys, or click a square to place.',
+      (quiet
+        ? 'Your plaza is ready. Quiet mode is on, so visitors start paused: press P or Resume visitors to let them walk.'
+        : 'Your plaza is ready. Focus the grid and use the arrow keys, or click a square to place.'),
   );
   draw();
 
@@ -385,7 +421,7 @@ export function startFair(
 
   return () => {
     cancelAnimationFrame(frame);
-    actionBars.forEach((bar) => bar.removeEventListener('click', onAction));
+    stopActions();
     canvas.removeEventListener('keydown', onKey);
     canvas.removeEventListener('click', onClick);
   };
