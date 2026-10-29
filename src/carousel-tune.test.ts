@@ -160,6 +160,7 @@ describe('the player', () => {
 
 function fakeContext() {
   const started: string[] = [];
+  const disconnected = vi.fn();
   const context: VoiceContext = {
     currentTime: 0,
     destination: {},
@@ -181,12 +182,13 @@ function fakeContext() {
         exponentialRampToValueAtTime: () => undefined,
       },
       connect: () => undefined,
+      disconnect: disconnected,
     }),
     resume: vi.fn(() => Promise.resolve()),
     suspend: vi.fn(() => Promise.resolve()),
     close: vi.fn(() => Promise.resolve()),
   };
-  return { context, started };
+  return { context, started, disconnected };
 }
 
 describe('the voices', () => {
@@ -214,6 +216,45 @@ describe('the voices', () => {
       throw new Error('no audio');
     });
     expect(throwing.enable()).toBe(false);
+  });
+
+  it('makes no voices while the audio clock is not running', () => {
+    const { context, started } = fakeContext();
+    const voices = createTuneVoices(() => context);
+    voices.enable();
+    context.state = 'suspended';
+    voices.sound(['bells', 'organ', 'bass', 'drum']);
+    expect(started).toHaveLength(0);
+    context.state = 'interrupted';
+    voices.sound(['bells']);
+    expect(started).toHaveLength(0);
+    context.state = 'running';
+    voices.sound(['bells']);
+    expect(started).toEqual(['sine']);
+  });
+
+  it('cuts unfinished notes on silence, so they do not return on the next enable', () => {
+    const { context, disconnected } = fakeContext();
+    const voices = createTuneVoices(() => context);
+    voices.enable();
+    voices.sound(['bells', 'drum']);
+    voices.silence();
+    expect(disconnected).toHaveBeenCalledTimes(2);
+    voices.enable();
+    voices.silence();
+    expect(disconnected).toHaveBeenCalledTimes(2);
+  });
+
+  it('turns sound back off and reports it when the browser refuses to resume', async () => {
+    const { context } = fakeContext();
+    context.resume = vi.fn(() => Promise.reject(new Error('not allowed')));
+    const voices = createTuneVoices(() => context);
+    const failed = vi.fn();
+    expect(voices.enable(failed)).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(failed).toHaveBeenCalledOnce();
+    expect(voices.enabled()).toBe(false);
   });
 
   it('closes the context on dispose', () => {

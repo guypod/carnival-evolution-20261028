@@ -2224,7 +2224,7 @@ function renderTune() {
       soundOff();
       return;
     }
-    if (!voices.enable()) {
+    if (!voices.enable(soundOff)) {
       soundButton.disabled = true;
       soundButton.textContent = 'Sound is not available in this browser';
       return;

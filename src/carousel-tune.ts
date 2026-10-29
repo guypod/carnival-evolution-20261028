@@ -236,6 +236,7 @@ export interface VoiceContext {
       exponentialRampToValueAtTime(v: number, t: number): unknown;
     };
     connect(node: unknown): unknown;
+    disconnect(): void;
   };
   resume(): Promise<void>;
   suspend(): Promise<void>;
@@ -254,10 +255,14 @@ export const TUNE_VOICES: Record<TuneTrack, { wave: string; hz: number; seconds:
 export const TUNE_GAIN = 0.08;
 
 export interface TuneVoices {
-  /** Opens audio. Call it from a click. Returns false when audio is not available. */
-  enable(): boolean;
+  /**
+   * Opens audio. Call it from a click. Returns false when audio is not available.
+   * `onFailed` runs if the browser later refuses to resume, after sound is off again.
+   */
+  enable(onFailed?: () => void): boolean;
+  /** Plays nothing while the audio clock is not running, so voices never pile up. */
   sound(tracks: TuneTrack[]): void;
-  /** Suspends audio; nothing sounds until `enable` again. */
+  /** Cuts any unfinished notes and suspends audio; nothing sounds until `enable` again. */
   silence(): void;
   enabled(): boolean;
   dispose(): void;
@@ -270,8 +275,24 @@ export interface TuneVoices {
 export function createTuneVoices(createContext: () => VoiceContext | undefined): TuneVoices {
   let context: VoiceContext | undefined;
   let on = false;
+  let playing: {
+    oscillator: { stop(when?: number): void };
+    gain: { disconnect(): void };
+    end: number;
+  }[] = [];
+  const cut = () => {
+    for (const voice of playing) {
+      try {
+        voice.oscillator.stop();
+      } catch {
+        // already stopped
+      }
+      voice.gain.disconnect();
+    }
+    playing = [];
+  };
   return {
-    enable() {
+    enable(onFailed) {
       if (!context) {
         try {
           context = createContext();
@@ -283,12 +304,14 @@ export function createTuneVoices(createContext: () => VoiceContext | undefined):
       on = true;
       context.resume().catch(() => {
         on = false;
+        onFailed?.();
       });
       return true;
     },
     sound(tracks) {
-      if (!on || !context) return;
+      if (!on || !context || context.state !== 'running') return;
       const now = context.currentTime;
+      playing = playing.filter((voice) => voice.end > now);
       for (const track of tracks) {
         const voice = TUNE_VOICES[track];
         const oscillator = context.createOscillator();
@@ -301,15 +324,18 @@ export function createTuneVoices(createContext: () => VoiceContext | undefined):
         gain.connect(context.destination);
         oscillator.start(now);
         oscillator.stop(now + voice.seconds);
+        playing.push({ oscillator, gain, end: now + voice.seconds });
       }
     },
     silence() {
       on = false;
+      cut();
       if (context && context.state !== 'closed') void context.suspend().catch(() => {});
     },
     enabled: () => on,
     dispose() {
       on = false;
+      cut();
       void context?.close().catch(() => {});
       context = undefined;
     },
