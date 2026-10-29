@@ -248,8 +248,11 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
   const gate = fairGate(map);
   let nearGate = false;
-  /** The pinwheel garden on the grass left of the entrance path. See pinwheels.ts. */
-  let garden: PinwheelGarden = createGarden({ x: map.spawn.x - 6, y: map.spawn.y + 0.8 });
+  /**
+   * The pinwheel garden on the grass left of the entrance path, on the row by
+   * the hedge and far enough left that the ticket booth never covers it. See pinwheels.ts.
+   */
+  let garden: PinwheelGarden = createGarden({ x: map.spawn.x - 8.9, y: map.spawn.y + 1.25 });
   let wheelAngles = garden.wheels.map((_, i) => i * 0.7);
   /** The garden's own clock, which runs in quiet mode too so the still-state sequence plays. */
   let gustClock = 0;
@@ -279,7 +282,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       enterFair();
     } else if (event.code === 'KeyG' && nearGarden) {
       event.preventDefault();
-      gust();
+      // A held key repeats; only a fresh press restarts the gust.
+      if (!event.repeat) gust();
     }
   };
   const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
@@ -577,7 +581,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         const p = toScreen(w.x, w.y);
         return {
           depth: w.x + w.y,
-          box: { left: p.x - 9, right: p.x + 9, top: p.y - 28, bottom: p.y + 2 },
+          box: { left: p.x - 9, right: p.x + 9, top: p.y - 35, bottom: p.y + 2 },
           draw: () =>
             drawPinwheel(ctx, p, wheelAngles[i], i, quiet && wheelState(garden, i, gustClock)),
         };
