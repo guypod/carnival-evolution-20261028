@@ -277,11 +277,12 @@ export function createPartyStore(storage: PartyStorage | undefined) {
 
   /**
    * Forgets the party, nicknames included. Returns true only when nothing is
-   * left under the key afterwards. With no storage nothing was ever kept.
+   * left under the key afterwards. With no storage it cannot check, and a
+   * party saved before storage became unavailable may still be there.
    */
   function clear(): boolean {
     try {
-      if (!storage) return true;
+      if (!storage) return false;
       storage.removeItem(PARTY_KEY);
       return storage.getItem(PARTY_KEY) === null;
     } catch {

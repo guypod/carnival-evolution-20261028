@@ -253,8 +253,9 @@ describe('storage failures', () => {
     }
   });
 
-  it('treats a browser with no storage as having nothing left to clear', () => {
-    expect(createPartyStore(undefined).clear()).toBe(true);
+  it('does not report a clear as done when storage cannot be reached', () => {
+    // Unreachable storage is not proof that an earlier party is gone.
+    expect(createPartyStore(undefined).clear()).toBe(false);
   });
 
   it('keeps the saved nicknames on screen when erasing them cannot be saved', () => {
