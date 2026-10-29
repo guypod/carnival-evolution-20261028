@@ -13,6 +13,7 @@ import {
   createSim,
   tick,
   usable,
+  type Crowd,
   type Group,
   type Need,
   type Sim,
@@ -74,9 +75,12 @@ export function atmosphere(layout: Layout, weather?: Weather): Cue[] {
 export const forecastName = (weather?: Weather) =>
   weather ? FORECASTS[weather].name.toLowerCase() : 'clear skies';
 
-/** Starts the gates on `layout`, with the same seeded visitors every time, under an optional forecast. */
-export function openGates(layout: Layout, weather?: Weather): Sim {
-  return createSim(layout, OPENING_SEED, false, OPENING_GROUPS, weather);
+/**
+ * Starts the gates on `layout`, with the same seeded visitors every time,
+ * under an optional forecast. A travelling fair stop passes its own crowd.
+ */
+export function openGates(layout: Layout, weather?: Weather, crowd?: Crowd): Sim {
+  return createSim(layout, OPENING_SEED, false, OPENING_GROUPS, weather, crowd);
 }
 
 /** Whether every group has arrived and left, or the gates have closed. */

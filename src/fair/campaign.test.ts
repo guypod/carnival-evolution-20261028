@@ -10,17 +10,21 @@ import {
   createCampaignStore,
   currentStop,
   layoutProblem,
+  openStop,
   pack,
   parseCampaign,
   placeAtStop,
   recordDay,
   unpack,
+  stopById,
   unvisited,
+  waitsForGates,
   withCapacity,
   type Packing,
 } from './campaign';
 import type { Layout } from './fair';
 import { measure, openGates, runToEnd, type Outcome } from './opening-day';
+import { resetSim } from './visitors';
 
 const win: Outcome = {
   arrived: 8,
@@ -153,7 +157,7 @@ describe('choosing stops', () => {
     let c = NEW_CAMPAIGN;
     for (const stop of STOPS) {
       expect(layoutProblem(stop, packing, layout)).toBeUndefined();
-      c = recordDay({ ...c, packing, layout }, measure(runToEnd(openGates(layout)), true));
+      c = recordDay({ ...c, packing, layout }, measure(runToEnd(openStop(stop, layout)), true));
     }
     expect(complete(c)).toBe(true);
     expect(c.keepsakes).toEqual(['riverside', 'market', 'hilltop']);
@@ -181,5 +185,86 @@ describe('choosing stops', () => {
     expect(c.at).toBe('market');
     expect(c.packing.path).toBe(2);
     expect(c.layout).toEqual({ '1,1': 'path' });
+  });
+});
+
+describe('visitors at each stop', () => {
+  const paths: Layout = { '1,3': 'path', '2,3': 'path', '3,3': 'path', '4,3': 'path' };
+  // Comparable layouts: four paths and four pieces, each leaving out one kind of piece.
+  const noBench: Layout = { ...paths, '1,2': 'game', '3,2': 'food', '1,4': 'game' };
+  const noFood: Layout = { ...paths, '1,2': 'game', '3,2': 'bench', '1,4': 'bench', '3,4': 'game' };
+  const noGame: Layout = { ...paths, '1,2': 'food', '3,2': 'food', '1,4': 'bench', '3,4': 'bench' };
+  const day = (id: 'riverside' | 'market' | 'hilltop', layout: Layout) =>
+    measure(runToEnd(openStop(stopById(id), layout)), true);
+
+  it('sends a different crowd to each stop, and leaves the sandbox crowd alone', () => {
+    const families = (id: 'riverside' | 'market' | 'hilltop') =>
+      runToEnd(openStop(stopById(id), noBench)).left.filter((g) => g.kind === 'family').length;
+    // Riverside is mostly families and Hilltop mostly thrill seekers; Market differs by thirst on arrival.
+    expect(families('riverside')).toBeGreaterThanOrEqual(6);
+    expect(families('hilltop')).toBeLessThanOrEqual(2);
+    expect(stopById('market').crowd.start.family.thirst).toBeGreaterThan(
+      stopById('riverside').crowd.start.family.thirst,
+    );
+    expect(openGates(noBench).crowd).toBeUndefined();
+  });
+
+  it('turns Riverside families away without a bench, where Market and Hilltop do fine', () => {
+    expect(day('riverside', noBench).unmet.rest).toBeGreaterThanOrEqual(5);
+    expect(day('riverside', noBench).success).toBe(false);
+    expect(day('market', noBench).success).toBe(true);
+    expect(day('hilltop', noBench).success).toBe(true);
+  });
+
+  it('turns Market shoppers away without refreshments, where Riverside and Hilltop do fine', () => {
+    expect(day('market', noFood).unmet.thirst).toBeGreaterThanOrEqual(5);
+    expect(day('market', noFood).success).toBe(false);
+    expect(day('riverside', noFood).success).toBe(true);
+    expect(day('hilltop', noFood).success).toBe(true);
+  });
+
+  it('turns Hilltop thrill seekers away without a game stall, where Riverside and Market do fine', () => {
+    expect(day('hilltop', noGame).unmet.fun).toBeGreaterThanOrEqual(5);
+    expect(day('hilltop', noGame).success).toBe(false);
+    expect(day('riverside', noGame).success).toBe(true);
+    expect(day('market', noGame).success).toBe(true);
+  });
+
+  it('keeps the stop crowd when the visitors are reset for a retry', () => {
+    const sim = openStop(stopById('hilltop'), noGame);
+    expect(resetSim(sim).crowd).toBe(stopById('hilltop').crowd);
+  });
+
+  it('runs every campaign day in clear skies, whatever the sandbox forecast', () => {
+    for (const stop of STOPS) expect(openStop(stop, noBench).weather).toBeUndefined();
+  });
+
+  it('keeps pause, finish and end early working while the gates are open', () => {
+    for (const act of ['pause', 'day-finish', 'day-end', 'next-group'])
+      expect(waitsForGates(act)).toBe(false);
+    for (const act of ['go-market', 'pack-path', 'unpack-bench'])
+      expect(waitsForGates(act)).toBe(true);
+  });
+});
+
+describe('campaign storage failures', () => {
+  const broken = {
+    getItem: () => {
+      throw new Error('denied');
+    },
+    setItem: () => {
+      throw new Error('full');
+    },
+    removeItem: () => {
+      throw new Error('denied');
+    },
+  };
+
+  it('reports a failed save and a failed reset instead of claiming success', () => {
+    const store = createCampaignStore(broken);
+    expect(store.save(NEW_CAMPAIGN)).toBe(false);
+    expect(store.reset()).toBe(false);
+    expect(store.load()).toEqual(NEW_CAMPAIGN);
+    expect(createCampaignStore(undefined).save(NEW_CAMPAIGN)).toBe(false);
   });
 });

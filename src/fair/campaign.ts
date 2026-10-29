@@ -1,7 +1,8 @@
 /**
  * Travelling fair campaign: an optional three-stop tour inside Run Your Own
  * Fair. Each stop blocks different squares of the plaza, so the buildable
- * topology changes, and weights visitor priorities differently. The player
+ * topology changes, and sends a different crowd through the gate: its own mix
+ * of families and thrill seekers, arriving with its own needs. The player
  * packs equipment under a capacity budget, arranges it, and runs Opening Day.
  * A modest reputation carries to the next stop. Plain functions, so travel,
  * retries, impossible layouts and saves test without a browser. The sandbox
@@ -18,7 +19,8 @@ import {
   type Layout,
   type Piece,
 } from './fair';
-import type { Outcome } from './opening-day';
+import { openGates, type Outcome } from './opening-day';
+import type { Crowd, Sim } from './visitors';
 
 export const CAMPAIGN_KEY = 'tessl-carnival:fair-campaign';
 export const CAMPAIGN_VERSION = 1;
@@ -32,8 +34,10 @@ export type Stop = {
   blocked: readonly string[];
   /** How many pieces the wagons can carry to this stop. */
   capacity: number;
-  /** What visitors here care about most, told before packing. */
+  /** What visitors here care about most, told before packing. It describes `crowd`. */
   priority: string;
+  /** Who arrives at this stop's Opening Day: the share of families, and how each kind feels on arrival. */
+  crowd: Crowd;
   /** Extra weight a served or happy group earns here, by what mattered. */
   weight: { served: number; happy: number };
 };
@@ -44,7 +48,15 @@ export const STOPS: readonly Stop[] = [
     name: 'Riverside meadow',
     blocked: ['3,0', '3,1', '4,1', '4,2', '5,2', '5,3', '6,3', '6,4'],
     capacity: 14,
-    priority: 'A river cuts the meadow: families want benches and shade on the near bank.',
+    priority:
+      'A river cuts the meadow. About four in five groups are families, and they arrive tired from the walk: without a bench on a connected path, they go home.',
+    crowd: {
+      family: 0.8,
+      start: {
+        thrill: { fun: 60, rest: 40, thirst: 20 },
+        family: { fun: 20, rest: 75, thirst: 35 },
+      },
+    },
     weight: { served: 1, happy: 2 },
   },
   {
@@ -53,7 +65,14 @@ export const STOPS: readonly Stop[] = [
     blocked: ['2,1', '2,2', '5,1', '5,2', '2,4', '5,4'],
     capacity: 12,
     priority:
-      'Market stalls crowd the square: shoppers are thirsty and want refreshments close by.',
+      'Market stalls crowd the square. Shoppers of every kind arrive thirsty: without refreshments on a connected path, they go home.',
+    crowd: {
+      family: 0.5,
+      start: {
+        thrill: { fun: 45, rest: 10, thirst: 70 },
+        family: { fun: 20, rest: 35, thirst: 75 },
+      },
+    },
     weight: { served: 2, happy: 1 },
   },
   {
@@ -61,7 +80,15 @@ export const STOPS: readonly Stop[] = [
     name: 'Hilltop green',
     blocked: ['1,0', '2,0', '1,5', '2,5', '4,0', '4,5', '6,1', '6,2', '6,4', '7,3'],
     capacity: 10,
-    priority: 'A rocky hill with narrow tracks: thrill seekers climb up for the games.',
+    priority:
+      'A rocky hill with narrow tracks. About four in five groups are thrill seekers who climb up for the games: without a game stall on a connected path, they go home.',
+    crowd: {
+      family: 0.2,
+      start: {
+        thrill: { fun: 85, rest: 10, thirst: 20 },
+        family: { fun: 60, rest: 30, thirst: 30 },
+      },
+    },
     weight: { served: 2, happy: 2 },
   },
 ];
@@ -193,6 +220,16 @@ export function chooseStop(c: Campaign, id: StopId): Change<Campaign> {
     return { ok: false, reason: `The fair has already played ${stopById(id).name}.` };
   return { ok: true, value: { ...c, at: id, packing: EMPTY_PACKING, layout: {} } };
 }
+
+/**
+ * Opens the gates at a stop: the same seeded Opening Day, with the stop's own
+ * crowd. It takes no forecast, so a sandbox forecast never reaches a campaign day.
+ */
+export const openStop = (stop: Stop, layout: Layout): Sim =>
+  openGates(layout, undefined, stop.crowd);
+
+/** Whether a campaign action waits while the gates are open. Only travel and packing do; pause, finish and end early reach the day. */
+export const waitsForGates = (name: string) => /^(go|pack|unpack)-/.test(name);
 
 /** Reputation a day earns at a stop, from what the simulation measured. */
 export function reputationEarned(stop: Stop, o: Outcome): number {

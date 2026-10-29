@@ -73,9 +73,11 @@ import {
   pack,
   packedCount,
   placeAtStop,
+  openStop,
   recordDay,
   stopById,
   unpack,
+  waitsForGates,
   withCapacity,
   type Campaign,
   type Stop,
@@ -449,7 +451,7 @@ export function startFair(
     }
     if (gatesOpen()) {
       // Pause, finish and end early still reach the day; only the campaign's own buttons wait.
-      const own = /^(go|pack|unpack)-/.test(name);
+      const own = waitsForGates(name);
       if (own) say(GATES_OPEN);
       return own;
     }
@@ -514,6 +516,11 @@ export function startFair(
       parts.push(`<p>${GOALS_TEXT}${tour ? '' : held}</p>`);
       if (forecast && !tour)
         parts.push(`<p><strong>Forecast.</strong> ${FORECASTS[forecast].rule}</p>`);
+      const stop = tourStop();
+      if (stop)
+        parts.push(
+          `<p><strong>Visitors at ${stop.name}.</strong> These are this stop's own visitors, not your plaza's, so a layout that wins at one stop can lose at another. The same groups come on every retry here.</p>`,
+        );
       if (day.last) {
         // The debrief belongs to the layout the day ran on, not to edits made since.
         const d = debrief(day.ran ?? layout, day.last, day.previous);
@@ -568,8 +575,8 @@ export function startFair(
       const saved = tour ? (tourSaved = tourStore.save(tour)) : store.save(layout);
       day = { phase: 'open', freeSim: sim, last: day.last };
       carrying = undefined;
-      // Forecasts belong to the sandbox, so a campaign day always runs in clear skies.
-      sim = { ...openGates(layout, tour ? undefined : forecast), paused: quiet };
+      // A campaign day has the stop's own crowd and always clear skies: forecasts belong to the sandbox.
+      sim = { ...(stop ? openStop(stop, layout) : openGates(layout, forecast)), paused: quiet };
       selected = undefined;
       setPauseButton();
       say(
