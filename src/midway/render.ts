@@ -1,5 +1,5 @@
 import { canvasFont, theme } from '../carnival';
-import { palette, waterside } from './palette';
+import { gardenLights, palette, waterside } from './palette';
 import {
   CART_KINDS,
   toScreen,
@@ -2277,4 +2277,31 @@ export function drawPinwheel(
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+}
+
+/**
+ * One chime stone, flat on the promenade at `p`. `glow` from 0 to 1 lights a
+ * soft ring over it; it only ever fades, so quiet mode draws it the same way.
+ */
+export function drawChimeStone(ctx: Ctx, p: { x: number; y: number }, glow: number) {
+  ctx.fillStyle = palette.shadow;
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y + 1.5, 11, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = palette.metalShade;
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, 10, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (glow <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = glow;
+  ctx.fillStyle = gardenLights.coolGlow;
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, 14, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = gardenLights.cool;
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, 7, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }

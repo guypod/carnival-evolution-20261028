@@ -56,7 +56,7 @@ describe('chime stones', () => {
   it('starts the answer again on a wrong stone, with no penalty', () => {
     let stones = playCall(createStones({ x: 0, y: 0 }), 0);
     stones = touchStone(stones, CALL_PATTERN[0], afterCall);
-    stones = touchStone(stones, CALL_PATTERN[0] === 3 ? 2 : 3, afterCall + 1);
+    stones = touchStone(stones, 3, afterCall + 1);
     expect(stones.answered).toBe(0);
     stones = touchStone(stones, CALL_PATTERN[0], afterCall + 2);
     expect(stones.answered).toBe(1);

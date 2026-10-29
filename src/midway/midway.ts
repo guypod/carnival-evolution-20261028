@@ -717,7 +717,12 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       return;
     }
     canvas.style.cursor =
-      boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point) || chimeAt(point) >= 0 || ferryAt(point)
+      boothAt(point) ||
+      billboardAt(point) ||
+      gateAt(point) ||
+      gardenAt(point) ||
+      chimeAt(point) >= 0 ||
+      ferryAt(point)
         ? 'pointer'
         : 'default';
   };
@@ -1068,7 +1073,8 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
     nearGarden = !inReach && !nearGate && gardenInReach(garden, player);
     nearDock = ferry.riding ? undefined : dockInReach(map, player)?.id;
-    nearChimes = !inReach && !nearGate && !nearDock && !ferry.riding && stonesInReach(chimes, player);
+    nearChimes =
+      !inReach && !nearGate && !nearDock && !ferry.riding && stonesInReach(chimes, player);
     const underfoot = ferry.riding ? undefined : stoneUnder(chimes, player);
     // Only stepping onto a stone rings it; standing still on one doesn't.
     if (underfoot !== undefined && underfoot !== stoneUnderfoot) {
