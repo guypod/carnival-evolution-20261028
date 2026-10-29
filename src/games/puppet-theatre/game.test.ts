@@ -210,10 +210,10 @@ describe('replay and scoring', () => {
 });
 
 describe('controls', () => {
-  it('selects with number keys and Tab, and moves and poses with arrows', () => {
+  it('selects with number keys, leaves Tab to the page, and moves and poses with arrows', () => {
     const stage = createStage();
     expect(keyAction(stage, 'Digit2')).toEqual({ type: 'select', id: 'dragon' });
-    expect(keyAction(stage, 'Tab')).toEqual({ type: 'select', id: 'dragon' });
+    expect(keyAction(stage, 'Tab')).toBeUndefined();
     expect(keyAction(stage, 'ArrowRight')).toEqual({ type: 'nudge', id: 'knight', dx: 20 });
     expect(keyAction(stage, 'ArrowUp')).toEqual({ type: 'pose', id: 'knight', pose: 'wave' });
     expect(keyAction({ ...stage, selected: 'cake' }, 'Space')).toEqual({

@@ -18,15 +18,15 @@ a different comic finale.
 
 ### Controls
 
-| Pointer                               | Keyboard             | Does                                       |
-| ------------------------------------- | -------------------- | ------------------------------------------ |
-| Press on a puppet or prop             | `1` to `5`, or `Tab` | Select it                                  |
-| Drag left or right                    | `Left` / `Right`     | Move the selected puppet or prop           |
-| Pose buttons (stand, wave, bow, hide) | `Up` / `Down`        | Change the selected puppet's pose          |
-| Release a dragged prop                | `Space` or `Enter`   | Drop the selected prop                     |
-| Undo button                           | `Z`                  | Undo the last change                       |
-| Rehearse button                       | `R`                  | Put the current scene back to how it began |
-| Click after the curtain               | `Space` or `Enter`   | Perform it again                           |
+| Pointer                               | Keyboard           | Does                                       |
+| ------------------------------------- | ------------------ | ------------------------------------------ |
+| Press on a puppet or prop             | `1` to `5`         | Select it                                  |
+| Drag left or right                    | `Left` / `Right`   | Move the selected puppet or prop           |
+| Pose buttons (stand, wave, bow, hide) | `Up` / `Down`      | Change the selected puppet's pose          |
+| Release a dragged prop                | `Space` or `Enter` | Drop the selected prop                     |
+| Undo button                           | `Z`                | Undo the last change                       |
+| Rehearse button                       | `R`                | Put the current scene back to how it began |
+| Click after the curtain               | `Space` or `Enter` | Perform it again                           |
 
 Props stay on the shelf until the gift scene. A drag counts as one change for
 undo, including a prop drop and any scene change it causes. Undo or Rehearse

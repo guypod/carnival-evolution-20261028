@@ -362,8 +362,6 @@ export function keyAction(stage: StageState, code: string): Action | undefined {
   if (digit) return { type: 'select', id: ITEMS[Number(digit[1]) - 1] };
   const id = stage.selected;
   switch (code) {
-    case 'Tab':
-      return { type: 'select', id: ITEMS[(ITEMS.indexOf(id) + 1) % ITEMS.length] };
     case 'ArrowLeft':
       return { type: 'nudge', id, dx: -20 };
     case 'ArrowRight':
@@ -624,10 +622,16 @@ export const puppetTheatre: CarnivalGame = {
       if (dragging && isProp(dragging)) run({ type: 'drop', id: dragging, record: false });
       dragging = undefined;
     };
+    // A cancelled touch ends the drag without dropping, so it never hands over a gift.
+    const onCancel = () => {
+      dragging = undefined;
+    };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const target = event.target instanceof HTMLElement ? event.target : undefined;
       if (
         target?.isContentEditable ||
+        target?.closest('a, button, select, summary, [role="button"]') ||
         target?.tagName === 'INPUT' ||
         target?.tagName === 'TEXTAREA'
       )
@@ -640,7 +644,7 @@ export const puppetTheatre: CarnivalGame = {
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
+    canvas.addEventListener('pointercancel', onCancel);
     window.addEventListener('keydown', onKeyDown);
 
     let frame = 0;
@@ -655,7 +659,7 @@ export const puppetTheatre: CarnivalGame = {
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('pointercancel', onUp);
+      canvas.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('keydown', onKeyDown);
     };
   },
