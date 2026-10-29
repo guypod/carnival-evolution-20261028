@@ -354,12 +354,12 @@ export function startFair(
     }
   }
 
-  const actions = root.querySelector('.fair-actions')!;
+  const actionBars = root.querySelectorAll('.fair-actions');
   const onAction = (event: Event) => {
     const name = (event.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
     if (name) act(name);
   };
-  actions.addEventListener('click', onAction);
+  actionBars.forEach((bar) => bar.addEventListener('click', onAction));
   canvas.addEventListener('keydown', onKey);
   canvas.addEventListener('click', onClick);
   say(
@@ -385,7 +385,7 @@ export function startFair(
 
   return () => {
     cancelAnimationFrame(frame);
-    actions.removeEventListener('click', onAction);
+    actionBars.forEach((bar) => bar.removeEventListener('click', onAction));
     canvas.removeEventListener('keydown', onKey);
     canvas.removeEventListener('click', onClick);
   };
