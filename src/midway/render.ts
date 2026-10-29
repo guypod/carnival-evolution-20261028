@@ -19,6 +19,65 @@ import {
 type Ctx = CanvasRenderingContext2D;
 type Pt = readonly [number, number];
 
+/**
+ * What the finale ticket mystery has changed at the landmarks: the ticket in
+ * Mara's tin or in the lead horse's bridle, her booth lamp lit, out or moved
+ * to the carousel, and a ribbon on the star horse.
+ */
+export interface LandmarkDetail {
+  tin: boolean;
+  bridle: boolean;
+  lamp: 'booth-lit' | 'booth-out' | 'carousel';
+  ribbon: boolean;
+}
+
+/** A small hanging lamp, lit or dark, at a world point. */
+function lamp(ctx: Ctx, p: Pt, lit: boolean) {
+  stroke(
+    ctx,
+    [
+      [p[0], p[1] - 8],
+      [p[0], p[1] - 4],
+    ],
+    palette.woodDark,
+    1,
+  );
+  if (lit) oval(ctx, p[0], p[1], 7, 7, palette.goldShade);
+  poly(
+    ctx,
+    [
+      [p[0] - 2.5, p[1] - 4],
+      [p[0] + 2.5, p[1] - 4],
+      [p[0] + 2.5, p[1] + 3],
+      [p[0] - 2.5, p[1] + 3],
+    ],
+    lit ? palette.gold : palette.woodDark,
+  );
+}
+
+/** A tiny gold ticket, a few pixels across. */
+function ticket(ctx: Ctx, x: number, y: number) {
+  poly(
+    ctx,
+    [
+      [x - 3, y - 1.5],
+      [x + 3, y - 1.5],
+      [x + 3, y + 1.5],
+      [x - 3, y + 1.5],
+    ],
+    palette.gold,
+  );
+  stroke(
+    ctx,
+    [
+      [x, y - 1.5],
+      [x, y + 1.5],
+    ],
+    palette.red,
+    0.8,
+  );
+}
+
 /** A tile position, `z` pixels above the ground, in world pixels. */
 function at(x: number, y: number, z = 0): Pt {
   const s = toScreen(x, y);
@@ -539,7 +598,7 @@ function bigTop(ctx: Ctx, prop: Prop, t: number) {
   }
 }
 
-function carousel(ctx: Ctx, prop: Prop, t: number) {
+function carousel(ctx: Ctx, prop: Prop, t: number, detail?: LandmarkDetail) {
   const cx = prop.x + prop.w / 2;
   const cy = prop.y + prop.h / 2;
   const c = at(cx, cy);
@@ -609,6 +668,11 @@ function carousel(ctx: Ctx, prop: Prop, t: number) {
       ],
       palette.red,
     );
+    // The lead horse carries the mystery's details.
+    if (i === 0 && detail) {
+      if (detail.bridle) ticket(ctx, x + facing * 7, hy - 9);
+      if (detail.ribbon) oval(ctx, x - facing * 3, hy - 4, 2.5, 2, palette.red);
+    }
   };
   horses.filter((h) => Math.sin(h.angle) < 0).forEach(drawHorse);
   const column = rimPoint(c, 0, 0, 6);
@@ -639,6 +703,11 @@ function carousel(ctx: Ctx, prop: Prop, t: number) {
   ringFlags(ctx, c, r * 1.05, roofZ - 6, t, 16);
   knob(ctx, c[0], c[1] - roofZ - 26);
   flag(ctx, c[0], c[1] - roofZ - 28, t, palette.gold);
+  if (detail?.lamp === 'carousel') {
+    const front = at(cx + r * 0.8, cy + r * 0.8, roofZ - 14);
+    lamp(ctx, front, true);
+    if (!detail.bridle) ticket(ctx, front[0], front[1] + 8);
+  }
 }
 
 // ── Square things ─────────────────────────────────────────────────────────
@@ -1022,7 +1091,7 @@ function fairGate(ctx: Ctx, prop: Prop, t: number) {
   flag(ctx, top[0], top[1], t, palette.gold);
 }
 
-function ticketBooth(ctx: Ctx, prop: Prop) {
+function ticketBooth(ctx: Ctx, prop: Prop, detail?: LandmarkDetail) {
   const x = prop.x + 0.15;
   const y = prop.y + 0.15;
   poly(ctx, rectPoints({ x: x + 0.2, y: y + 0.2, w: 0.7, h: 0.7 }), palette.shadow);
@@ -1050,6 +1119,27 @@ function ticketBooth(ctx: Ctx, prop: Prop) {
   onPlane(ctx, at(x + 0.35, y + 0.35, 38), () =>
     signBoard(ctx, 'TICKETS', 28, 9, { board: palette.gold, edge: palette.red, text: palette.red }),
   );
+  if (detail) {
+    // The finale tin on the counter, and the lamp by the window.
+    box(
+      ctx,
+      x + 0.3,
+      y + 0.75,
+      0.12,
+      0.12,
+      10,
+      3,
+      palette.metal,
+      palette.metalShade,
+      palette.metalShade,
+    );
+    if (detail.tin) {
+      const [tx, ty] = at(x + 0.36, y + 0.81, 15);
+      ticket(ctx, tx, ty);
+    }
+    if (detail.lamp !== 'carousel')
+      lamp(ctx, at(x + 0.75, y + 0.75, 22), detail.lamp === 'booth-lit');
+  }
 }
 
 function bench(ctx: Ctx, prop: Prop) {
@@ -1752,7 +1842,7 @@ export function drawFloaters(ctx: Ctx, floaters: readonly Floater[]) {
 
 // ── Everything else ───────────────────────────────────────────────────────
 
-export function drawProp(ctx: Ctx, prop: Prop, t: number) {
+export function drawProp(ctx: Ctx, prop: Prop, t: number, detail?: LandmarkDetail) {
   switch (prop.kind) {
     case 'big-top':
       return bigTop(ctx, prop, t);
@@ -1775,13 +1865,13 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
     case 'ferris-wheel':
       return ferrisWheel(ctx, prop, t);
     case 'carousel':
-      return carousel(ctx, prop, t);
+      return carousel(ctx, prop, t, detail);
     case 'wagon':
       return wagon(ctx, prop);
     case 'cart':
       return cart(ctx, prop, t);
     case 'ticket-booth':
-      return ticketBooth(ctx, prop);
+      return ticketBooth(ctx, prop, detail);
     case 'bench':
       return bench(ctx, prop);
     case 'planter':

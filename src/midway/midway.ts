@@ -41,6 +41,7 @@ import {
   type Cloud,
   type Floater,
   type GroundLayer,
+  type LandmarkDetail,
 } from './render';
 import {
   boothInReach,
@@ -82,6 +83,8 @@ export interface MidwayOptions {
   onFairGate?(): void;
   /** Called when the player walks up to, or away from, the fair gateway. */
   onFairGateReach?(near: boolean): void;
+  /** What the finale ticket mystery shows at the landmarks. Nothing when left out. */
+  detail?: LandmarkDetail;
 }
 
 export interface MidwayControls {
@@ -104,6 +107,8 @@ export interface MidwayControls {
   setViewScale(scale: number): void;
   /** Saves where the player stands, then goes through the fair gateway. */
   enterFair(): void;
+  /** Changes what the finale ticket mystery shows at the landmarks. */
+  setLandmarkDetail(detail: LandmarkDetail): void;
   stop(): void;
 }
 
@@ -162,6 +167,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   let motion: MotionPreference = options.motion ?? 'system';
   let systemReduces = false;
   let scene: Scene = options.scene ?? 'day';
+  let detail = options.detail;
   /** The clock the scenery animates by; it stops in quiet mode. */
   let sceneTime = 0;
   const updateQuiet = () => {
@@ -523,7 +529,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       const { depth, box, booth, prop, name } = item;
       const paint = booth
         ? () => drawBooth(ctx, booth, name, t, booth === inReach)
-        : () => drawProp(ctx, prop!, t);
+        : () => drawProp(ctx, prop!, t, detail);
       drawables.push({ depth, box, draw: () => faded(box, depth, paint) });
     }
     drawables
@@ -624,6 +630,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     },
     setScene(next) {
       scene = next;
+    },
+    setLandmarkDetail(next) {
+      detail = next;
     },
     landmarks,
     setMotion(next) {

@@ -71,6 +71,7 @@ import {
 } from './circuit';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
+import type { LandmarkDetail } from './midway/render';
 import {
   createSoundscape,
   DEFAULT_SOUNDSCAPE_VOLUME,
@@ -101,6 +102,26 @@ import {
   type Landmark,
   type LandmarkId,
 } from './midway/discovery';
+import {
+  APPROACHES,
+  approachesAt,
+  canTheorize,
+  ENDINGS,
+  LANDMARK_ORDER,
+  landmarkDetail,
+  landmarkScene,
+  misreadHint,
+  mysteryStatus,
+  mysteryStep,
+  mysteryStore,
+  npcLine,
+  openEndings,
+  sameMystery,
+  THEORIES,
+  type MysteryAction,
+  type Theory,
+  mysteryPanelSelector,
+} from './finale-mystery';
 import {
   CLOSED_STORY,
   closeStory,
@@ -244,6 +265,12 @@ function renderMidway() {
               <p class="revisit"></p>
               <button type="button" class="story-close">Back to the trail</button>
             </section>
+            <section class="finale-mystery" aria-labelledby="finale-mystery-title">
+              <h3 id="finale-mystery-title">🎟️ The missing finale ticket</h3>
+              <p class="mystery-status" role="status"></p>
+              <div class="mystery-body"></div>
+              <p class="note">Walk up to the Ticket booth, Carousel and Ferris wheel on the map, or use the buttons here: both count. No timer. Kept in this browser only, apart from scores.</p>
+            </section>
             <p class="note">Optional, and separate from scores and stamps. Kept in this browser only.</p>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </section>
@@ -270,6 +297,11 @@ function renderMidway() {
         <p class="message" role="status"></p>
         <button type="button" class="cancel" hidden>Cancel walk</button>
       </div>
+      <section class="mystery-card" aria-labelledby="mystery-card-title" hidden>
+        <h2 id="mystery-card-title"></h2>
+        <div class="mystery-card-body" aria-live="polite"></div>
+        <button type="button" class="mystery-card-close">Close</button>
+      </section>
       <div class="booth-card" aria-live="polite" hidden>
         <p class="prompt" hidden></p>
         <h2></h2>
@@ -343,12 +375,16 @@ function renderMidway() {
     onFairGate: () => (location.hash = '#/fair'),
     onFairGateReach: showFairGate,
     scene: scenePreference.load(),
-    onLandmark: (landmark) => discovery.found(landmark),
+    onLandmark: (landmark) => {
+      discovery.found(landmark);
+      mystery.visit(landmark.id);
+    },
     motion: motionPreference.load(),
     onRoute: (route) => routeStatus.show(route),
   });
   const routeStatus = setUpRoute(midway.cancelWalk);
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
+  const mystery = setUpMystery(midway.landmarks, midway.setLandmarkDetail);
   setUpVisit(midway.walkTo, midway.walkToLandmark);
   setUpSceneToggle(midway.setScene);
   setUpMotionToggle(midway.setMotion);
@@ -374,6 +410,7 @@ function renderMidway() {
     tour.stop();
     routeStatus.stop();
     discovery.stop();
+    mystery.stop();
     stopHelp();
     stopGuide();
     midway.stop();
@@ -553,6 +590,169 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
       hint.removeEventListener('click', onHint);
       window.removeEventListener('keydown', onKeyDown, true);
       card.removeEventListener('keydown', onCardKeyDown);
+    },
+  };
+}
+
+// The missing finale ticket: one state machine for walking up to landmarks
+// and for the buttons in the guide. Walking up opens a card on the map with
+// that landmark's choices; the guide holds every choice as plain text. The
+// map's drawn details come from the same state. Every word is set with textContent.
+function setUpMystery(landmarks: readonly Landmark[], setDetail: (d: LandmarkDetail) => void) {
+  const section = app.querySelector<HTMLElement>('.finale-mystery')!;
+  const body = section.querySelector<HTMLElement>('.mystery-body')!;
+  const card = app.querySelector<HTMLElement>('.mystery-card')!;
+  const cardBody = card.querySelector<HTMLElement>('.mystery-card-body')!;
+  const closeCard = card.querySelector<HTMLButtonElement>('.mystery-card-close')!;
+  let state = mysteryStore.load();
+  let at: LandmarkId | undefined;
+  const nameOf = (id: LandmarkId) => landmarks.find((l) => l.id === id)?.name ?? id;
+
+  const para = (into: HTMLElement, text: string, className?: string) => {
+    const p = document.createElement('p');
+    if (className) p.className = className;
+    p.textContent = text;
+    into.append(p);
+  };
+  const button = (into: HTMLElement, text: string, action: MysteryAction) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.addEventListener('click', () => step(action, into));
+    into.append(b);
+  };
+
+  // What there is to do at one landmark right now.
+  const landmarkControls = (into: HTMLElement, id: LandmarkId) => {
+    const approach = state.approaches[id];
+    if (approach) {
+      para(into, `${APPROACHES[approach].title}: ${APPROACHES[approach].text}`);
+      if (!state.theory)
+        button(into, `Look again at the ${nameOf(id)}`, { type: 'look-again', at: id });
+      return;
+    }
+    if (state.theory) return;
+    for (const a of approachesAt(id))
+      button(into, APPROACHES[a].label, { type: 'investigate', at: id, approach: a });
+  };
+
+  // The theory and the ending, shared by the guide and the card.
+  const resolution = (into: HTMLElement) => {
+    if (state.ending) {
+      const ending = ENDINGS[state.ending];
+      para(into, `Ending: ${ending.title}. ${ending.text}`, 'ending');
+      button(into, 'Start the mystery again', { type: 'restart' });
+      return;
+    }
+    if (canTheorize(state)) {
+      const hint = misreadHint(state);
+      if (hint) para(into, hint);
+      para(into, 'What do you tell Mara and Otto happened?');
+      for (const theory of Object.keys(THEORIES) as Theory[])
+        button(into, THEORIES[theory].label, { type: 'theorize', theory });
+    }
+    const endings = openEndings(state);
+    if (endings.length > 0) {
+      para(into, 'How should the finale go?');
+      for (const ending of endings)
+        button(into, ENDINGS[ending].label, { type: 'resolve', ending });
+    }
+  };
+
+  const npcs = (into: HTMLElement) => {
+    para(into, npcLine(state, 'mara'), 'npc');
+    if (state.approaches.carousel) para(into, npcLine(state, 'otto'), 'npc');
+  };
+
+  const renderCard = () => {
+    cardBody.replaceChildren();
+    if (!at) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    card.querySelector('h2')!.textContent = `🎟️ ${nameOf(at)}`;
+    para(cardBody, landmarkScene(state)[at]);
+    if (!state.started) {
+      para(cardBody, npcLine(state, 'mara'), 'npc');
+      button(cardBody, 'Offer to help Mara', { type: 'start' });
+      return;
+    }
+    if (at === 'entrance') para(cardBody, npcLine(state, 'mara'), 'npc');
+    if (at === 'carousel' && state.approaches.carousel)
+      para(cardBody, npcLine(state, 'otto'), 'npc');
+    landmarkControls(cardBody, at);
+    resolution(cardBody);
+  };
+
+  const render = () => {
+    setDetail(landmarkDetail(state));
+    section.querySelector('.mystery-status')!.textContent = mysteryStatus(state);
+    body.replaceChildren();
+    npcs(body);
+    if (!state.started) {
+      button(body, 'Offer to help Mara', { type: 'start' });
+    } else {
+      for (const id of LANDMARK_ORDER) {
+        const group = document.createElement('div');
+        group.className = 'mystery-landmark';
+        group.dataset.landmark = id;
+        para(group, landmarkScene(state)[id], 'scene');
+        landmarkControls(group, id);
+        body.append(group);
+      }
+      resolution(body);
+    }
+    renderCard();
+  };
+
+  // Focus stays in the panel that was used, on its first button. render()
+  // replaces the panel, so find the newly rendered one by its landmark id.
+  const step = (action: MysteryAction, from?: HTMLElement) => {
+    const landmark = from?.dataset.landmark;
+    // Read the saved progress again first, so another tab's steps are kept.
+    const next = mysteryStep(mysteryStore.load(), action);
+    if (sameMystery(next, state)) return;
+    state = next;
+    mysteryStore.save(state);
+    render();
+    if (!from) return;
+    const panel = landmark
+      ? (body.querySelector<HTMLElement>(mysteryPanelSelector(landmark)) ?? body)
+      : from;
+    (
+      panel.querySelector<HTMLElement>('button') ?? body.querySelector<HTMLElement>('button')
+    )?.focus();
+  };
+
+  const onClose = () => {
+    at = undefined;
+    renderCard();
+    app.querySelector<HTMLElement>('.midway-map')?.focus();
+  };
+  closeCard.addEventListener('click', onClose);
+
+  render();
+  return {
+    /** Walking up to a landmark on the map opens its card with the same choices. */
+    visit(id: LandmarkId) {
+      // Pick up another tab's progress before showing the card.
+      const saved = mysteryStore.load();
+      // Until Mara asks for help, only her booth offers the mystery.
+      if (!saved.started && id !== 'entrance') return;
+      if (!sameMystery(saved, state)) {
+        state = saved;
+        at = id;
+        render();
+        return;
+      }
+      at = id;
+      renderCard();
+    },
+    stop() {
+      closeCard.removeEventListener('click', onClose);
+      body.replaceChildren();
+      cardBody.replaceChildren();
     },
   };
 }
