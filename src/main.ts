@@ -1,5 +1,11 @@
 import './style.css';
-import { applyTheme, bestScore, onScoreRecorded, type CarnivalGame } from './carnival';
+import {
+  applyTheme,
+  beginScopedRound,
+  bestScore,
+  onScoreRecorded,
+  type CarnivalGame,
+} from './carnival';
 import { registry } from './games';
 import { startFair } from './fair/view';
 import { browserFairStorage } from './fair/fair';
@@ -69,6 +75,27 @@ import {
   savedProgress,
   runText,
 } from './circuit';
+import {
+  COOPERATIVE_GOAL,
+  DEFAULT_NAMES,
+  NICKNAME_MAX,
+  PARTY_GAME_IDS,
+  eraseNicknames,
+  leaveTurn,
+  legComparison,
+  makePartyId,
+  newParty,
+  partyStatus,
+  partyStore,
+  playTurn,
+  playerName,
+  recordTurn,
+  startTurn,
+  summarize,
+  type Party,
+  type PartyMode,
+  type Turn,
+} from './party';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
 import { startMidway } from './midway/midway';
 import type { LandmarkDetail } from './midway/render';
@@ -221,6 +248,7 @@ function renderMidway() {
             <a class="pavilion-link" href="#/prizes">🏆 Prize Pavilion</a>
             <a class="trail-link" href="#/trail">🧭 Carnival Trail</a>
             <a class="circuit-link" href="#/circuit">🎪 Carnival Circuit</a>
+            <a class="circuit-link" href="#/party">🎉 Two-Player Party</a>
             <a class="records-link" href="#/records">📜 Hall of Records</a>
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
@@ -1352,6 +1380,229 @@ function renderCircuit() {
   stop = onEscapeKey(window, () => (location.hash = '#/'));
 }
 
+function renderParty() {
+  document.body.dataset.view = 'party';
+  let party = partyStore.read();
+  let saveFailed = false;
+  /** Said once on the next party page, e.g. the score a turn just got. */
+  let notice = '';
+
+  const save = (next: Party) => {
+    party = next;
+    saveFailed = !partyStore.save(next);
+  };
+  const leave = () => {
+    stop?.();
+    stop = undefined;
+  };
+
+  function shell(body: string) {
+    leave();
+    app.innerHTML = `
+      <section class="circuit party" aria-labelledby="party-title">
+        <div class="game-header">
+          <a href="#/">← Back to the midway</a>
+          <h1 id="party-title" tabindex="-1">Two-Player Party</h1>
+        </div>
+        ${body}
+        <p class="circuit-error" role="alert" hidden>The party could not be saved in this browser. You can keep playing, but a reload will lose it.</p>
+        <p class="note">Party scores stay with the party: they never change single-player bests, the Hall of Records or the Carnival Circuit. The party and its nicknames are kept in this browser only.</p>
+      </section>`;
+    app.querySelector<HTMLElement>('.circuit-error')!.hidden = !saveFailed;
+  }
+
+  function showSetup() {
+    shell(`
+      <p class="circuit-intro">Two players, one device, three booths: Ring Toss, High Striker, then Skee Ball. Take turns, one full round each, passing the device between turns. There is no timer between turns.</p>
+      <form class="party-setup">
+        <fieldset>
+          <legend>How do you want to play?</legend>
+          <label><input type="radio" name="mode" value="competitive" checked /> Head to head: the higher total wins</label>
+          <label><input type="radio" name="mode" value="cooperative" /> Together: reach ${COOPERATIVE_GOAL} points combined</label>
+        </fieldset>
+        <label>Player 1 nickname (optional) <input name="p1" maxlength="${NICKNAME_MAX}" autocomplete="off" placeholder="${DEFAULT_NAMES[0]}" /></label>
+        <label>Player 2 nickname (optional) <input name="p2" maxlength="${NICKNAME_MAX}" autocomplete="off" placeholder="${DEFAULT_NAMES[1]}" /></label>
+        <div class="circuit-actions"><button type="submit" class="circuit-start">Start party</button></div>
+      </form>`);
+    const form = app.querySelector<HTMLFormElement>('.party-setup')!;
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const mode: PartyMode = data.get('mode') === 'cooperative' ? 'cooperative' : 'competitive';
+      save(
+        newParty(mode, [String(data.get('p1') ?? ''), String(data.get('p2') ?? '')], makePartyId),
+      );
+      showParty();
+    });
+    app.querySelector<HTMLElement>('h1')!.focus();
+    stop = onEscapeKey(window, () => (location.hash = '#/'));
+  }
+
+  function showParty() {
+    if (!party) return showSetup();
+    const current = party;
+    const summary = summarize(current, registry.all());
+    const interrupted = current.playing;
+    shell(`
+      <p class="circuit-status" role="status"></p>
+      <p class="party-notice" role="status" hidden></p>
+      <div class="party-handoff" hidden>
+        <p class="party-pass"></p>
+        <div class="circuit-actions"><button type="button" class="circuit-start party-play"></button></div>
+      </div>
+      <ol class="circuit-legs"></ol>
+      <p class="party-totals"></p>
+      <div class="circuit-actions">
+        <button type="button" class="circuit-start party-new" hidden>New party</button>
+        <button type="button" class="circuit-start party-erase">Erase nicknames</button>
+        <button type="button" class="circuit-start party-quit">Quit party</button>
+      </div>
+      <div class="party-confirm" role="alertdialog" aria-labelledby="party-confirm-text" hidden>
+        <p id="party-confirm-text">Quit this party? Its scores and nicknames are forgotten. Single-player scores are not touched.</p>
+        <div class="circuit-actions">
+          <button type="button" class="circuit-start party-confirm-yes">Yes, quit</button>
+          <button type="button" class="circuit-start party-confirm-no">Keep playing</button>
+        </div>
+      </div>`);
+    app.querySelector('.circuit-status')!.textContent = partyStatus(current, summary);
+
+    const noticeBox = app.querySelector<HTMLElement>('.party-notice')!;
+    if (interrupted) {
+      // Said once: the turn is then simply the next one to play.
+      notice = `${playerName(current, interrupted.player)}'s turn at ${summary.legs[interrupted.leg].name} was interrupted and did not count. Play it again from the start.`;
+      save(leaveTurn(current));
+    }
+    noticeBox.textContent = notice;
+    noticeBox.hidden = notice === '';
+    notice = '';
+
+    const next = summary.next;
+    const handoff = app.querySelector<HTMLElement>('.party-handoff')!;
+    const play = app.querySelector<HTMLButtonElement>('.party-play')!;
+    if (next) {
+      const name = playerName(current, next.player);
+      const leg = summary.legs[next.leg];
+      handoff.hidden = false;
+      app.querySelector('.party-pass')!.textContent =
+        `${name}, it's your turn at ${leg.name}. Take the device, then start when you're ready.`;
+      play.textContent = `Start ${name}'s turn`;
+      play.addEventListener('click', () => {
+        play.disabled = true;
+        // Start after this key press has finished, so the Enter or Space that
+        // pressed the button never reaches the game as its first input.
+        setTimeout(() => {
+          if (play.isConnected) playParty(next);
+        });
+      });
+    }
+
+    const list = app.querySelector('.circuit-legs')!;
+    for (const leg of summary.legs) {
+      const item = document.createElement('li');
+      const done = leg.winner !== undefined;
+      item.classList.toggle('complete', done);
+      item.classList.toggle('current', summary.legs[next?.leg ?? -1] === leg);
+      item.innerHTML = `
+        <span class="badge" aria-hidden="true">${done ? '✓' : ''}</span>
+        <div class="details"><h2></h2><p class="score"></p></div>`;
+      item.querySelector('h2')!.textContent = leg.name;
+      item.querySelector('.score')!.textContent = legComparison(current, leg);
+      list.append(item);
+    }
+    app.querySelector('.party-totals')!.textContent =
+      current.mode === 'cooperative'
+        ? `Together: ${summary.combined} of ${COOPERATIVE_GOAL}.`
+        : `Totals: ${playerName(current, 0)} ${summary.totals[0]} · ${playerName(current, 1)} ${summary.totals[1]}.`;
+
+    const newButton = app.querySelector<HTMLButtonElement>('.party-new')!;
+    newButton.hidden = !summary.finished;
+    newButton.addEventListener('click', () => {
+      partyStore.clear();
+      party = undefined;
+      showSetup();
+    });
+    app.querySelector('.party-erase')!.addEventListener('click', () => {
+      save(eraseNicknames(current));
+      notice = 'Nicknames erased. Scores are kept.';
+      showParty();
+    });
+    const confirm = app.querySelector<HTMLElement>('.party-confirm')!;
+    const quit = app.querySelector<HTMLButtonElement>('.party-quit')!;
+    quit.hidden = summary.finished;
+    quit.addEventListener('click', () => {
+      confirm.hidden = false;
+      app.querySelector<HTMLButtonElement>('.party-confirm-no')!.focus();
+    });
+    app.querySelector('.party-confirm-no')!.addEventListener('click', () => {
+      confirm.hidden = true;
+      quit.focus();
+    });
+    app.querySelector('.party-confirm-yes')!.addEventListener('click', () => {
+      partyStore.clear();
+      party = undefined;
+      showSetup();
+    });
+
+    if (next) play.focus();
+    else app.querySelector<HTMLElement>('h1')!.focus();
+    stop = onEscapeKey(window, () => {
+      if (!confirm.hidden) {
+        confirm.hidden = true;
+        quit.focus();
+      } else {
+        location.hash = '#/';
+      }
+    });
+  }
+
+  function playParty(turn: Turn) {
+    const game = registry.get(PARTY_GAME_IDS[turn.leg]);
+    if (!party || !game) return;
+    const partyId = party.id;
+    save(startTurn(party, turn));
+    const name = playerName(party, turn.player);
+    shell(`
+      <p class="circuit-status party-turn" role="status"></p>
+      <div class="circuit-actions">
+        <button type="button" class="circuit-start party-done" hidden>Back to the party</button>
+        <button type="button" class="circuit-start party-leave">Leave turn (it won't count)</button>
+      </div>
+      <canvas></canvas>`);
+    app.querySelector('h1')!.textContent = `Two-Player Party: ${game.name}`;
+    const status = app.querySelector('.party-turn')!;
+    status.textContent = `${name}'s turn. Play one full round; the first finished round counts.`;
+    const done = app.querySelector<HTMLButtonElement>('.party-done')!;
+    const leaveButton = app.querySelector<HTMLButtonElement>('.party-leave')!;
+    let scored = false;
+
+    const stopTurn = playTurn(game, app.querySelector('canvas')!, beginScopedRound, (score) => {
+      if (!party) return;
+      save(recordTurn(party, partyId, turn, score));
+      scored = true;
+      notice = `${name} scored ${score} at ${game.name}.`;
+      status.textContent = `${name} scored ${score}! Press Back to the party to pass the device.`;
+      done.hidden = false;
+      leaveButton.hidden = true;
+      done.focus();
+    });
+    const back = () => {
+      // Stop the game, and close its scope, before anything else is drawn.
+      stopTurn();
+      if (!scored && party) save(leaveTurn(party));
+      showParty();
+    };
+    done.addEventListener('click', back);
+    leaveButton.addEventListener('click', back);
+    const stopEscape = onEscapeKey(window, back);
+    stop = () => {
+      stopEscape();
+      stopTurn();
+    };
+  }
+
+  showParty();
+}
+
 function renderRecords() {
   document.body.dataset.view = 'records';
   const hall = hallOfRecords(registry.all());
@@ -1746,6 +1997,7 @@ function route() {
   else if (location.hash === '#/prizes') renderPrizes();
   else if (location.hash === '#/trail') renderTrail();
   else if (location.hash === '#/circuit') renderCircuit();
+  else if (location.hash === '#/party') renderParty();
   else if (location.hash === '#/records') renderRecords();
   else if (location.hash === '#/booths') renderBooths();
   else if (location.hash === '#/postcard') renderPostcard();

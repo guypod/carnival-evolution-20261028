@@ -624,7 +624,8 @@ kbd {
   margin: 0;
 }
 
-.game canvas {
+.game canvas,
+.party canvas {
   display: block;
   width: 100%;
   height: auto;
@@ -1842,4 +1843,47 @@ kbd {
 .finale-mystery .ending,
 .mystery-card .ending {
   font-weight: bold;
+}
+
+.party-setup {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.party-setup fieldset {
+  display: grid;
+  gap: 8px;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+}
+
+.party-setup input:not([type='radio']) {
+  display: block;
+  margin-top: 4px;
+  font: inherit;
+}
+
+.party-handoff,
+.party-confirm {
+  margin-bottom: 24px;
+  padding: 14px 18px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.party-handoff[hidden],
+.party-confirm[hidden],
+.party-notice[hidden] {
+  display: none;
+}
+
+.party-pass,
+.party-totals {
+  font-weight: bold;
+}
+
+.party canvas {
+  margin-top: 16px;
 }
