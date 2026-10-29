@@ -279,6 +279,47 @@ describe('forecasts', () => {
     expect(text).not.toMatch(/Forecast|clear skies|same-weather/);
   });
 
+  // Over budget by 16 with a second game stall, the bench sheltered at column 4, row 6, and a spare tree in a corner.
+  const pricey = { ...base, '4,2': 'game', '3,5': 'tree', '7,0': 'tree' } as Layout;
+
+  it('never advises cutting the tree that shelters a bench, when the rainy day it saved went over budget', () => {
+    const o = measure(runToEnd(openGates(pricey, 'rain')));
+    expect(o).toMatchObject({ served: 8, happy: 8, unreachable: 0, success: false });
+    expect(o.spent).toBeGreaterThan(OPENING_BUDGET);
+    const advice = improvement(pricey, o);
+    expect(advice).toMatch(/keep the trees that shelter a connected bench/);
+    expect(advice).toMatch(/tree at column 8, row 1 shelters no connected bench/);
+    expect(advice).not.toMatch(/column 4, row 6|Trees serve no visitor need/);
+    const only = Object.fromEntries(Object.entries(pricey).filter(([k]) => k !== '7,0')) as Layout;
+    const day = measure(runToEnd(openGates(only, 'rain')));
+    expect(day.spent).toBeGreaterThan(OPENING_BUDGET);
+    expect(improvement(only, day)).not.toMatch(/tree at|cheapest cut|Trees serve/);
+    expect(improvement(only, day)).toMatch(/Remove a piece no group used/);
+  });
+
+  it('never advises cutting a tree that shades a busy path in the heat', () => {
+    const shaded = { ...base, '4,2': 'game', '1,4': 'tree', '2,4': 'tree' } as Layout;
+    const o = measure(runToEnd(openGates(shaded, 'heat')));
+    expect(o.spent).toBeGreaterThan(OPENING_BUDGET);
+    const advice = improvement(shaded, o);
+    expect(advice).toMatch(/keep the trees that shade a connected path/);
+    expect(advice).not.toMatch(/tree at|cheapest cut|Trees serve/);
+    const spare = measure(runToEnd(openGates(pricey, 'heat')));
+    expect(improvement(pricey, spare)).toMatch(/tree at column 8, row 1 shades no connected path/);
+  });
+
+  it('keeps the clear skies budget advice, and reads only this try forecast', () => {
+    const clear = measure(runToEnd(openGates(pricey)));
+    expect(improvement(pricey, clear)).toMatch(
+      /Trees serve no visitor need, so they are the cheapest cut/,
+    );
+    const rain = measure(runToEnd(openGates(pricey, 'rain')));
+    const after = debrief(pricey, clear, rain).lines.join(' ');
+    expect(after).toMatch(/Trees serve no visitor need/);
+    expect(after).not.toMatch(/shelter a connected bench/);
+    expect(debrief(pricey, rain, clear).lines.join(' ')).not.toMatch(/Trees serve no visitor need/);
+  });
+
   it('marks only the squares the forecast changes, from the visitors own rules', () => {
     const sheltered = { ...base, '3,5': 'tree' } as Layout;
     expect(atmosphere(base)).toEqual([]);

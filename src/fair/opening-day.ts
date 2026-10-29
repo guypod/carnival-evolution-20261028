@@ -5,7 +5,7 @@
  * debrief reads only what the simulation measured. Plain functions, so goals,
  * early exit, retry and the pennant test without a browser.
  */
-import { PIECE_NAME, attractions, spent, type Layout } from './fair';
+import { PIECE_NAME, attractions, reachable, spent, type Layout } from './fair';
 import {
   KIND_NAME,
   SERVES,
@@ -150,6 +150,62 @@ const wetBenches = (layout: Layout, o: Outcome) =>
     (a) => a.piece === 'bench' && a.connected && !usable(layout, a, a.piece, o.weather),
   );
 
+/** What the forecast's trees do for visitors, in the budget advice. */
+const TREE_ROLE: Record<Weather, string> = {
+  rain: 'keep the trees that shelter a connected bench: tired visitors will use no other',
+  heat: 'keep the trees that shade a connected path: that shade slows the thirst',
+};
+
+/**
+ * The squares visitors can use whose forecast cue a tree decides: connected
+ * benches in the rain, reachable paths in the heat. Read from `atmosphere`, so
+ * the advice follows the same rules the visitors do.
+ */
+function covered(layout: Layout, weather: Weather): Set<string> {
+  const reach = reachable(layout);
+  const connected = new Set(
+    attractions(layout)
+      .filter((a) => a.connected)
+      .map((a) => `${a.x},${a.y}`),
+  );
+  return new Set(
+    atmosphere(layout, weather)
+      .filter((c) => c.cue === 'sheltered' || c.cue === 'shade')
+      .map((c) => `${c.x},${c.y}`)
+      .filter((k) => reach.has(k) || connected.has(k)),
+  );
+}
+
+/** Trees whose removal would leave a used bench wet or a used path in the sun under this forecast. */
+export function criticalTrees(layout: Layout, weather?: Weather) {
+  const trees = attractions(layout).filter((a) => a.piece === 'tree');
+  if (!weather) return { critical: [], spare: trees };
+  const before = covered(layout, weather);
+  const loses = (t: { x: number; y: number }) => {
+    const rest = Object.fromEntries(
+      Object.entries(layout).filter(([k]) => k !== `${t.x},${t.y}`),
+    ) as Layout;
+    const after = covered(rest, weather);
+    return [...before].some((k) => !after.has(k));
+  };
+  return { critical: trees.filter(loses), spare: trees.filter((t) => !loses(t)) };
+}
+
+/** The over-budget advice. Under a forecast it never names a tree the forecast makes useful. */
+function budgetAdvice(layout: Layout, o: Outcome): string {
+  const over = `Cut ${o.spent - OPENING_BUDGET} from the plaza.`;
+  const general = ' Remove a piece no group used, such as a second stall of the same kind.';
+  const { critical, spare } = criticalTrees(layout, o.weather);
+  if (!o.weather)
+    return `${over}${spare.length ? ' Trees serve no visitor need, so they are the cheapest cut.' : general}`;
+  const keep = critical.length ? ` In ${forecastName(o.weather)}, ${TREE_ROLE[o.weather]}.` : '';
+  const role = o.weather === 'rain' ? 'shelters no connected bench' : 'shades no connected path';
+  const cheap = spare.length
+    ? ` The tree at ${where(spare[0])} ${role}, so it is the cheapest cut.`
+    : general;
+  return `${over}${keep}${cheap}`;
+}
+
 /** The one change most likely to help, read from the outcome and the layout. */
 export function improvement(layout: Layout, o: Outcome): string {
   if (o.worst) {
@@ -162,10 +218,7 @@ export function improvement(layout: Layout, o: Outcome): string {
       ? `Lay a path from the gate to the ${name} at ${where(cut)}: it is not connected, so nobody can use it.`
       : `Place a ${name} beside a path connected to the gate.`;
   }
-  if (o.spent > OPENING_BUDGET) {
-    const trees = attractions(layout).filter((a) => a.piece === 'tree').length;
-    return `Cut ${o.spent - OPENING_BUDGET} from the plaza.${trees ? ' Trees serve no visitor need, so they are the cheapest cut.' : ' Remove a piece no group used, such as a second stall of the same kind.'}`;
-  }
+  if (o.spent > OPENING_BUDGET) return budgetAdvice(layout, o);
   if (!o.complete) return 'Let the day run to the end, or press Finish now, to see every group.';
   return 'Every goal was met. Try the same goals with fewer pieces.';
 }
