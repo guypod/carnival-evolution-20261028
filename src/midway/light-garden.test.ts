@@ -151,11 +151,13 @@ describe('where the garden lies on the midway', () => {
     }
   });
 
-  // Everything the renderer can paint for the garden, in world pixels: each
-  // lantern's dot 10 pixels up with a margin wider than its selection ring,
-  // and points along a garland between every pair of cells, since any two
-  // lanterns can be joined.
+  // What the renderer paints for the garden, in world pixels: each lantern's
+  // ground glow out to three quarters of its 30 by 15 ellipse, its dot 10
+  // pixels up with a margin wider than its selection ring, and points along a
+  // garland between every pair of cells, since any two lanterns can be joined.
+  // The glow's faded outer rim may pass behind the foreground arch.
   const RING = 8;
+  const GLOW = 0.75;
   const painted = (p: ReturnType<typeof gardenPatch>) => {
     const points: { at: Point; what: string }[] = [];
     const centre = (c: { col: number; row: number }) =>
@@ -164,6 +166,13 @@ describe('where the garden lies on the midway', () => {
       const c = centre(cell);
       const what = `lantern at column ${cell.col + 1}, row ${cell.row + 1}`;
       points.push({ at: c, what });
+      for (let a = 0; a < 16; a++) {
+        const turn = (a / 16) * Math.PI * 2;
+        points.push({
+          at: { x: c.x + 30 * GLOW * Math.cos(turn), y: c.y + 15 * GLOW * Math.sin(turn) },
+          what: `glow at column ${cell.col + 1}, row ${cell.row + 1}`,
+        });
+      }
       for (const [dx, dy] of [
         [0, 0],
         [RING, 0],
@@ -234,6 +243,9 @@ describe('where the garden lies on the midway', () => {
       const over = new Set<string>();
       for (const { at, what } of painted(where)) {
         if (arch.some((shape) => inside(at, shape))) over.add(`arch over ${what}`);
+        // Glows lie on the ground, where a booth or prop box is only a rough
+        // outline, so only the arch's true silhouette is checked against them.
+        if (what.startsWith('glow')) continue;
         for (const { name, box } of shapes) {
           if (at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom)
             over.add(`${name} over ${what}`);
