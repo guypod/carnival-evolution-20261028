@@ -67,8 +67,8 @@ describe('the room collection', () => {
 
   it('gives each booth its own prize objects rather than one shared prize', () => {
     const objects = roomObjects(games, () => 300);
-    const sources = objects.filter((o) => o.name === 'Squeaky Rubber Duck').map((o) => o.source);
-    expect(sources).toEqual(['Skee Ball, Bronze', 'Ring Toss, Bronze']);
+    const bronze = objects.filter((o) => o.source.endsWith('Bronze')).map((o) => o.name);
+    expect(bronze).toEqual(['Ramp Ticket Roll', 'Glass Bottle Charm']);
   });
 });
 
@@ -279,7 +279,7 @@ describe('inspecting the room in words', () => {
       placements: [{ objectId: 'ring-toss:gold', slot: '0-1', rotation: 90 }],
     };
     expect(describeSlot(layout, objects, ROOM_SLOTS[1])).toBe(
-      'Top shelf, spot 2: Golden Ferris Wheel Trophy (Ring Toss, Gold), turned right.',
+      'Top shelf, spot 2: Golden Bottle Trophy (Ring Toss, Gold), turned right.',
     );
     expect(describeSlot(layout, objects, ROOM_SLOTS[8])).toBe('Floor, spot 1: empty.');
     expect(describeRoom(layout)).toBe('Sunset pier backdrop, 1 object placed of 12 spots.');

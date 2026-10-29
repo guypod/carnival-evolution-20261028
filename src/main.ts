@@ -63,13 +63,7 @@ import {
 } from './midway-help';
 import { boothScoresText } from './booth-scores';
 import { passportStamps, passportSummary, stampText } from './passport';
-import {
-  CARNIVAL_COLLECTOR,
-  PAVILION_TIERS,
-  collectorText,
-  pavilionCollection,
-  shelfText,
-} from './prize-pavilion';
+import { CARNIVAL_COLLECTOR, collectorText, pavilionCollection, shelfText } from './prize-pavilion';
 import { emptyText, hallOfRecords, overviewText } from './hall-of-records';
 import {
   DIRECTORY_STATUSES,
@@ -1291,9 +1285,7 @@ function renderPrizes() {
     </section>`;
 
   app.querySelector('.pavilion-intro')!.textContent =
-    'Win prizes at every booth with your best score: ' +
-    PAVILION_TIERS.map((tier) => `${tier.name} at ${tier.minScore}`).join(', ') +
-    '.';
+    'Win prizes at every booth with your best score. Each booth has its own Bronze, Silver and Gold goals, set by how it scores. Prizes you already won stay won.';
   const collector = app.querySelector<HTMLElement>('.pavilion-collector')!;
   collector.classList.toggle('won', collection.collector);
   collector.querySelector('h2')!.textContent = CARNIVAL_COLLECTOR;
@@ -1313,7 +1305,7 @@ function renderPrizes() {
     item.querySelector('.best')!.textContent = text.best;
     item.querySelector('.next')!.textContent = text.next;
     const badges = item.querySelector('.badges')!;
-    for (const tier of PAVILION_TIERS) {
+    for (const tier of shelf.tiers) {
       const won = shelf.unlocked.includes(tier);
       const badge = document.createElement('li');
       badge.className = `prize ${tier.id}`;

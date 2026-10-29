@@ -1,5 +1,5 @@
 import { bestScore, theme, canvasFont, type CarnivalGame } from './carnival';
-import { PAVILION_TIERS, type PavilionTier } from './prize-pavilion';
+import { boothTiers, type PavilionTier } from './prize-pavilion';
 
 /** What an object in the room looks like. Every shape is drawn, not loaded. */
 export type RoomShape = 'duck' | 'penguin' | 'trophy' | 'rug' | 'lantern' | 'fern';
@@ -65,7 +65,7 @@ export function roomObjects(
 ): RoomObject[] {
   const prizes = games.flatMap((game, index) => {
     const points = best(game.id) ?? 0;
-    return PAVILION_TIERS.map((tier): RoomObject => {
+    return boothTiers(game.id).map((tier): RoomObject => {
       const owned = points >= tier.minScore;
       return {
         id: `${game.id}:${tier.id}`,
