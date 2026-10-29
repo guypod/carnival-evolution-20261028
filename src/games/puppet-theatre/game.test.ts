@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CENTRE,
   ENDINGS,
+  finalTableau,
   act,
   buttonAction,
   createStage,
@@ -69,6 +70,17 @@ describe('scene transitions', () => {
     expect(cake.caption).toBe(ENDINGS.cake);
     expect(umbrella.caption).toBe(ENDINGS.umbrella);
     expect(cake.caption).not.toBe(umbrella.caption);
+  });
+
+  it('shows a different, fixed final tableau for each ending', () => {
+    const cake = finalTableau(toCurtain('cake').stage);
+    const umbrella = finalTableau(toCurtain('umbrella').stage);
+    expect(cake?.frosting.length).toBeGreaterThan(0);
+    expect(cake?.invertedUmbrella).toBe(false);
+    expect(umbrella?.frosting).toEqual([]);
+    expect(umbrella?.invertedUmbrella).toBe(true);
+    expect(finalTableau(toCurtain('cake').stage)).toEqual(cake);
+    expect(finalTableau(toSceneThree('cake').stage)).toBeNull();
   });
 });
 

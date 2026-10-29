@@ -14,7 +14,10 @@ Each scene's goal is shown in the caption at the top of the stage.
    and have both bow.
 
 The gift you choose decides the ending: the cake and the umbrella each lead to
-a different comic finale.
+a different comic finale. Each one ends on its own still picture: after the
+cake the knight is covered in frosting under a few sprinkles, and after the
+umbrella the dragon holds it inside out overhead while confetti hangs across the
+stage. The picture does not move, so it reads the same with motion turned down.
 
 ### Controls
 

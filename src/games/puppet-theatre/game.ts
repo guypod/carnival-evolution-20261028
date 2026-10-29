@@ -118,6 +118,47 @@ export const clampX = (x: number) => Math.min(STAGE_RIGHT, Math.max(STAGE_LEFT, 
 const near = (stage: StageState, a: ItemId, b: ItemId) =>
   Math.abs(stage.positions[a] - stage.positions[b]) <= NEAR;
 
+export interface Tableau {
+  gift: Gift;
+  /** Frosting blobs on the knight, as offsets from the knight's position. */
+  frosting: { dx: number; dy: number }[];
+  /** Whether the dragon holds the umbrella blown inside out over its head. */
+  invertedUmbrella: boolean;
+  /** Fixed pieces of falling confetti or sprinkles, as stage coordinates. */
+  confetti: { x: number; y: number }[];
+}
+
+/** The final picture for the ending, or null before the curtain. Fixed, so it never animates. */
+export function finalTableau(stage: StageState): Tableau | null {
+  if (stage.scene !== 'curtain' || !stage.gift) return null;
+  if (stage.gift === 'cake') {
+    return {
+      gift: 'cake',
+      frosting: [
+        { dx: -14, dy: -150 },
+        { dx: 10, dy: -144 },
+        { dx: -8, dy: -100 },
+        { dx: 12, dy: -80 },
+        { dx: -4, dy: -40 },
+      ],
+      invertedUmbrella: false,
+      confetti: [0, 1, 2, 3, 4, 5].map((i) => ({
+        x: stage.positions.dragon - 40 + i * 16,
+        y: FLOOR_Y - 190 + (i % 3) * 12,
+      })),
+    };
+  }
+  return {
+    gift: 'umbrella',
+    frosting: [],
+    invertedUmbrella: true,
+    confetti: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => ({
+      x: 80 + i * ((WIDTH - 160) / 11),
+      y: 140 + ((i * 37) % 160),
+    })),
+  };
+}
+
 /** Moves the stage on to the next scene when the current scene's goal is met. */
 export function checkScene(stage: StageState): StageState {
   if (stage.scene === 1 && near(stage, 'knight', 'dragon') && stage.poses.knight === 'wave') {
@@ -513,6 +554,34 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, x: number, y: number,
   ctx.fillText(line, x, y);
 }
 
+function drawTableau(ctx: CanvasRenderingContext2D, stage: StageState, tableau: Tableau) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.stripeB;
+  for (const f of tableau.frosting) {
+    ctx.beginPath();
+    ctx.arc(stage.positions.knight + f.dx, FLOOR_Y + f.dy, 9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (tableau.invertedUmbrella) {
+    const x = stage.positions.dragon;
+    const y = FLOOR_Y - 200;
+    ctx.fillStyle = colors.water;
+    ctx.beginPath();
+    ctx.arc(x, y, 26, 0, Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = colors.wood;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - 34);
+    ctx.stroke();
+  }
+  for (const [i, c] of tableau.confetti.entries()) {
+    ctx.fillStyle = i % 2 ? colors.accent : colors.stripeA;
+    ctx.fillRect(c.x - 3, c.y - 3, 6, 6);
+  }
+}
+
 function draw(ctx: CanvasRenderingContext2D, stage: StageState) {
   const { colors } = theme;
   ctx.fillStyle = colors.background;
@@ -531,7 +600,10 @@ function draw(ctx: CanvasRenderingContext2D, stage: StageState) {
   for (const id of PROPS) drawProp(ctx, stage, id);
   for (const id of ACTORS) drawPuppet(ctx, stage, id);
 
-  if (stage.gift && stage.scene !== 1) {
+  const tableau = finalTableau(stage);
+  if (tableau) drawTableau(ctx, stage, tableau);
+
+  if (stage.gift && stage.scene !== 1 && !tableau) {
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('small');
     ctx.textAlign = 'center';
