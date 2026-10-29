@@ -37,13 +37,13 @@ describe('trailLandmarks', () => {
   });
 });
 
-describe('the real ten-booth midway', () => {
+describe('the real nine-booth midway', () => {
   const ids = registry.all().map((g) => g.id);
   const real = layoutMidway(ids);
   const realLandmarks = trailLandmarks(real);
 
   it('lays out every registered booth and all three landmarks', () => {
-    expect(ids).toHaveLength(10);
+    expect(ids).toHaveLength(9);
     expect(realLandmarks.map((l) => l.id)).toEqual(['entrance', 'carousel', 'ferris-wheel']);
   });
 
@@ -64,7 +64,7 @@ describe('the real ten-booth midway', () => {
   );
 });
 
-describe('pathToLandmark on the real ten-booth midway', () => {
+describe('pathToLandmark on the real nine-booth midway', () => {
   const real = layoutMidway(registry.all().map((g) => g.id));
   const realLandmarks = trailLandmarks(real);
 
