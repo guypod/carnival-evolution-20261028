@@ -3,7 +3,12 @@ import {
   PLUSH_HISTORY_MAX,
   PLUSH_KEY,
   PLUSH_NAME_MAX,
+  PLUSH_ACCESSORIES,
+  PLUSH_BODIES,
+  PLUSH_SIZE,
   STARTER_PLUSH,
+  accessoryAt,
+  accessoryBox,
   availableAccessories,
   benchApply,
   benchFor,
@@ -77,6 +82,33 @@ describe('the plush bench', () => {
       name: 'Pip',
     };
     expect(describePlush(plush)).toBe('Pip: A gold bunny with a smile face wearing bow.');
+  });
+});
+
+describe('parts on the canvas', () => {
+  it('keeps every part inside the preview on every body', () => {
+    for (const body of PLUSH_BODIES) {
+      for (const item of PLUSH_ACCESSORIES) {
+        const box = accessoryBox({ ...STARTER_PLUSH, body }, item);
+        expect(box.left).toBeGreaterThanOrEqual(0);
+        expect(box.top).toBeGreaterThanOrEqual(0);
+        expect(box.right).toBeLessThanOrEqual(PLUSH_SIZE.width);
+        expect(box.bottom).toBeLessThanOrEqual(PLUSH_SIZE.height);
+      }
+    }
+  });
+
+  it('finds the attached part under a point, front-most first', () => {
+    const plush = { ...STARTER_PLUSH, body: 'bunny' as const, accessories: ['crown' as const] };
+    const crown = accessoryBox(plush, 'crown');
+    expect(accessoryAt(plush, (crown.left + crown.right) / 2, crown.top + 30)).toBe('crown');
+    expect(accessoryAt(plush, 5, 5)).toBeUndefined();
+    expect(
+      accessoryAt(STARTER_PLUSH, (crown.left + crown.right) / 2, crown.top + 30),
+    ).toBeUndefined();
+    const both = { ...STARTER_PLUSH, accessories: ['wings' as const, 'bow' as const] };
+    const bow = accessoryBox(both, 'bow');
+    expect(accessoryAt(both, (bow.left + bow.right) / 2, (bow.top + bow.bottom) / 2)).toBe('bow');
   });
 });
 

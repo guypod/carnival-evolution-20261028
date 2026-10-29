@@ -205,6 +205,46 @@ export function describePlush(plush: Plush): string {
   return `${name}${parts.join(' ')}.`;
 }
 
+const PLUSH_CENTER = { x: PLUSH_SIZE.width / 2, y: PLUSH_SIZE.height / 2 + 20 };
+
+function headTop(plush: Plush): number {
+  const cy = PLUSH_CENTER.y;
+  return plush.body === 'bunny' ? cy - 100 : plush.body === 'bear' ? cy - 115 : cy - 95;
+}
+
+export interface PlushBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Where each attached part is drawn on the canvas, in canvas pixels. */
+export function accessoryBox(plush: Plush, accessory: PlushAccessory): PlushBox {
+  const { x: cx, y: cy } = PLUSH_CENTER;
+  const top = headTop(plush);
+  switch (accessory) {
+    case 'party-hat':
+      return { left: cx - 30, top: top - 60, right: cx + 30, bottom: top + 5 };
+    case 'crown':
+      return { left: cx - 40, top: top - 35, right: cx + 40, bottom: top + 10 };
+    case 'bow':
+      return { left: cx - 45, top: cy, right: cx + 45, bottom: cy + 50 };
+    case 'wings':
+      return { left: cx - 150, top: cy - 50, right: cx + 150, bottom: cy + 30 };
+  }
+}
+
+/** The attached part under a canvas point, front-most first, or undefined. */
+export function accessoryAt(plush: Plush, x: number, y: number): PlushAccessory | undefined {
+  const frontFirst: PlushAccessory[] = ['bow', 'crown', 'party-hat', 'wings'];
+  return frontFirst.find((item) => {
+    if (!plush.accessories.includes(item)) return false;
+    const box = accessoryBox(plush, item);
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  });
+}
+
 /** Draws the layered plush: accessories behind, body, face, accessories in front. */
 export function drawPlush(ctx: CanvasRenderingContext2D, plush: Plush) {
   const { width, height } = PLUSH_SIZE;
@@ -240,7 +280,7 @@ export function drawPlush(ctx: CanvasRenderingContext2D, plush: Plush) {
     shape(() => ctx.ellipse(cx, cy + 70, 60, 50, 0, 0, Math.PI * 2));
   } else if (plush.body === 'bunny') {
     for (const side of [-1, 1]) {
-      shape(() => ctx.ellipse(cx + side * 28, cy - 140, 18, 55, side * 0.15, 0, Math.PI * 2));
+      shape(() => ctx.ellipse(cx + side * 28, cy - 115, 18, 55, side * 0.15, 0, Math.PI * 2));
     }
     shape(() => ctx.ellipse(cx, cy - 40, 58, 62, 0, 0, Math.PI * 2));
     shape(() => ctx.ellipse(cx, cy + 75, 50, 55, 0, 0, Math.PI * 2));
@@ -275,7 +315,7 @@ export function drawPlush(ctx: CanvasRenderingContext2D, plush: Plush) {
   }
 
   // The bunny's hat sits on its head between the ears, so it stays inside the canvas.
-  const top = plush.body === 'bunny' ? cy - 100 : plush.body === 'bear' ? cy - 115 : cy - 95;
+  const top = headTop(plush);
   ctx.strokeStyle = c.background;
   if (plush.accessories.includes('party-hat')) {
     shape(() => {

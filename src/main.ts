@@ -184,6 +184,7 @@ import {
   benchFor,
   benchReset,
   benchUndo,
+  accessoryAt,
   describePlush,
   drawPlush,
   plushStore,
@@ -1856,7 +1857,7 @@ function renderPlush() {
         <a href="#/">← Back to the midway</a>
         <h1 id="plush-title" tabindex="-1">Plush Workshop</h1>
       </div>
-      <p class="plush-intro">Stitch your own carnival plush. Pick a body, a face and a colour, then drag parts from the tray onto the plush, or use their buttons. Drag a part's button off the plush, or press it again, to take the part away.</p>
+      <p class="plush-intro">Stitch your own carnival plush. Pick a body, a face and a colour, then drag parts from the tray onto the plush, or use their buttons. Drag a part off the plush, from the plush itself or from its button, or press its button again, to take the part away.</p>
       <div class="plush-bench">
         <canvas class="plush-preview" aria-hidden="true"></canvas>
         <div class="plush-controls">
@@ -1937,13 +1938,41 @@ function renderPlush() {
   }
 
   // A part is attached with its button, or by dragging it onto the plush,
-  // where it snaps into place. Dropping a part's button anywhere off the plush removes it.
+  // where it snaps into place. Dragging a part, from the tray or from the plush itself,
+  // and dropping it off the plush removes it.
   let dragging:
     { part: PlushAccessory; startX: number; startY: number; moved: boolean } | undefined;
   const overCanvas = (x: number, y: number) => {
     const box = canvas.getBoundingClientRect();
     return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
   };
+  const canvasPoint = (event: PointerEvent) => {
+    const box = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - box.left) / box.width) * PLUSH_SIZE.width,
+      y: ((event.clientY - box.top) / box.height) * PLUSH_SIZE.height,
+    };
+  };
+  let lifting: { part: PlushAccessory; startX: number; startY: number } | undefined;
+  canvas.addEventListener('pointerdown', (event) => {
+    const point = canvasPoint(event);
+    const item = accessoryAt(bench.current, point.x, point.y);
+    if (!item) return;
+    lifting = { part: item, startX: event.clientX, startY: event.clientY };
+    canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add('plush-drop');
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    const lift = lifting;
+    lifting = undefined;
+    canvas.classList.remove('plush-drop');
+    if (!lift || overCanvas(event.clientX, event.clientY)) return;
+    act({ type: 'remove', accessory: lift.part });
+  });
+  canvas.addEventListener('pointercancel', () => {
+    lifting = undefined;
+    canvas.classList.remove('plush-drop');
+  });
   for (const part of app.querySelectorAll<HTMLButtonElement>('.plush-part')) {
     const item = part.dataset.part as PlushAccessory;
     part.addEventListener('pointerdown', (event) => {
@@ -1991,6 +2020,7 @@ function renderPlush() {
   name.addEventListener('blur', update);
   undo.addEventListener('click', () => {
     bench = benchUndo(bench);
+    status.textContent = '';
     update();
   });
   // Starting over asks once more, so a stray press does not lose the plush.
