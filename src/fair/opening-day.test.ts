@@ -221,6 +221,29 @@ describe('forecasts', () => {
     expect(improvement(base, wet)).toMatch(/tree beside a connected bench/);
   });
 
+  it('advises shelter, not a path, when an isolated bench sits beside a wet connected one', () => {
+    const isolated = { ...base, '5,4': 'bench' } as Layout;
+    const wet = measure(runToEnd(openGates(isolated, 'rain')));
+    expect(wet.worst?.need).toBe('rest');
+    expect(improvement(isolated, wet)).toMatch(/tree beside a connected bench/);
+    const cut = Object.fromEntries(
+      Object.entries({ ...base, '5,5': 'bench' }).filter(([k]) => k !== '3,4'),
+    ) as Layout;
+    const day = measure(runToEnd(openGates(cut)));
+    expect(day.worst?.need).toBe('rest');
+    expect(improvement(cut, day)).toMatch(/Lay a path from the gate to the bench/);
+  });
+
+  it('names the wet benches, not a missing path, as the rain bottleneck', () => {
+    const wet = measure(runToEnd(openGates(base, 'rain')));
+    const text = debrief(base, wet).lines.join(' ');
+    expect(text).toMatch(/every connected bench was wet in the rain/);
+    expect(text).not.toMatch(/no bench touched a connected path/);
+    expect(text).toMatch(/every connected bench is wet, with no tree beside it/);
+    const plain = debrief(base, measure(runToEnd(openGates(base)))).lines.join(' ');
+    expect(plain).not.toMatch(/wet/);
+  });
+
   it('makes visitors thirstier in the heat, and shade slows it', () => {
     const thirst = (s: ReturnType<typeof openGates>) =>
       [...s.left, ...s.groups].reduce((n, g) => n + g.needs.thirst, 0);

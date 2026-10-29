@@ -12,6 +12,7 @@ import {
   besideTree,
   createSim,
   tick,
+  usable,
   type Group,
   type Need,
   type Sim,
@@ -34,6 +35,7 @@ export const DEFINITIONS = {
   happy: 'Happy: served, and never turned away for a need the plaza could not meet.',
   unreachable:
     'Turned away: the group needed a game, a bench or refreshments, and none touched a path connected to the gate.',
+  wet: 'In the rain, a tired group is also turned away when every connected bench is wet, with no tree beside it.',
 };
 
 /** The forecasts a player can opt into, and the rule each one changes, told before the gates open. */
@@ -141,17 +143,20 @@ export function measure(sim: Sim, complete = finished(sim)): Outcome {
 const NEED_WORD: Record<Need, string> = { fun: 'bored', rest: 'tired', thirst: 'thirsty' };
 const where = (c: { x: number; y: number }) => `column ${c.x + 1}, row ${c.y + 1}`;
 
+/** Whether rest went unmet because the rain made every connected bench wet, rather than for lack of a path. */
+const wetBenches = (layout: Layout, o: Outcome) =>
+  o.worst?.need === 'rest' &&
+  attractions(layout).some(
+    (a) => a.piece === 'bench' && a.connected && !usable(layout, a, a.piece, o.weather),
+  );
+
 /** The one change most likely to help, read from the outcome and the layout. */
 export function improvement(layout: Layout, o: Outcome): string {
   if (o.worst) {
     const piece = SERVES[o.worst.need];
     const name = PIECE_NAME[piece].toLowerCase();
     const cut = attractions(layout).find((a) => a.piece === piece && !a.connected);
-    if (
-      o.worst.need === 'rest' &&
-      !cut &&
-      attractions(layout).some((a) => a.piece === 'bench' && a.connected)
-    )
+    if (wetBenches(layout, o))
       return 'Plant a tree beside a connected bench: in the rain, only a sheltered bench can be used.';
     return cut
       ? `Lay a path from the gate to the ${name} at ${where(cut)}: it is not connected, so nobody can use it.`
@@ -183,7 +188,7 @@ export function debrief(layout: Layout, o: Outcome, previous?: Outcome): Debrief
   ];
   if (o.worst)
     lines.push(
-      `Bottleneck: ${o.worst.count} ${o.worst.count === 1 ? 'group was' : 'groups were'} ${NEED_WORD[o.worst.need]} (${o.worst.kinds.join(', ')}) and no ${PIECE_NAME[SERVES[o.worst.need]].toLowerCase()} touched a connected path.`,
+      `Bottleneck: ${o.worst.count} ${o.worst.count === 1 ? 'group was' : 'groups were'} ${NEED_WORD[o.worst.need]} (${o.worst.kinds.join(', ')}) and ${wetBenches(layout, o) ? 'every connected bench was wet in the rain, with no tree beside it' : `no ${PIECE_NAME[SERVES[o.worst.need]].toLowerCase()} touched a connected path`}.`,
     );
   else if (o.spent > OPENING_BUDGET)
     lines.push(`Bottleneck: the plaza is ${o.spent - OPENING_BUDGET} over the Opening Day budget.`);
@@ -197,6 +202,7 @@ export function debrief(layout: Layout, o: Outcome, previous?: Outcome): Debrief
       `Last try${label(previous.weather)}: served ${previous.served}, happy ${previous.happy}, turned away ${previous.unreachable}, spent ${previous.spent}. This try${label(o.weather)}: served ${o.served}, happy ${o.happy}, turned away ${o.unreachable}, spent ${o.spent}.${previous.weather === o.weather ? '' : ' The forecasts differ, so this is not a same-weather comparison.'}`,
     );
   lines.push(DEFINITIONS.served, DEFINITIONS.happy, DEFINITIONS.unreachable);
+  if (o.weather === 'rain') lines.push(DEFINITIONS.wet);
   return { headline, lines };
 }
 
