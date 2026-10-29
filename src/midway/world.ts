@@ -84,7 +84,7 @@ const MIN_ROWS = 2;
  * Rows of open ground between the plaza by the carousel and the gate, so the
  * light garden has an apron that the entrance arch never stands in front of.
  */
-const GARDEN_APRON = 4;
+const GARDEN_APRON = 5;
 
 /** Small seeded random numbers, for anything that should look random but stay put. */
 export function seededRandom(seed: number): () => number {

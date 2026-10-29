@@ -52,13 +52,13 @@ export function starterDesign(): LightGardenDesign {
 
 /**
  * Where the garden lies on the map: the open apron just inside the gate, right
- * of the avenue. Every cell there, and every garland strung between them, is
- * clear on screen of the entrance arch, its sign and flags, the carousel, the
- * booths and every other prop, so nothing the player hangs is hidden and no
- * hit area is covered. Saved designs use cells, not tiles, so they come along.
+ * of the avenue. Every cell there, its whole ground glow, and every garland
+ * strung between them, is clear on screen of the entrance arch, its sign and
+ * flags, the carousel, the booths and every other prop, so nothing the player
+ * hangs is hidden and no hit area is covered. Saved designs use cells, not tiles, so they come along.
  */
 export function gardenPatch(map: Pick<MidwayMap, 'avenueX' | 'height'>): Rect {
-  return { x: map.avenueX + 1, y: map.height - 7, w: GARDEN_COLUMNS, h: GARDEN_ROWS };
+  return { x: map.avenueX + 2, y: map.height - 6, w: GARDEN_COLUMNS, h: GARDEN_ROWS };
 }
 
 /** The garden cell under a tile position, or undefined outside the garden. */
