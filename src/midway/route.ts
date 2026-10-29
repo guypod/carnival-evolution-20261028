@@ -42,3 +42,30 @@ export function routeMessage(route: RouteState): string {
       return '';
   }
 }
+
+/** Tiles between lanterns on a trail: sparse enough to read as a path, not a line. */
+export const LANTERN_SPACING = 3;
+
+/**
+ * Where the lanterns stand for a named walk: every few tiles along the steps
+ * still ahead, ending on the destination. A walk that is not in progress, or
+ * has no steps left, lights nothing, so the trail clears on arrival and cancel.
+ */
+export function lanternTrail(
+  route: RouteState,
+  path: readonly { x: number; y: number }[],
+  spacing = LANTERN_SPACING,
+): { x: number; y: number }[] {
+  if (route.phase !== 'walking' || path.length === 0) return [];
+  const step = Math.max(1, Math.floor(spacing));
+  const last = path.length - 1;
+  const lights = [];
+  for (let i = last; i >= 0; i -= step) lights.unshift({ x: path[i].x, y: path[i].y });
+  return lights;
+}
+
+/** A lantern's brightness, 0 to 1. Steady in quiet mode; a slow, soft sway otherwise. */
+export function lanternBrightness(t: number, index: number, quiet: boolean): number {
+  if (quiet) return 1;
+  return 0.85 + 0.15 * Math.sin(t * 1.5 + index * 0.9);
+}

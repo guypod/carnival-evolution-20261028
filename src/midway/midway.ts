@@ -1,5 +1,13 @@
 import { isControl } from './controls';
-import { arriveRoute, cancelRoute, IDLE_ROUTE, startRoute, type RouteState } from './route';
+import {
+  arriveRoute,
+  cancelRoute,
+  IDLE_ROUTE,
+  lanternBrightness,
+  lanternTrail,
+  startRoute,
+  type RouteState,
+} from './route';
 import {
   landmarkInReach,
   pathToLandmark,
@@ -473,6 +481,26 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       });
       ctx.globalCompositeOperation = 'source-over';
     }
+
+    // A sparse trail of lanterns along the steps still ahead of a named walk.
+    lanternTrail(route, player.path).forEach((step, i) => {
+      const p = toScreen(Math.floor(step.x) + 0.5, Math.floor(step.y) + 0.5);
+      const glow = lanternBrightness(t, i, quiet);
+      ctx.globalAlpha = 0.35 * glow;
+      ctx.fillStyle = evening.glow;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 9, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = palette.gold;
+      ctx.strokeStyle = palette.goldShade;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
 
     if (destination && player.path.length > 0) {
       const p = toScreen(Math.floor(destination.x) + 0.5, Math.floor(destination.y) + 0.5);
