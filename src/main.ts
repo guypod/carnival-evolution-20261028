@@ -2384,8 +2384,8 @@ function renderExpedition() {
     const wasFinished = state.finished;
     state = next;
     message = note;
-    const kept = expeditionStore.save(state);
     if (state.finished) finishedHere.add(state.maze.seed);
+    const kept = expeditionStore.save(state, finishedHere);
     if (state.finished && !wasFinished)
       message = `Expedition ${state.maze.seed} complete! All three landmarks found.`;
     if (!kept)

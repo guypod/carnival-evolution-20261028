@@ -157,6 +157,28 @@ describe('createExpeditionStore', () => {
     expect(storage.getItem('carnival:scores')).toBeNull();
   });
 
+  it('keeps a completion whose save failed once a later save works, after reload', () => {
+    const data = memory();
+    let broken = true;
+    const storage = {
+      getItem: data.getItem,
+      setItem: (k: string, v: string) => {
+        if (broken) throw new Error('full');
+        data.setItem(k, v);
+      },
+    };
+    const store = createExpeditionStore(storage);
+    const pending = new Set<number>();
+    const done = playByHints(startExpedition(7));
+    pending.add(done.maze.seed);
+    expect(store.save(done, pending)).toBe(false);
+    broken = false;
+    expect(store.save(startExpedition(2026), pending)).toBe(true);
+    const reloaded = createExpeditionStore(data).load();
+    expect(reloaded.completed).toEqual([7]);
+    expect(reloaded.current?.seed).toBe(2026);
+  });
+
   it('drops repeated landmark names from a restored save, so it can still finish', () => {
     const names = generateMaze(7).landmarks.map((l) => l.name);
     const resumed = resumeExpedition({

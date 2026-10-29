@@ -292,14 +292,13 @@ export function createExpeditionStore(storage: ExpeditionStorage | undefined) {
         return { completed: [] };
       }
     },
-    save(state: Expedition): boolean {
+    /** Saves `state`, plus any seeds finished earlier whose own save failed. */
+    save(state: Expedition, pending: Iterable<number> = []): boolean {
       try {
         if (!storage) return false;
         const old = this.load();
-        const completed =
-          state.finished && !old.completed.includes(state.maze.seed)
-            ? [...old.completed, state.maze.seed]
-            : old.completed;
+        const finished = state.finished ? [state.maze.seed] : [];
+        const completed = [...new Set([...old.completed, ...pending, ...finished])];
         const { at, flipped, visited, found } = state;
         const current = state.finished
           ? undefined
