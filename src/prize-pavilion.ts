@@ -5,23 +5,60 @@ export interface PavilionTier extends PrizeTier {
   id: 'bronze' | 'silver' | 'gold';
   /** The fun prize the tier wins, shown on its badge. */
   prize: string;
+  /** How the prize is drawn in the Prize Room, matching its name. */
+  motif: PrizeMotif;
 }
+
+/** Every drawn prize motif. Each booth's prizes have motifs of their own. */
+export const PRIZE_MOTIFS = [
+  'duck',
+  'penguin',
+  'mallet',
+  'moustache',
+  'bell',
+  'golf-tee',
+  'windmill',
+  'golf-flag',
+  'card',
+  'lollipop',
+  'medal',
+  'tickets',
+  'skee-ball',
+  'crown',
+  'poodle',
+  'dart',
+  'balloons',
+  'bottle',
+  'hoop',
+  'bottle-trophy',
+  'lily-pad',
+  'duck-cup',
+  'foam-hammer',
+  'mole',
+  'mole-statue',
+  'bucket-hat',
+  'ferris-wheel',
+] as const;
+export type PrizeMotif = (typeof PRIZE_MOTIFS)[number];
 
 /**
  * The universal tiers, lowest first, used by a booth without goals of its own.
  * No booth goal is above these, so no prize won under them is ever lost.
  */
 export const PAVILION_TIERS: readonly PavilionTier[] = [
-  { id: 'bronze', name: 'Bronze', minScore: 50, prize: 'Squeaky Rubber Duck' },
-  { id: 'silver', name: 'Silver', minScore: 150, prize: 'Giant Plush Penguin' },
-  { id: 'gold', name: 'Gold', minScore: 300, prize: 'Golden Ferris Wheel Trophy' },
+  { id: 'bronze', name: 'Bronze', minScore: 50, prize: 'Squeaky Rubber Duck', motif: 'duck' },
+  { id: 'silver', name: 'Silver', minScore: 150, prize: 'Giant Plush Penguin', motif: 'penguin' },
+  {
+    id: 'gold',
+    name: 'Gold',
+    minScore: 300,
+    prize: 'Golden Ferris Wheel Trophy',
+    motif: 'ferris-wheel',
+  },
 ];
 
-type TierGoals = readonly [
-  bronze: [minScore: number, prize: string],
-  silver: [minScore: number, prize: string],
-  gold: [minScore: number, prize: string],
-];
+type Goal = [minScore: number, prize: string, motif: PrizeMotif];
+type TierGoals = readonly [bronze: Goal, silver: Goal, gold: Goal];
 
 /**
  * Each booth's own goals and prizes, checked against the booth's scoring rules
@@ -32,62 +69,62 @@ type TierGoals = readonly [
 const BOOTH_GOALS: Readonly<Record<string, TierGoals>> = {
   // 30 to 300 per round: three swings of up to 100.
   'high-striker': [
-    [50, 'Tiny Mallet Keyring'],
-    [150, 'Strongman Moustache'],
-    [275, 'Brass Bell Trophy'],
+    [50, 'Tiny Mallet Keyring', 'mallet'],
+    [150, 'Strongman Moustache', 'moustache'],
+    [275, 'Brass Bell Trophy', 'bell'],
   ],
   // 0 to 180 per round: three holes of up to 60.
   'mini-putt': [
-    [50, 'Golf Tee Pencil'],
-    [120, 'Windmill Snow Globe'],
-    [160, 'Hole in One Flag'],
+    [50, 'Golf Tee Pencil', 'golf-tee'],
+    [120, 'Windmill Snow Globe', 'windmill'],
+    [160, 'Hole in One Flag', 'golf-flag'],
   ],
   // 0 to 300 per round: 6 moves scores 300, 9 moves without a peek scores 270.
   'memory-menagerie': [
-    [50, 'Card Back Badge'],
-    [150, 'Lollipop Menagerie'],
-    [270, 'Perfect Memory Medal'],
+    [50, 'Card Back Badge', 'card'],
+    [150, 'Lollipop Menagerie', 'lollipop'],
+    [270, 'Perfect Memory Medal', 'medal'],
   ],
   // 0 to 500 per round: ten balls of up to 50.
   'skee-ball': [
-    [50, 'Ramp Ticket Roll'],
-    [150, 'Wooden Skee Ball'],
-    [300, 'Hundred Ring Crown'],
+    [50, 'Ramp Ticket Roll', 'tickets'],
+    [150, 'Wooden Skee Ball', 'skee-ball'],
+    [300, 'Hundred Ring Crown', 'crown'],
   ],
   // 0 to 315 per round: eight balloons, the star and every streak bonus.
   'balloon-darts': [
-    [50, 'Balloon Animal Poodle'],
-    [150, 'Feathered Dart Pin'],
-    [300, 'Star Balloon Bouquet'],
+    [50, 'Balloon Animal Poodle', 'poodle'],
+    [150, 'Feathered Dart Pin', 'dart'],
+    [300, 'Star Balloon Bouquet', 'balloons'],
   ],
   // 0 to 600 per round: ten rings of up to 60 on golden top bottles.
   'ring-toss': [
-    [50, 'Glass Bottle Charm'],
-    [150, 'Ringmaster Hoop'],
-    [300, 'Golden Bottle Trophy'],
+    [50, 'Glass Bottle Charm', 'bottle'],
+    [150, 'Ringmaster Hoop', 'hoop'],
+    [300, 'Golden Bottle Trophy', 'bottle-trophy'],
   ],
   // 20 seconds of stars at up to 20 each, about 22 objects a round.
   'duck-dash': [
-    [50, 'Rubber Duckling'],
-    [120, 'Lily Pad Cushion'],
-    [200, 'Racing Duck Cup'],
+    [50, 'Rubber Duckling', 'duck'],
+    [120, 'Lily Pad Cushion', 'lily-pad'],
+    [200, 'Racing Duck Cup', 'duck-cup'],
   ],
   // 30 seconds; a streak scores 30 a mole, 75 for a golden one.
   'mole-mayhem': [
-    [50, 'Foam Whack Hammer'],
-    [150, 'Burrowing Mole Plush'],
-    [300, 'Crowned Mole Statue'],
+    [50, 'Foam Whack Hammer', 'foam-hammer'],
+    [150, 'Burrowing Mole Plush', 'mole'],
+    [300, 'Crowned Mole Statue', 'mole-statue'],
   ],
   // Up to 90 a hit on a streak, so the universal goals fit.
   'water-cannon': [
-    [50, 'Splash Bucket Hat'],
-    [150, 'Giant Plush Penguin'],
-    [300, 'Golden Ferris Wheel Trophy'],
+    [50, 'Splash Bucket Hat', 'bucket-hat'],
+    [150, 'Giant Plush Penguin', 'penguin'],
+    [300, 'Golden Ferris Wheel Trophy', 'ferris-wheel'],
   ],
 };
 
 /**
- * A booth's tiers, lowest first: its own goals and prizes, or the universal
+ * A booth's tiers, lowest first: its own goals, prizes and motifs, or the universal
  * tiers for a booth without goals of its own yet.
  */
 export function boothTiers(gameId: string): readonly PavilionTier[] {
@@ -97,6 +134,7 @@ export function boothTiers(gameId: string): readonly PavilionTier[] {
     ...tier,
     minScore: goals[i][0],
     prize: goals[i][1],
+    motif: goals[i][2],
   }));
 }
 

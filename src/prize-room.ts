@@ -1,8 +1,11 @@
 import { bestScore, theme, canvasFont, type CarnivalGame } from './carnival';
-import { boothTiers, type PavilionTier } from './prize-pavilion';
+import { boothTiers, type PrizeMotif } from './prize-pavilion';
 
-/** What an object in the room looks like. Every shape is drawn, not loaded. */
-export type RoomShape = 'duck' | 'penguin' | 'trophy' | 'rug' | 'lantern' | 'fern';
+/**
+ * What an object in the room looks like. Every shape is drawn, not loaded: a
+ * prize uses its tier's motif from `boothTiers`, so it looks like its name.
+ */
+export type RoomShape = PrizeMotif | 'rug' | 'lantern' | 'fern';
 
 /** One object the visitor could put in the room. */
 export interface RoomObject {
@@ -20,12 +23,6 @@ export interface RoomObject {
 
 export const ROOM_COLORS = ['accent', 'water', 'stripeA', 'muted', 'wood', 'danger'] as const;
 export type RoomColor = (typeof ROOM_COLORS)[number];
-
-const TIER_SHAPES: Record<PavilionTier['id'], RoomShape> = {
-  bronze: 'duck',
-  silver: 'penguin',
-  gold: 'trophy',
-};
 
 /** Decor anyone can place, so a newcomer has a room before winning anything. */
 export const STARTER_DECOR: readonly RoomObject[] = [
@@ -70,7 +67,7 @@ export function roomObjects(
       return {
         id: `${game.id}:${tier.id}`,
         name: tier.prize,
-        shape: TIER_SHAPES[tier.id],
+        shape: tier.motif,
         color: ROOM_COLORS[index % ROOM_COLORS.length],
         source: `${game.name}, ${tier.name}`,
         owned,
@@ -503,66 +500,303 @@ function drawVisitor(ctx: CanvasRenderingContext2D, slot: RoomSlot) {
 
 /** Draws one object centred on the origin, about 56 pixels across. */
 function drawObject(ctx: CanvasRenderingContext2D, object: RoomObject) {
+  drawShape(canvasPen(ctx), object);
+}
+
+/**
+ * The few drawing moves a room object is made of, each filled in one colour
+ * and outlined. Drawing goes through a pen so tests can check every drawing
+ * without a canvas.
+ */
+export interface Pen {
+  ellipse(at: [x: number, y: number, rx: number, ry: number, turn?: number], color: string): void;
+  arc(at: [x: number, y: number, r: number], color: string): void;
+  rect(at: [x: number, y: number, w: number, h: number], color: string): void;
+  /** A closed shape through x, y pairs. */
+  poly(points: number[], color: string): void;
+  /** A five pointed star. */
+  star(at: [x: number, y: number, r: number], color: string): void;
+  /** A ring with a hole in the middle. */
+  ring(at: [x: number, y: number, outer: number, inner: number], color: string): void;
+  /** Straight strokes, four numbers per line. */
+  lines(segments: number[], color: string): void;
+  label(text: string, x: number, y: number, color: string): void;
+}
+
+/** Draws an object's shape, in its booth's colour, with any pen. */
+export function drawShape(pen: Pen, object: Pick<RoomObject, 'shape' | 'color'>) {
   const c = theme.colors;
-  const fill = c[object.color];
+  DRAWINGS[object.shape](pen, c[object.color], c);
+}
+
+function canvasPen(ctx: CanvasRenderingContext2D): Pen {
+  const c = theme.colors;
   ctx.lineWidth = 2;
-  ctx.strokeStyle = c.background;
-  const shape = (draw: () => void, color: string = fill) => {
+  const filled = (color: string, draw: () => void, rule: CanvasFillRule = 'nonzero') => {
     ctx.beginPath();
     draw();
     ctx.fillStyle = color;
-    ctx.fill();
+    ctx.strokeStyle = c.background;
+    ctx.lineWidth = 2;
+    ctx.fill(rule);
     ctx.stroke();
   };
-  switch (object.shape) {
-    case 'duck':
-      shape(() => ctx.ellipse(0, 10, 24, 16, 0, 0, Math.PI * 2));
-      shape(() => ctx.arc(10, -12, 12, 0, Math.PI * 2));
-      shape(() => {
-        ctx.moveTo(20, -14);
-        ctx.lineTo(30, -10);
-        ctx.lineTo(20, -6);
-        ctx.closePath();
-      }, c.danger);
-      break;
-    case 'penguin':
-      shape(() => ctx.ellipse(0, 4, 20, 26, 0, 0, Math.PI * 2), c.background);
-      shape(() => ctx.ellipse(0, 8, 13, 18, 0, 0, Math.PI * 2), c.text);
-      shape(() => ctx.arc(0, -20, 6, 0, Math.PI * 2));
-      shape(() => ctx.ellipse(0, 28, 14, 4, 0, 0, Math.PI * 2));
-      break;
-    case 'trophy':
-      shape(() => {
-        ctx.moveTo(-20, -24);
-        ctx.lineTo(20, -24);
-        ctx.lineTo(10, 4);
-        ctx.lineTo(-10, 4);
-        ctx.closePath();
-      }, c.accent);
-      shape(() => ctx.rect(-4, 4, 8, 14), c.accent);
-      shape(() => ctx.rect(-16, 18, 32, 8), fill);
-      break;
-    case 'rug':
-      for (let i = 0; i < 4; i += 1) {
-        shape(() => ctx.rect(-28 + i * 14, -16, 14, 32), i % 2 === 0 ? fill : c.stripeB);
+  const path = (points: number[]) => {
+    ctx.moveTo(points[0], points[1]);
+    for (let i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
+    ctx.closePath();
+  };
+  return {
+    ellipse: ([x, y, rx, ry, turn = 0], color) =>
+      filled(color, () => ctx.ellipse(x, y, rx, ry, turn, 0, Math.PI * 2)),
+    arc: ([x, y, r], color) => filled(color, () => ctx.arc(x, y, r, 0, Math.PI * 2)),
+    rect: ([x, y, w, h], color) => filled(color, () => ctx.rect(x, y, w, h)),
+    poly: (points, color) => filled(color, () => path(points)),
+    star: ([x, y, r], color) => filled(color, () => path(starPoints(x, y, r))),
+    ring: ([x, y, outer, inner], color) =>
+      filled(
+        color,
+        () => {
+          ctx.arc(x, y, outer, 0, Math.PI * 2);
+          ctx.moveTo(x + inner, y);
+          ctx.arc(x, y, inner, 0, Math.PI * 2);
+        },
+        'evenodd',
+      ),
+    lines: (segments, color) => {
+      ctx.beginPath();
+      for (let i = 0; i < segments.length; i += 4) {
+        ctx.moveTo(segments[i], segments[i + 1]);
+        ctx.lineTo(segments[i + 2], segments[i + 3]);
       }
-      break;
-    case 'lantern':
-      shape(() => ctx.rect(-2, -28, 4, 8), c.text);
-      shape(() => ctx.ellipse(0, 0, 22, 20, 0, 0, Math.PI * 2));
-      shape(() => ctx.rect(-10, 18, 20, 6), c.stripeA);
-      break;
-    case 'fern':
-      for (const lean of [-0.5, 0, 0.5]) {
-        shape(() => ctx.ellipse(lean * 30, -10, 8, 20, lean, 0, Math.PI * 2), c.water);
-      }
-      shape(() => {
-        ctx.moveTo(-18, 6);
-        ctx.lineTo(18, 6);
-        ctx.lineTo(12, 28);
-        ctx.lineTo(-12, 28);
-        ctx.closePath();
-      });
-      break;
-  }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    },
+    label: (text, x, y, color) => {
+      ctx.fillStyle = color;
+      ctx.font = canvasFont('small', 'bold');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
+      ctx.textBaseline = 'alphabetic';
+    },
+  };
 }
+
+/** The points of a five pointed star centred on x, y. */
+function starPoints(x: number, y: number, r: number): number[] {
+  const points: number[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const d = i % 2 === 0 ? r : r * 0.45;
+    points.push(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  return points;
+}
+
+type Colors = typeof theme.colors;
+
+/** A drawing for each shape, centred on the origin and about 56 pixels across. */
+const DRAWINGS: Record<RoomShape, (pen: Pen, fill: string, c: Colors) => void> = {
+  duck: (pen, fill, c) => {
+    pen.ellipse([0, 10, 24, 16], fill);
+    pen.arc([10, -12, 12], fill);
+    pen.poly([20, -14, 30, -10, 20, -6], c.danger);
+  },
+  penguin: (pen, fill, c) => {
+    pen.ellipse([0, 4, 20, 26], c.background);
+    pen.ellipse([0, 8, 13, 18], c.text);
+    pen.arc([0, -20, 6], fill);
+    pen.ellipse([0, 28, 14, 4], fill);
+  },
+  mallet: (pen, fill, c) => {
+    pen.poly([-3, -6, 3, -6, 3, 28, -3, 28], c.wood);
+    pen.rect([-22, -26, 44, 20], fill);
+    pen.arc([0, -28, 5], c.accent);
+  },
+  moustache: (pen, fill, c) => {
+    for (const side of [-1, 1]) {
+      pen.poly(
+        [0, 0, side * 14, -8, side * 26, -2, side * 30, -12, side * 28, 6, side * 12, 8],
+        c.text,
+      );
+    }
+    pen.ellipse([0, 0, 6, 5], fill);
+  },
+  bell: (pen, fill, c) => {
+    pen.poly([-6, -28, 6, -28, 22, 14, -22, 14], c.accent);
+    pen.rect([-26, 14, 52, 6], c.accent);
+    pen.arc([0, 22, 5], c.wood);
+    pen.rect([-14, 26, 28, 4], fill);
+  },
+  'golf-tee': (pen, fill, c) => {
+    pen.poly([-10, -6, 10, -6, 2, 0, 1, 28, -1, 28, -2, 0], c.wood);
+    pen.arc([0, -16, 10], c.text);
+    pen.arc([-3, -19, 2], fill);
+  },
+  windmill: (pen, fill, c) => {
+    pen.arc([0, 0, 27], fill);
+    pen.poly([-8, 22, -5, -2, 5, -2, 8, 22], c.stripeB);
+    for (const [x, y] of [
+      [0, -22],
+      [16, 0],
+      [0, 16],
+      [-16, 0],
+    ]) {
+      pen.poly([0, -4, x - y / 4, y + x / 4, x + y / 4, y - x / 4], c.stripeA);
+    }
+    pen.rect([-18, 24, 36, 6], c.wood);
+  },
+  'golf-flag': (pen, fill, c) => {
+    pen.ellipse([0, 24, 22, 5], c.background);
+    pen.rect([-2, -28, 3, 52], c.text);
+    pen.poly([1, -28, 24, -20, 1, -12], c.stripeA);
+    pen.arc([-12, 20, 4], fill);
+  },
+  card: (pen, fill, c) => {
+    pen.rect([-18, -26, 36, 52], c.surface);
+    pen.rect([-12, -20, 24, 40], fill);
+    pen.label('?', 0, 0, c.text);
+  },
+  lollipop: (pen, fill, c) => {
+    pen.rect([-2, 0, 4, 28], c.text);
+    pen.arc([0, -12, 16], fill);
+    pen.arc([0, -12, 9], c.stripeB);
+    pen.arc([0, -12, 4], c.danger);
+  },
+  medal: (pen, fill, c) => {
+    pen.poly([-14, -28, -4, -28, 4, -4, -6, -4], fill);
+    pen.poly([14, -28, 4, -28, -4, -4, 6, -4], c.stripeA);
+    pen.arc([0, 10, 16], c.accent);
+    pen.label('★', 0, 10, c.background);
+  },
+  tickets: (pen, fill, c) => {
+    pen.poly([0, 6, 28, 6, 28, 24, 0, 24], c.danger);
+    pen.arc([-6, 0, 22], fill);
+    pen.arc([-6, 0, 8], c.background);
+  },
+  'skee-ball': (pen, fill, c) => {
+    pen.poly([-28, 28, 28, 28, 28, 8], c.wood);
+    pen.arc([-2, -6, 18], fill);
+    pen.arc([-8, -12, 4], c.stripeB);
+  },
+  crown: (pen, fill, c) => {
+    pen.poly([-24, 18, -24, -16, -12, -2, 0, -24, 12, -2, 24, -16, 24, 18], c.accent);
+    pen.rect([-24, 10, 48, 10], fill);
+    pen.label('100', 0, -2, c.background);
+  },
+  poodle: (pen, fill, c) => {
+    for (const [x, y, r] of [
+      [-10, 4, 12],
+      [8, 4, 11],
+      [18, -14, 9],
+      [-22, -6, 6],
+      [-12, 22, 5],
+      [10, 22, 5],
+    ]) {
+      pen.arc([x, y, r], fill);
+    }
+    pen.arc([22, -16, 2], c.background);
+    pen.poly([-8, 12, -8, 22, -16, 22, -16, 12], c.text);
+  },
+  dart: (pen, fill, c) => {
+    pen.poly([26, -26, 14, -10, 10, -14], c.text);
+    pen.poly([12, -12, -12, 12, -9, 15, 15, -9], c.wood);
+    pen.poly([-10, 10, -28, 10, -16, 20, -10, 28, -12, 14], fill);
+  },
+  balloons: (pen, fill, c) => {
+    pen.lines([0, 28, -14, -6, 0, 28, 0, -14, 0, 28, 14, -6], c.text);
+    pen.ellipse([-14, -10, 10, 12], c.water);
+    pen.ellipse([14, -10, 10, 12], c.danger);
+    pen.star([0, -18, 14], fill);
+  },
+  bottle: (pen, fill, c) => {
+    pen.poly([-5, -28, 5, -28, 5, -12, 14, -2, 14, 28, -14, 28, -14, -2, -5, -12], c.water);
+    pen.rect([-14, 4, 28, 12], fill);
+    pen.rect([-6, -32, 12, 5], c.wood);
+  },
+  hoop: (pen, fill, c) => {
+    pen.ring([0, 0, 27, 20], fill);
+    for (let i = 0; i < 6; i += 1) {
+      const a = (i * Math.PI) / 3;
+      pen.arc([Math.cos(a) * 23.5, Math.sin(a) * 23.5, 3], c.stripeB);
+    }
+    pen.rect([-6, -6, 12, 12], c.danger);
+  },
+  'bottle-trophy': (pen, fill, c) => {
+    pen.poly([-4, -28, 4, -28, 4, -16, 11, -8, 11, 14, -11, 14, -11, -8, -4, -16], c.accent);
+    pen.ellipse([0, -6, 18, 4], c.stripeA);
+    pen.rect([-18, 14, 36, 12], fill);
+  },
+  'lily-pad': (pen, fill, c) => {
+    pen.ellipse([0, 6, 28, 18], c.water);
+    pen.poly([0, 6, 22, -4, 26, 6, 22, 18, -22, 18, -26, 6, -22, -4, -4, -6], fill);
+    pen.arc([-6, -8, 7], c.danger);
+    pen.arc([-6, -8, 3], c.accent);
+  },
+  'duck-cup': (pen, fill, c) => {
+    pen.poly([-20, -6, 20, -6, 12, 16, -12, 16], c.accent);
+    pen.rect([-14, 16, 28, 10], fill);
+    pen.ellipse([-2, -12, 12, 7], c.accent);
+    pen.arc([8, -22, 7], c.accent);
+    pen.poly([14, -24, 22, -21, 14, -18], c.danger);
+  },
+  'foam-hammer': (pen, fill, c) => {
+    pen.poly([-3, -4, 3, -4, 3, 28, -3, 28], c.stripeA);
+    pen.ellipse([0, -16, 26, 13], fill);
+    pen.ellipse([-26, -16, 4, 12], c.stripeB);
+    pen.ellipse([26, -16, 4, 12], c.stripeB);
+  },
+  mole: (pen, fill, c) => {
+    pen.ellipse([0, 26, 26, 6], c.wood);
+    pen.ellipse([0, 4, 18, 22], fill);
+    pen.arc([-7, -6, 3], c.background);
+    pen.arc([7, -6, 3], c.background);
+    pen.ellipse([0, 2, 6, 4], c.danger);
+    pen.rect([-4, 8, 8, 6], c.text);
+  },
+  'mole-statue': (pen, fill, c) => {
+    pen.rect([-22, 18, 44, 10], c.muted);
+    pen.ellipse([0, 2, 15, 17], fill);
+    pen.arc([-6, -2, 2.5], c.background);
+    pen.arc([6, -2, 2.5], c.background);
+    pen.poly([-12, -12, -12, -26, -6, -18, 0, -28, 6, -18, 12, -26, 12, -12], c.accent);
+  },
+  'bucket-hat': (pen, fill, c) => {
+    pen.ellipse([0, 10, 28, 8], c.water);
+    pen.poly([-16, 8, -12, -16, 12, -16, 16, 8], fill);
+    pen.rect([-15, -2, 30, 5], c.stripeB);
+    for (const x of [-18, 0, 18]) pen.ellipse([x, 24, 3, 5], c.water);
+  },
+  'ferris-wheel': (pen, fill, c) => {
+    pen.poly([0, -4, 16, 28, -16, 28], c.wood);
+    pen.ring([0, -6, 22, 18], c.accent);
+    const spokes: number[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const a = (i * Math.PI) / 4;
+      spokes.push(0, -6, Math.cos(a) * 20, -6 + Math.sin(a) * 20);
+    }
+    pen.lines(spokes, c.accent);
+    for (let i = 0; i < 8; i += 2) {
+      const a = (i * Math.PI) / 4;
+      pen.rect([Math.cos(a) * 22 - 4, -6 + Math.sin(a) * 22 - 3, 8, 7], fill);
+    }
+  },
+  rug: (pen, fill, c) => {
+    for (let i = 0; i < 4; i += 1) {
+      pen.rect([-28 + i * 14, -16, 14, 32], i % 2 === 0 ? fill : c.stripeB);
+    }
+  },
+  lantern: (pen, fill, c) => {
+    pen.rect([-2, -28, 4, 8], c.text);
+    pen.ellipse([0, 0, 22, 20], fill);
+    pen.rect([-10, 18, 20, 6], c.stripeA);
+  },
+  fern: (pen, fill, c) => {
+    for (const lean of [-0.5, 0, 0.5]) {
+      pen.ellipse([lean * 30, -10, 8, 20, lean], c.water);
+    }
+    pen.poly([-18, 6, 18, 6, 12, 28, -12, 28], fill);
+  },
+};

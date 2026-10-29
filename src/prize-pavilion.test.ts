@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createScoreBoard, type CarnivalGame } from './carnival';
 import {
   PAVILION_TIERS,
+  PRIZE_MOTIFS,
   boothTiers,
   collectorText,
   pavilionCollection,
@@ -143,6 +144,19 @@ describe('boothTiers', () => {
       expect(scores).toEqual([...scores].sort((a, b) => a - b));
       expect(boothTiers(id).map((t) => t.id)).toEqual(['bronze', 'silver', 'gold']);
     }
+  });
+
+  it('gives every booth prize a drawn motif of its own', () => {
+    const motifs = ids.flatMap((id) => boothTiers(id).map((t) => t.motif));
+    expect(new Set(motifs).size).toBe(motifs.length);
+    expect([...motifs].sort()).toEqual([...PRIZE_MOTIFS].sort());
+    expect(boothTiers('mini-putt').map((t) => t.motif)).toEqual([
+      'golf-tee',
+      'windmill',
+      'golf-flag',
+    ]);
+    expect(boothTiers('duck-dash')[0].motif).toBe('duck');
+    expect(PAVILION_TIERS.map((t) => t.motif)).toEqual(['duck', 'penguin', 'ferris-wheel']);
   });
 
   it('keeps every Gold within the best possible round', () => {
