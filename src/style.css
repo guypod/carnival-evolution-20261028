@@ -2009,7 +2009,8 @@ kbd {
   box-shadow: none;
 }
 
-.balloon-scene {
+.balloon-scene,
+.toy-scene {
   display: block;
   width: 360px;
   max-width: 100%;
@@ -2095,4 +2096,10 @@ kbd {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+.toy-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
