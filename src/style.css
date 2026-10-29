@@ -2129,3 +2129,35 @@ kbd {
   margin: 0.25rem 0;
   padding-left: 1.25rem;
 }
+
+.coaster-placard {
+  margin-top: 1rem;
+}
+
+.placard-preview {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 16rem;
+  padding: 1rem 1.5rem;
+  border: 3px solid currentColor;
+  border-radius: var(--radius);
+}
+
+.placard-emblem {
+  font-size: 2rem;
+}
+
+.placard-name {
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.placard-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+  margin-top: 0.75rem;
+}
