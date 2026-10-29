@@ -313,6 +313,55 @@ kbd {
   gap: 6px;
 }
 
+/* The guide's contents: a compact row of section links at the top. The guide
+   keeps its one scroll area; a link scrolls inside it. */
+.guide-contents ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-contents button,
+.guide-back {
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.guide-back {
+  justify-self: start;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.guide-contents button:hover,
+.guide-contents button:focus-visible,
+.guide-back:hover,
+.guide-back:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.guide-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+[data-guide-section] h2:focus-visible,
+[data-guide-section] summary:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
 .guide-destinations a {
   padding: 6px 12px;
 }
@@ -324,7 +373,8 @@ kbd {
 .midway-guide,
 .midway-visit,
 .midway-discovery,
-.midway-passport {
+.midway-passport,
+.guide-settings {
   position: static;
   padding: 10px 0 0;
   border: 0;
@@ -337,7 +387,9 @@ kbd {
 .midway-guide h2,
 .midway-visit h2,
 .midway-discovery h2,
-.midway-passport h2 {
+.midway-passport h2,
+.guide-settings h2,
+.guide-section-title {
   margin: 0 0 6px;
   color: var(--color-muted);
   font-size: 12px;
