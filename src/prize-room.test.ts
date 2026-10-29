@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createScoreBoard, type CarnivalGame } from './carnival';
+import { createScoreBoard, theme, type CarnivalGame } from './carnival';
+import { boothTiers } from './prize-pavilion';
 import {
+  ROOM_COLORS,
   EMPTY_ROOM,
   ROOM_HISTORY_MAX,
   ROOM_KEY,
@@ -8,6 +10,7 @@ import {
   STARTER_DECOR,
   applyRoom,
   createRoomStore,
+  drawShape,
   describeLook,
   describeRoom,
   describeSlot,
@@ -21,7 +24,9 @@ import {
   roomObjects,
   slotAt,
   slotCenter,
+  type Pen,
   type RoomLayout,
+  type RoomShape,
 } from './prize-room';
 
 const game = (id: string, name: string): CarnivalGame => ({
@@ -67,8 +72,99 @@ describe('the room collection', () => {
 
   it('gives each booth its own prize objects rather than one shared prize', () => {
     const objects = roomObjects(games, () => 300);
-    const sources = objects.filter((o) => o.name === 'Squeaky Rubber Duck').map((o) => o.source);
-    expect(sources).toEqual(['Skee Ball, Bronze', 'Ring Toss, Bronze']);
+    const bronze = objects.filter((o) => o.source.endsWith('Bronze')).map((o) => o.name);
+    expect(bronze).toEqual(['Ramp Ticket Roll', 'Glass Bottle Charm']);
+  });
+});
+
+describe('drawing prize motifs', () => {
+  const boothIds = [
+    'high-striker',
+    'mini-putt',
+    'memory-menagerie',
+    'skee-ball',
+    'balloon-darts',
+    'ring-toss',
+    'duck-dash',
+    'mole-mayhem',
+    'water-cannon',
+  ];
+  const nine = boothIds.map((id) => game(id, id));
+  const themeColors = new Set<string>(Object.values(theme.colors));
+
+  /** Records every move a drawing makes and how far it reaches from the centre. */
+  function record(shape: RoomShape) {
+    const moves: string[] = [];
+    let reach = 0;
+    const box = (x: number, y: number, rx: number, ry: number) => {
+      reach = Math.max(reach, Math.abs(x) + rx, Math.abs(y) + ry);
+    };
+    const points = (list: number[]) => {
+      for (let i = 0; i < list.length; i += 2) box(list[i], list[i + 1], 0, 0);
+    };
+    const colors: string[] = [];
+    const log = (move: string, args: unknown, color: string) => {
+      moves.push(`${move}${JSON.stringify(args)}`);
+      colors.push(color);
+    };
+    const pen: Pen = {
+      ellipse: (at, color) => (box(at[0], at[1], at[2], at[3]), log('ellipse', at, color)),
+      arc: (at, color) => (box(at[0], at[1], at[2], at[2]), log('arc', at, color)),
+      rect: (at, color) => (
+        box(at[0] + at[2] / 2, at[1] + at[3] / 2, Math.abs(at[2]) / 2, Math.abs(at[3]) / 2),
+        log('rect', at, color)
+      ),
+      poly: (list, color) => (points(list), log('poly', list, color)),
+      star: (at, color) => (box(at[0], at[1], at[2], at[2]), log('star', at, color)),
+      ring: (at, color) => (box(at[0], at[1], at[2], at[2]), log('ring', at, color)),
+      lines: (list, color) => (points(list), log('lines', list, color)),
+      label: (text, x, y, color) => log('label', [text, x, y], color),
+    };
+    drawShape(pen, { shape, color: 'water' });
+    return { signature: moves.join(';'), moves, reach, colors };
+  }
+
+  it("draws each booth prize with its tier's motif and keeps its id", () => {
+    const objects = roomObjects(nine, () => 0).filter((o) => !o.id.startsWith('starter:'));
+    expect(objects).toHaveLength(27);
+    for (const id of boothIds) {
+      boothTiers(id).forEach((tier) => {
+        const object = objects.find((o) => o.id === `${id}:${tier.id}`)!;
+        expect(object.name).toBe(tier.prize);
+        expect(object.shape).toBe(tier.motif);
+      });
+    }
+  });
+
+  it('draws no two booth prizes alike', () => {
+    const shapes = roomObjects(nine, () => 0).map((o) => o.shape);
+    const signatures = shapes.map((shape) => record(shape).signature);
+    expect(new Set(signatures).size).toBe(shapes.length);
+  });
+
+  it('draws every motif from theme colours, inside its spot', () => {
+    for (const object of roomObjects(nine, () => 0)) {
+      const drawing = record(object.shape);
+      expect(drawing.moves.length).toBeGreaterThanOrEqual(3);
+      expect(drawing.reach).toBeLessThanOrEqual(34);
+      for (const color of drawing.colors) expect(themeColors.has(color)).toBe(true);
+    }
+  });
+
+  it('colours each booth prize in its booth colour', () => {
+    const fills = ROOM_COLORS.map((color) => {
+      const used: string[] = [];
+      const pen = new Proxy({} as Pen, {
+        get:
+          () =>
+          (...args: unknown[]) =>
+            void used.push(String(args.at(-1))),
+      });
+      drawShape(pen, { shape: 'golf-flag', color });
+      return used;
+    });
+    expect(fills[0]).toContain(theme.colors.accent);
+    expect(fills[1]).toContain(theme.colors.water);
   });
 });
 
@@ -279,7 +375,7 @@ describe('inspecting the room in words', () => {
       placements: [{ objectId: 'ring-toss:gold', slot: '0-1', rotation: 90 }],
     };
     expect(describeSlot(layout, objects, ROOM_SLOTS[1])).toBe(
-      'Top shelf, spot 2: Golden Ferris Wheel Trophy (Ring Toss, Gold), turned right.',
+      'Top shelf, spot 2: Golden Bottle Trophy (Ring Toss, Gold), turned right.',
     );
     expect(describeSlot(layout, objects, ROOM_SLOTS[8])).toBe('Floor, spot 1: empty.');
     expect(describeRoom(layout)).toBe('Sunset pier backdrop, 1 object placed of 12 spots.');
