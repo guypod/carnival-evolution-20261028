@@ -131,7 +131,9 @@ export function targets(toy: ToyState): Target[] {
   }
   for (const [part, at] of Object.entries(toy.parts)) {
     const s = slotAt.get(at)!;
-    out.push({ ...s, id: part, kind: 'part', label: partLabel(part) });
+    // A gear is picked up anywhere inside its drawn outline, not just on its peg.
+    const r = part in GEAR_RADII ? Math.max(s.r, GEAR_RADII[part] * GEAR_UNIT - 3) : s.r;
+    out.push({ ...s, id: part, kind: 'part', label: partLabel(part), r });
   }
   return out;
 }

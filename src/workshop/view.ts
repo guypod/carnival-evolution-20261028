@@ -179,7 +179,9 @@ export function startWorkshop(
         : ' Repaired, but this browser would not save it, so the toy only stays fixed until you leave the page.';
     } else if (result.working) {
       repairs = recordRepair(repairs, bench.toy);
-      store.save(repairs);
+      if (!store.save(repairs))
+        message +=
+          ' This browser still would not save your repairs, so they only stay fixed until you leave the page.';
     }
     say(message);
     refresh();
@@ -529,7 +531,12 @@ export function startWorkshop(
   /** The target under a point: parts before slots, so a click on a gear picks it up. */
   const hit = (p: { x: number; y: number }) => {
     const near = bits().filter((t) => Math.hypot(t.x - p.x, t.y - p.y) <= t.r);
+    // While a part is held, an empty spot under a big gear still takes it.
+    const slot = held
+      ? near.find((t) => t.kind === 'slot' && !Object.values(bench.toy.parts).includes(t.id))
+      : undefined;
     return (
+      slot ??
       near.find((t) => t.kind === 'part' && t.id !== held) ??
       near.find((t) => t.kind !== 'part') ??
       near[0]
