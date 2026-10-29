@@ -1004,6 +1004,24 @@ function cart(ctx: Ctx, prop: Prop, t: number) {
   );
 }
 
+/** Two posts and a sign: the way into Run Your Own Fair. */
+function fairGate(ctx: Ctx, prop: Prop, t: number) {
+  const x = prop.x + 0.2;
+  const y = prop.y + 0.2;
+  poly(ctx, rectPoints({ x: x + 0.1, y: y + 0.1, w: 0.7, h: 0.7 }), palette.shadow);
+  for (const py of [y, y + 0.5])
+    box(ctx, x + 0.25, py, 0.12, 0.12, 0, 40, palette.woodLight, palette.wood, palette.woodDark);
+  onPlane(ctx, at(x + 0.3, y + 0.3, 46), () =>
+    signBoard(ctx, 'RUN YOUR FAIR', 44, 14, {
+      board: palette.blue,
+      edge: palette.blueShade,
+      text: palette.cream,
+    }),
+  );
+  const top = at(x + 0.31, y + 0.06, 40);
+  flag(ctx, top[0], top[1], t, palette.gold);
+}
+
 function ticketBooth(ctx: Ctx, prop: Prop) {
   const x = prop.x + 0.15;
   const y = prop.y + 0.15;
@@ -1571,6 +1589,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   balloons: 52,
   'bunting-pole': 0,
   billboard: BILLBOARD_HEIGHT + 40,
+  'fair-gate': 64,
 };
 
 /** Roughly the screen box a prop is drawn in. */
@@ -1773,6 +1792,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number) {
       return buntingPole(ctx, prop);
     case 'billboard':
       return billboard(ctx, prop, t);
+    case 'fair-gate':
+      return fairGate(ctx, prop, t);
   }
 }
 

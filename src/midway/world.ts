@@ -48,7 +48,8 @@ export type PropKind =
   | 'planter'
   | 'balloons'
   | 'bunting-pole'
-  | 'billboard';
+  | 'billboard'
+  | 'fair-gate';
 
 export interface Prop extends Rect {
   kind: PropKind;
@@ -212,6 +213,8 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   add('balloons', 22, entrance + 4);
   add('planter', 15, entrance);
   add('planter', 1, height - 2);
+  // The gateway to Run Your Own Fair, on the grass east of the gate's cross path.
+  add('fair-gate', width - 2, entrance);
 
   return {
     width,
@@ -427,6 +430,17 @@ export function distanceToRect(point: Point, rect: Rect): number {
   return Math.hypot(dx, dy);
 }
 
+/** The gateway to Run Your Own Fair on this map. */
+export function fairGate(map: MidwayMap): Prop | undefined {
+  return map.props.find((prop) => prop.kind === 'fair-gate');
+}
+
+/** Whether the walker is close enough to the fair gateway to go through it. */
+export function fairGateInReach(map: MidwayMap, point: Point, reach = BOOTH_REACH): boolean {
+  const gate = fairGate(map);
+  return gate !== undefined && distanceToRect(point, gate) <= reach;
+}
+
 /** The booth the walker is close enough to use, if any. */
 export function boothInReach(
   map: MidwayMap,
@@ -512,4 +526,19 @@ export function updateVisitor(
   const tile = tiles[Math.floor(random() * tiles.length)];
   visitor.path = findPath(map, visitor, tile) ?? [];
   visitor.rest = 1;
+}
+
+/**
+ * What a key press does on the midway: play the booth in reach, go through the
+ * fair gateway when only it is in reach, or nothing. Escape and other keys never
+ * go through the gateway.
+ */
+export function keyAction(
+  code: string,
+  boothNear: boolean,
+  gateNear: boolean,
+): 'play' | 'fair' | undefined {
+  if (!['KeyE', 'Enter', 'Space'].includes(code)) return undefined;
+  if (boothNear) return 'play';
+  return gateNear ? 'fair' : undefined;
 }
