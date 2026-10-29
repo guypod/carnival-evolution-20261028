@@ -2020,6 +2020,7 @@ kbd {
 }
 
 .balloon-scene,
+.snack-scene,
 .toy-scene {
   display: block;
   width: 360px;
@@ -2028,7 +2029,8 @@ kbd {
   border-radius: var(--radius);
 }
 
-.balloon-form fieldset {
+.balloon-form fieldset,
+.snack-form fieldset {
   border: 1px solid var(--color-muted);
   border-radius: var(--radius);
   margin: 0 0 0.75rem;

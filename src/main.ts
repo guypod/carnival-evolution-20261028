@@ -200,6 +200,19 @@ import {
   type WishBalloon,
 } from './wish-balloon';
 import {
+  BASES,
+  CHOICE_NAMES,
+  PRESENTATIONS,
+  SNACK_SCENE,
+  TOPPINGS,
+  VISITORS,
+  drawSnackScene,
+  nextVisitor,
+  pickChoice,
+  react,
+  type Snack,
+} from './snack-stand';
+import {
   STARTER_TUNE,
   TUNE_LENGTHS,
   TUNE_TEMPOS,
@@ -360,6 +373,7 @@ function renderMidway() {
             <a class="plush-link" href="#/plush">🧸 Plush Workshop</a>
             <a class="tune-link" href="#/tune">🎠 Carousel Tune Workshop</a>
             <a class="balloon-link" href="#/balloon">🎈 Wish Balloon</a>
+            <a class="snack-link" href="#/snack">🍦 Snack Stand</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <a class="expedition-link" href="#/expedition">🪞 Mirror Maze Expedition</a>
@@ -2674,6 +2688,127 @@ function renderBalloon() {
   };
 }
 
+function renderSnack() {
+  document.body.dataset.view = 'snack';
+  const step = (name: string, legend: string, key: string, choices: readonly string[]) =>
+    `<fieldset><legend>${legend} (${key})</legend>${choices
+      .map(
+        (choice) =>
+          `<label><input type="radio" name="snack-${name}" value="${choice}" /> ${CHOICE_NAMES[choice as keyof typeof CHOICE_NAMES]}</label>`,
+      )
+      .join('')}</fieldset>`;
+  app.innerHTML = `
+    <section class="snack" aria-labelledby="snack-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="snack-title" tabindex="-1">Snack Stand</h1>
+      </div>
+      <p>Build a snack in three steps and serve it. Each visitor says what they would like: see how they react, then try another combination.</p>
+      <p class="snack-order" aria-live="polite"></p>
+      <form class="snack-form">
+        ${step('base', 'Base', 'B', BASES)}
+        ${step('topping', 'Topping', 'T', TOPPINGS)}
+        ${step('presentation', 'Presentation', 'P', PRESENTATIONS)}
+        <button type="submit">Serve (Enter)</button>
+        <button type="button" class="snack-reset">Start over (R)</button>
+        <button type="button" class="snack-next">Next visitor (N)</button>
+      </form>
+      <canvas class="snack-scene" aria-hidden="true"></canvas>
+      <p class="snack-status" role="status" aria-live="polite"></p>
+      <p class="note">B, T and P cycle each step; arrow keys move within a step. These snacks are imaginary: nothing is ordered, scored or saved. Escape goes back to the midway.</p>
+    </section>
+  `;
+  const form = app.querySelector<HTMLFormElement>('.snack-form')!;
+  const order = app.querySelector<HTMLElement>('.snack-order')!;
+  const status = app.querySelector<HTMLElement>('.snack-status')!;
+  const canvas = app.querySelector<HTMLCanvasElement>('.snack-scene')!;
+  canvas.width = SNACK_SCENE.width;
+  canvas.height = SNACK_SCENE.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) canvas.hidden = true;
+  let visitor = 0;
+  let served: ReturnType<typeof react> | undefined;
+
+  const value = (name: string) =>
+    form.querySelector<HTMLInputElement>(`input[name="snack-${name}"]:checked`)?.value;
+  function current(): Partial<Snack> {
+    return {
+      base: pickChoice(BASES, value('base')),
+      topping: pickChoice(TOPPINGS, value('topping')),
+      presentation: pickChoice(PRESENTATIONS, value('presentation')),
+    };
+  }
+  function draw() {
+    order.textContent = `${VISITORS[visitor].name}: “${VISITORS[visitor].order}”`;
+    if (ctx) drawSnackScene(ctx, current(), VISITORS[visitor], served?.mood);
+  }
+  function reset(message: string) {
+    form.reset();
+    served = undefined;
+    status.textContent = message;
+    draw();
+  }
+  function cycle(name: string, choices: readonly string[]) {
+    const at = choices.indexOf(value(name) ?? '');
+    const next = choices[(at + 1) % choices.length];
+    const input = form.querySelector<HTMLInputElement>(
+      `input[name="snack-${name}"][value="${next}"]`,
+    )!;
+    input.checked = true;
+    input.focus();
+    served = undefined;
+    status.textContent = '';
+    draw();
+  }
+
+  form.addEventListener('change', () => {
+    served = undefined;
+    status.textContent = '';
+    draw();
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const { base, topping, presentation } = current();
+    if (!base || !topping || !presentation) {
+      status.textContent = 'Pick a base, a topping and a presentation first.';
+      return;
+    }
+    served = react(VISITORS[visitor], { base, topping, presentation });
+    status.textContent = served.line;
+    draw();
+  });
+  const resetButton = app.querySelector<HTMLButtonElement>('.snack-reset')!;
+  const nextButton = app.querySelector<HTMLButtonElement>('.snack-next')!;
+  resetButton.addEventListener('click', () => reset('The counter is clear.'));
+  nextButton.addEventListener('click', () => {
+    visitor = nextVisitor(visitor);
+    reset(`${VISITORS[visitor].name} steps up to the counter.`);
+  });
+  const onKey = (event: KeyboardEvent) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type === 'text') return;
+    const key = event.key.toLowerCase();
+    if (key === 'enter' && (target?.tagName === 'BUTTON' || target?.tagName === 'A')) return;
+    if (key === 'enter') form.requestSubmit();
+    else if (key === 'b') cycle('base', BASES);
+    else if (key === 't') cycle('topping', TOPPINGS);
+    else if (key === 'p') cycle('presentation', PRESENTATIONS);
+    else if (key === 'r') resetButton.click();
+    else if (key === 'n') nextButton.click();
+    else return;
+    event.preventDefault();
+  };
+  window.addEventListener('keydown', onKey);
+  draw();
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    window.removeEventListener('keydown', onKey);
+  };
+}
+
 function renderToy() {
   document.body.dataset.view = 'toy';
   const { name, demo } = pickToy(roomObjects(registry.all()));
@@ -3196,6 +3331,7 @@ function route() {
   else if (location.hash === '#/plush') renderPlush();
   else if (location.hash === '#/tune') renderTune();
   else if (location.hash === '#/balloon') renderBalloon();
+  else if (location.hash === '#/snack') renderSnack();
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
   else if (location.hash === '#/expedition') renderExpedition();
