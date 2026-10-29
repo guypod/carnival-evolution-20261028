@@ -664,8 +664,9 @@ export const puppetTheatre: CarnivalGame = {
     const record = (score: number) => recordScore(puppetTheatre.id, score);
     const run = (action: Action) => {
       if (rewinds(action)) dragging = undefined;
-      // Retries a score whose write failed, before a replay starts a fresh performance.
-      recordFinalScore(theatre, record);
+      // Retries a score whose write failed. While it still fails, a replay keeps
+      // the curtain, so the unrecorded performance is not overwritten.
+      if (!recordFinalScore(theatre, record) && action.type === 'replay') return;
       theatre = act(theatre, action);
       slot.save({ stage: theatre.stage, sceneStart: theatre.sceneStart });
       recordFinalScore(theatre, record);
