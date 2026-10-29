@@ -45,8 +45,8 @@ export function dealPocket(
   if (booths.length === 0 || destinations.length === 0) return undefined;
   return {
     deal,
-    gameId: booths[(deal * 4) % booths.length].id,
-    destination: destinations[(deal * 2 + 1) % destinations.length].name,
+    gameId: booths[deal % booths.length].id,
+    destination: destinations[(deal + 1) % destinations.length].name,
     visited: { booth: false, destination: false },
   };
 }

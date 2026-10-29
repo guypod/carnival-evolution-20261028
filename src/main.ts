@@ -1057,12 +1057,20 @@ function setUpPocket() {
     render();
     deal.focus();
   });
-  booth.addEventListener('click', () => {
-    if (pocketCard) pocketCard = markPocketVisit(pocketCard, 'booth');
-  });
-  place.addEventListener('click', () => {
-    if (pocketCard) pocketCard = markPocketVisit(pocketCard, 'destination');
-  });
+  // Plain, Ctrl/Cmd and middle clicks all open the link, so all of them count,
+  // and the status updates for a link opened in a new tab.
+  const markVisit = (link: HTMLAnchorElement, part: 'booth' | 'destination') => {
+    const mark = () => {
+      if (pocketCard) pocketCard = markPocketVisit(pocketCard, part);
+      render();
+    };
+    link.addEventListener('click', mark);
+    link.addEventListener('auxclick', (event) => {
+      if (event.button === 1) mark();
+    });
+  };
+  markVisit(booth, 'booth');
+  markVisit(place, 'destination');
   render();
 }
 

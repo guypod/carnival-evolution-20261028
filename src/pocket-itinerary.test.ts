@@ -45,6 +45,23 @@ describe('pocket itinerary', () => {
     }
   });
 
+  it('never repeats on swap for any collection size with a choice', () => {
+    for (let b = 2; b <= 10; b++) {
+      for (let d = 2; d <= 8; d++) {
+        const bs = booths.slice(0, b);
+        const ds = POCKET_DESTINATIONS.concat(POCKET_DESTINATIONS).slice(0, d);
+        const named = ds.map((x, i) => ({ ...x, name: `${x.name} ${i}` }));
+        let card = dealPocket(bs, 0, named)!;
+        for (let i = 0; i < 12; i++) {
+          const next = swapPocket(card, bs, named);
+          expect(next.gameId).not.toBe(card.gameId);
+          expect(next.destination).not.toBe(card.destination);
+          card = next;
+        }
+      }
+    }
+  });
+
   it('tracks only what was opened, and a swap starts fresh', () => {
     const card = markPocketVisit(dealPocket(booths)!, 'booth');
     expect(card.visited).toEqual({ booth: true, destination: false });
