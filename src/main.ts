@@ -631,6 +631,10 @@ function renderMidway() {
     onLocate: (message) => (locateStatus.textContent = message ?? ''),
   });
   const locateStatus = app.querySelector<HTMLElement>('.locate-status')!;
+  // Escape hides the locate ring first, while it shows; then panels get the key.
+  // Capture listeners on window run in the order they were added, so this one
+  // goes before the story card, light garden and photo mode add theirs.
+  const stopLocateEscape = watchLocateEscape(window, midway.hideLocate);
   const routeStatus = setUpRoute(midway.cancelWalk);
   const discovery = setUpDiscovery(midway.landmarks, midway.walkToLandmark);
   const mystery = setUpMystery(midway.landmarks, midway.setLandmarkDetail);
@@ -642,8 +646,6 @@ function renderMidway() {
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   app.querySelector('.view-locate')!.addEventListener('click', midway.locate);
-  // Escape hides the locate ring first, while it shows; then panels get the key.
-  const stopLocateEscape = watchLocateEscape(window, midway.hideLocate);
   const stopSound = setUpSound();
   // The card's Enter link goes in the same way as E or a click on the gateway,
   // so coming back still puts you beside it.

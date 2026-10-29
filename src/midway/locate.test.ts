@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   HIDDEN_LOCATE,
@@ -89,5 +90,55 @@ describe('locate Escape', () => {
     shown = true;
     press(target, 'Escape');
     expect(shown).toBe(true);
+  });
+});
+
+describe('locate Escape with other layers', () => {
+  // Garden editing, photo mode and an open story card each take Escape in a
+  // capture listener on window and stop it there, as in src/main.ts.
+  function layer(target: EventTarget) {
+    const state = { open: true };
+    target.addEventListener(
+      'keydown',
+      (event) => {
+        if ((event as KeyboardEvent).key !== 'Escape' || !state.open) return;
+        event.stopImmediatePropagation();
+        state.open = false;
+      },
+      { capture: true },
+    );
+    return state;
+  }
+
+  it('hides the ring with the first Escape and leaves editing, photo and story open', () => {
+    const target = new EventTarget();
+    let shown = true;
+    const stop = watchLocateEscape(target, () => {
+      const was = shown;
+      shown = false;
+      return was;
+    });
+    const story = layer(target);
+    const garden = layer(target);
+    const photo = layer(target);
+    press(target, 'Escape');
+    expect(shown).toBe(false);
+    expect([story.open, garden.open, photo.open]).toEqual([true, true, true]);
+    // With the ring gone, the next Escape closes one layer, as before.
+    press(target, 'Escape');
+    expect(story.open).toBe(false);
+    expect([garden.open, photo.open]).toEqual([true, true]);
+    stop();
+  });
+
+  it('is added in src/main.ts before the story card, light garden and photo mode listeners', () => {
+    const source = readFileSync(new URL('../main.ts', import.meta.url), 'utf8');
+    const locator = source.indexOf('watchLocateEscape(window');
+    expect(locator).toBeGreaterThan(-1);
+    for (const setUp of ['setUpDiscovery(midway', 'setUpLightGarden(midway', 'setUpPhotoMode()']) {
+      const at = source.indexOf(setUp);
+      expect(at, setUp).toBeGreaterThan(-1);
+      expect(locator, setUp).toBeLessThan(at);
+    }
   });
 });
