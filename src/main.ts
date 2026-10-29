@@ -1,6 +1,7 @@
 import './style.css';
 import {
   applyTheme,
+  browserSaveStorage,
   beginScopedRound,
   canvasFont,
   theme,
@@ -12,6 +13,8 @@ import { registry } from './games';
 import { startFair } from './fair/view';
 import { browserFairStorage } from './fair/fair';
 import { startParade } from './parade/view';
+import { startWorkshop } from './workshop/view';
+import { createRepairsStore, midwayToys } from './workshop/workshop';
 import { onEscapeKey } from './escape';
 import {
   MAZE_H,
@@ -441,6 +444,7 @@ function renderMidway() {
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <a class="expedition-link" href="#/expedition">🪞 Mirror Maze Expedition</a>
+            <a class="workshop-link" href="#/workshop">🔧 Backstage Repair Workshop</a>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
           </nav>
           <section class="midway-visit" aria-label="Choose my visit" data-guide-section="visit">
@@ -656,6 +660,7 @@ function renderMidway() {
     onHomeward: (message) => homewardPanel.show(message),
     onStones: (status) => stonesPanel.show(status),
     onChime: (tones, spacing, replace) => sound.chime(tones, spacing, replace),
+    repairedToys: midwayToys(createRepairsStore(browserSaveStorage()).load()),
   });
   const ferryPanel = setUpFerry((request) => midway.ferry(request));
   const homewardPanel = setUpHomeward(() => midway.returnToMidway());
@@ -3781,6 +3786,26 @@ function renderParade() {
   };
 }
 
+function renderWorkshop() {
+  document.body.dataset.view = 'workshop';
+  app.innerHTML = `
+    <section class="fair" aria-labelledby="workshop-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="workshop-title" tabindex="-1">Backstage Repair Workshop</h1>
+      </div>
+      <div class="fair-body"></div>
+      <p class="note">Mend three wind-up toys by hand. Pick up parts and drop them on a spot, or use the arrow keys to pick and Enter or Space to act. 1, 2 and 3 choose the hand, screwdriver or tweezers; T tests, U undoes, R resets the toy, Escape puts a part down or goes back. A wrong set-up never breaks anything. Untimed and not scored: no score changes here. With Quiet midway or reduced motion, a test shows one still frame.</p>
+    </section>`;
+  const stopWorkshop = startWorkshop(
+    app.querySelector<HTMLElement>('.fair-body')!,
+    browserSaveStorage(),
+    () => (location.hash = '#/'),
+  );
+  app.querySelector<HTMLElement>('h1')!.focus();
+  stop = stopWorkshop;
+}
+
 const expeditionStore = createExpeditionStore(
   (() => {
     try {
@@ -4007,6 +4032,7 @@ function route() {
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
   else if (location.hash === '#/expedition') renderExpedition();
+  else if (location.hash === '#/workshop') renderWorkshop();
   else renderMidway();
 }
 
