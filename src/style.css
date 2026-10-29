@@ -1683,6 +1683,29 @@ kbd {
   margin: 12px 0;
 }
 
+.fair-tools button,
+.fair-actions button {
+  padding: 8px 14px;
+  border: 2px solid var(--color-accent);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.fair-tools button:hover,
+.fair-actions button:hover {
+  background: var(--color-stripeA);
+}
+
+.fair-tools button:focus-visible,
+.fair-actions button:focus-visible {
+  outline: 3px solid var(--color-stripeB);
+  outline-offset: 2px;
+}
+
 .fair-tools button[aria-pressed='true'] {
   background: var(--color-accent);
   color: var(--color-background);
@@ -1692,6 +1715,11 @@ kbd {
   display: block;
   max-width: 100%;
   border-radius: var(--radius);
+}
+
+.fair-grid[hidden],
+.fair-preview-note[hidden] {
+  display: none;
 }
 
 .fair-grid:focus-visible {
