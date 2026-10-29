@@ -2913,7 +2913,7 @@ function renderCoaster() {
         <button type="button" data-action="reset">Reset layout (R)</button>
       </div>
       <p class="coaster-status" role="status" aria-live="polite"></p>
-      <p class="note">${KEYS_HELP}. Escape stops a test, or goes back to the midway when nothing is running. With Quiet midway or reduced motion, a test shows its result at once with dots every half second. Not scored. Your layout is kept in this browser only.</p>
+      <p class="note">${KEYS_HELP}. Escape stops a test, or goes back to the midway when nothing is running. With Quiet midway or reduced motion, a test shows its result at once with dots every half second. After each test two made-up riders, Gentle Gail and Thrill Theo, say which stretches they liked or disliked from the toy model's speed, slope and height, and suggest one change. Not scored. Your layout is kept in this browser only.</p>
     </section>
   `;
   const canvas = app.querySelector<HTMLCanvasElement>('.coaster-scene')!;
