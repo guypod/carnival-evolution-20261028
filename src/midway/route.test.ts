@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { pathToLandmark, trailLandmarks } from './discovery';
 import {
   arriveRoute,
   cancelRoute,
   IDLE_ROUTE,
   lanternBrightness,
   lanternTrail,
+  requestRoute,
   routeMessage,
   startRoute,
 } from './route';
+import { layoutMidway, pathToBooth, type MidwayMap, type Rect } from './world';
 
 describe('route status', () => {
   it('says nothing when idle', () => {
@@ -82,5 +85,55 @@ describe('lantern trail', () => {
     expect(lanternBrightness(0, 0, true)).toBe(1);
     expect(lanternBrightness(9, 3, true)).toBe(1);
     for (let t = 0; t < 10; t += 0.37) expect(lanternBrightness(t, 2, false)).toBeGreaterThan(0.69);
+  });
+});
+
+describe('route request', () => {
+  const real = layoutMidway(['a', 'b', 'c']);
+  const walledIn = (map: MidwayMap, area: Rect): MidwayMap => {
+    const blocked = [...map.blocked];
+    for (let ty = area.y - 3; ty < area.y + area.h + 3; ty++)
+      for (let tx = area.x - 3; tx < area.x + area.w + 3; tx++)
+        if (tx >= 0 && ty >= 0 && tx < map.width && ty < map.height)
+          blocked[ty * map.width + tx] = true;
+    return { ...map, blocked };
+  };
+
+  it('starts a lit walk when the place can be reached', () => {
+    const booth = real.booths[0];
+    const request = requestRoute('Water Cannon', pathToBooth(real, real.spawn, booth));
+    expect(request.route).toEqual(startRoute('Water Cannon'));
+    expect(lanternTrail(request.route, request.path).length).toBeGreaterThan(0);
+  });
+
+  it('says honestly when a booth has no open path, leaving no old walk behind', () => {
+    const booth = real.booths[0];
+    const map = walledIn(real, booth);
+    const request = requestRoute('Water Cannon', pathToBooth(map, map.spawn, booth));
+    expect(request.route.phase).toBe('unavailable');
+    expect(request.path).toEqual([]);
+    expect(lanternTrail(request.route, request.path)).toEqual([]);
+    expect(routeMessage(request.route)).toBe('No open path to Water Cannon from here.');
+  });
+
+  it('says honestly when a landmark has no open path', () => {
+    const landmark = trailLandmarks(real)[0];
+    const map = walledIn(real, landmark.area);
+    const request = requestRoute(landmark.name, pathToLandmark(map, map.spawn, landmark));
+    expect(request).toEqual({
+      route: { phase: 'unavailable', destination: landmark.name },
+      path: [],
+    });
+    expect(routeMessage(request.route)).toBe(`No open path to ${landmark.name} from here.`);
+  });
+
+  it('shows nothing when the player is already there', () => {
+    expect(requestRoute('Water Cannon', [])).toEqual({ route: IDLE_ROUTE, path: [] });
+  });
+
+  it('never lets an unavailable route arrive or cancel', () => {
+    const unavailable = requestRoute('Water Cannon', undefined).route;
+    expect(arriveRoute(unavailable)).toBe(unavailable);
+    expect(cancelRoute(unavailable)).toBe(unavailable);
   });
 });

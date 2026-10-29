@@ -5,7 +5,7 @@ import {
   IDLE_ROUTE,
   lanternBrightness,
   lanternTrail,
-  startRoute,
+  requestRoute,
   type RouteState,
 } from './route';
 import {
@@ -289,21 +289,22 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
   };
 
-  const walkToBooth = (booth: BoothSlot) => {
-    player.path = pathToBooth(map, player, booth) ?? [];
-    destination = player.path.at(-1);
-    const name = booth.gameId ? names.get(booth.gameId) : undefined;
-    setRoute(player.path.length > 0 ? startRoute(name ?? 'the empty booth') : IDLE_ROUTE);
+  /** Starts a named walk, or stops the old one and says there is no way there. */
+  const walkNamed = (name: string, found: Point[] | undefined) => {
+    const request = requestRoute(name, found);
+    player.path = request.path;
+    destination = request.path.at(-1);
+    setRoute(request.route);
+    return found !== undefined;
   };
 
-  const walkToLandmark = (landmark: Landmark) => {
-    const path = pathToLandmark(map, player, landmark);
-    if (!path) return false;
-    player.path = path;
-    destination = path.at(-1);
-    setRoute(path.length > 0 ? startRoute(landmark.name) : IDLE_ROUTE);
-    return true;
+  const walkToBooth = (booth: BoothSlot) => {
+    const name = booth.gameId ? names.get(booth.gameId) : undefined;
+    walkNamed(name ?? 'the empty booth', pathToBooth(map, player, booth));
   };
+
+  const walkToLandmark = (landmark: Landmark) =>
+    walkNamed(landmark.name, pathToLandmark(map, player, landmark));
 
   // Landmark artwork stands on blocked tiles, so a click on it walks to a spot
   // beside it instead.
@@ -336,17 +337,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     if (gate && gateAt(point)) {
       if (nearGate) enterFair();
       else {
-        const path = pathToLandmark(
-          map,
-          player,
-          { id: 'entrance', name: '', clue: '', area: gate },
-          1,
+        walkNamed(
+          'Run Your Own Fair',
+          pathToLandmark(map, player, { id: 'entrance', name: '', clue: '', area: gate }, 1),
         );
-        if (path) {
-          player.path = path;
-          destination = path.at(-1);
-          setRoute(path.length > 0 ? startRoute('Run Your Own Fair') : IDLE_ROUTE);
-        }
       }
       return;
     }

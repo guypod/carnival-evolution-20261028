@@ -4,7 +4,7 @@
  * nothing. The phase only changes at the start, arrival or cancel of a walk,
  * so the status line never chatters while the player moves.
  */
-export type RoutePhase = 'idle' | 'walking' | 'arrived' | 'cancelled';
+export type RoutePhase = 'idle' | 'walking' | 'arrived' | 'cancelled' | 'unavailable';
 
 export interface RouteState {
   phase: RoutePhase;
@@ -17,6 +17,20 @@ export const IDLE_ROUTE: RouteState = { phase: 'idle', destination: '' };
 /** A new named walk, replacing whatever walk came before. */
 export function startRoute(destination: string): RouteState {
   return { phase: 'walking', destination };
+}
+
+/**
+ * Asking to walk to a named place. With a path, a new walk starts; with no path
+ * at all, the old walk stops and the route says the place can't be reached, so
+ * no earlier path, trail or status line is left behind. An empty path means the
+ * player is already there.
+ */
+export function requestRoute(
+  destination: string,
+  path: readonly { x: number; y: number }[] | undefined,
+): { route: RouteState; path: { x: number; y: number }[] } {
+  if (!path) return { route: { phase: 'unavailable', destination }, path: [] };
+  return { route: path.length > 0 ? startRoute(destination) : IDLE_ROUTE, path: [...path] };
 }
 
 /** The walk reached its spot. Only a walk in progress can arrive. */
@@ -38,6 +52,8 @@ export function routeMessage(route: RouteState): string {
       return `Arrived at ${route.destination}.`;
     case 'cancelled':
       return `Walk to ${route.destination} cancelled.`;
+    case 'unavailable':
+      return `No open path to ${route.destination} from here.`;
     default:
       return '';
   }
