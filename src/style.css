@@ -2161,3 +2161,23 @@ kbd {
   align-items: end;
   margin-top: 0.75rem;
 }
+
+.light-garden-editing {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  font-size: 14px;
+}
+
+.light-garden-editing[hidden] {
+  display: none;
+}
+
+.light-garden-edit[aria-pressed='true'] {
+  outline: 2px solid var(--color-accent);
+}

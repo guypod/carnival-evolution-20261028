@@ -68,3 +68,16 @@ export const evening = {
   glow: 'rgba(255, 196, 92, 0.55)',
   glowEdge: 'rgba(255, 196, 92, 0)',
 } as const;
+
+/** The light garden's lantern colours, steady glows for lantern evening. */
+export const gardenLights = {
+  warm: colors.accent,
+  cool: colors.water,
+  warmGlow: 'rgba(255, 204, 51, 0.45)',
+  coolGlow: 'rgba(94, 200, 242, 0.4)',
+  glowEdge: 'rgba(0, 0, 0, 0)',
+  garland: colors.stripeB,
+  bed: 'rgba(255, 248, 231, 0.12)',
+  editGrid: 'rgba(255, 248, 231, 0.35)',
+  selected: colors.stripeB,
+} as const;
