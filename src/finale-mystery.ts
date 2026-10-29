@@ -195,6 +195,12 @@ export function mysteryStep(state: MysteryState, action: MysteryAction): Mystery
 /** Why a theory did not hold up, and where to look again. Never a dead end. */
 export function misreadHint(state: MysteryState): string | undefined {
   if (!state.misread) return undefined;
+  // Looking again can turn up what the rejected theory was missing. The rejection
+  // stays as history, but the hint follows what the player has found since.
+  if (supports(state, state.misread))
+    return state.misread === 'stencil'
+      ? 'Otto wanted to know what paint. Now you have seen fresh gold paint, so the stencil theory is worth putting to him again.'
+      : 'Mara had heard nothing about her lamp. Now you know it went out at nine, so the lamp theory is worth putting to her again.';
   const evidence = evidenceOf(state);
   if (state.misread === 'wind')
     return evidence.includes('bridle')
@@ -277,6 +283,8 @@ export function mysteryStatus(state: MysteryState): string {
   if (!state.started) return 'Not started. Mara at the Ticket booth needs a hand.';
   if (state.ending) return `Solved: ${ENDINGS[state.ending].title}.`;
   if (state.theory) return 'Mara and Otto agree on what happened. How should it end?';
+  if (state.misread && investigated(state) && supports(state, state.misread))
+    return 'New evidence since that theory didn’t hold up. You can put it to Mara and Otto again.';
   if (state.misread) return 'That theory didn’t hold up. Try another, or look again.';
   if (investigated(state)) return 'All three landmarks looked into. What do you think happened?';
   const done = LANDMARK_ORDER.filter((id) => state.approaches[id]).length;

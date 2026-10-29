@@ -151,6 +151,35 @@ describe('finale mystery: theories and recovery', () => {
     expect(swapped.misread).toBeUndefined();
   });
 
+  it('refreshes the hint and status when looking again finds the missing paint, and after reload', () => {
+    // Offer help, ask Mara, ask Otto, read the log, reject stencil, look again at the star horse.
+    const rejected = play(...lampTrail, stencil);
+    expect(misreadHint(rejected)).toContain('no sign of paint yet');
+    const repainted = play(...lampTrail, stencil, { type: 'look-again', at: 'carousel' }, star);
+    expect(repainted.misread).toBe('stencil');
+    expect(repainted.theory).toBeUndefined();
+    for (const state of [repainted, parseMystery(JSON.stringify(repainted))]) {
+      expect(state.theory).toBeUndefined();
+      expect(misreadHint(state)).not.toContain('no sign of paint');
+      expect(misreadHint(state)).toContain('fresh gold paint');
+      expect(mysteryStatus(state)).toContain('New evidence');
+      expect(mysteryStep(state, stencil).theory).toBe('stencil');
+    }
+  });
+
+  it('refreshes the hint and status when looking again finds the lamp, and after reload', () => {
+    const relit = play(...paintTrail, rescue, { type: 'look-again', at: 'carousel' }, askOtto);
+    expect(misreadHint(play(...paintTrail, rescue))).toContain('Nobody said anything');
+    expect(relit.misread).toBe('rescue');
+    for (const state of [relit, parseMystery(JSON.stringify(relit))]) {
+      expect(state.theory).toBeUndefined();
+      expect(misreadHint(state)).not.toContain('Nobody said anything');
+      expect(misreadHint(state)).toContain('went out at nine');
+      expect(mysteryStatus(state)).toContain('New evidence');
+      expect(mysteryStep(state, rescue).theory).toBe('rescue');
+    }
+  });
+
   it('looking again at a landmark you have not looked into changes nothing', () => {
     const state = play(start, tin);
     expect(mysteryStep(state, { type: 'look-again', at: 'carousel' })).toBe(state);
