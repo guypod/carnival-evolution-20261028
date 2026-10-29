@@ -153,6 +153,7 @@ describe('boothTiers', () => {
 
   it('falls back to the universal tiers for a booth without goals', () => {
     expect(boothTiers('new-booth')).toBe(PAVILION_TIERS);
+    expect(boothTiers('constructor')).toBe(PAVILION_TIERS);
   });
 
   it('unlocks a booth tier at exactly its goal', () => {

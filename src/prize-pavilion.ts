@@ -91,8 +91,8 @@ const BOOTH_GOALS: Readonly<Record<string, TierGoals>> = {
  * tiers for a booth without goals of its own yet.
  */
 export function boothTiers(gameId: string): readonly PavilionTier[] {
+  if (!Object.hasOwn(BOOTH_GOALS, gameId)) return PAVILION_TIERS;
   const goals = BOOTH_GOALS[gameId];
-  if (!goals) return PAVILION_TIERS;
   return PAVILION_TIERS.map((tier, i) => ({
     ...tier,
     minScore: goals[i][0],
