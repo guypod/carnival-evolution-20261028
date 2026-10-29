@@ -180,8 +180,10 @@ import {
   type StoryState,
 } from './landmark-stories';
 import {
+  isQuiet,
   motionPreference,
   motionToggleState,
+  watchReducedMotion,
   nextMotionPreference,
   type MotionPreference,
 } from './midway/motion';
@@ -189,6 +191,26 @@ import { nextScene, scenePreference, sceneToggleState, type Scene } from './midw
 import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './midway/view';
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
+import {
+  STARTER_TUNE,
+  TUNE_LENGTHS,
+  TUNE_TEMPOS,
+  TUNE_TRACKS,
+  TUNE_TRACK_NAMES,
+  clearTune,
+  createTunePlayer,
+  createTuneVoices,
+  describeStep,
+  setLength,
+  setTempo,
+  toggleStep,
+  tuneStore,
+  type Tune,
+  type TuneLength,
+  type TuneTempo,
+  type TuneTrack,
+  type VoiceContext,
+} from './carousel-tune';
 import {
   PLUSH_BODIES,
   PLUSH_COLORS,
@@ -293,6 +315,7 @@ function renderMidway() {
             <a class="records-link" href="#/records">📜 Hall of Records</a>
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
             <a class="plush-link" href="#/plush">🧸 Plush Workshop</a>
+            <a class="tune-link" href="#/tune">🎠 Carousel Tune Workshop</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <a class="expedition-link" href="#/expedition">🪞 Mirror Maze Expedition</a>
@@ -2070,6 +2093,187 @@ function renderPlush() {
   };
 }
 
+function renderTune() {
+  document.body.dataset.view = 'tune';
+  app.innerHTML = `
+    <section class="tune" aria-labelledby="tune-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="tune-title" tabindex="-1">Carousel Tune Workshop</h1>
+      </div>
+      <p class="tune-intro">Compose a carousel tune. Each row is an instrument and each square a step: press a square, or Tab to it and press Space, to turn it on. Play loops your tune from the first step. Sound is off until you turn it on, and the lit column shows the beat either way.</p>
+      <div class="tune-controls">
+        <button type="button" class="tune-play" aria-pressed="false">▶ Play</button>
+        <button type="button" class="tune-sound" aria-pressed="false">🔇 Tune sound: off</button>
+        <label>Steps <select class="tune-length">${TUNE_LENGTHS.map((n) => `<option value="${n}">${n}</option>`).join('')}</select></label>
+        <label>Tempo <select class="tune-tempo">${TUNE_TEMPOS.map((n) => `<option value="${n}">${n} bpm</option>`).join('')}</select></label>
+        <button type="button" class="tune-starter">Starter tune</button>
+        <button type="button" class="tune-clear">Clear</button>
+        <button type="button" class="tune-save">Save my tune</button>
+      </div>
+      <div class="tune-grid" role="group" aria-label="Steps"></div>
+      <p class="tune-now" aria-live="off"></p>
+      <p class="tune-status" role="status"></p>
+      <p class="note">Every sound is made in your browser. The midway's own sound setting is left as it is. Your tune is kept in this browser only, one at a time.</p>
+    </section>
+  `;
+
+  let tune: Tune = tuneStore.load() ?? STARTER_TUNE;
+  let playhead: number | undefined;
+  let quiet = false;
+  const grid = app.querySelector<HTMLElement>('.tune-grid')!;
+  const now = app.querySelector<HTMLElement>('.tune-now')!;
+  const status = app.querySelector<HTMLElement>('.tune-status')!;
+  const playButton = app.querySelector<HTMLButtonElement>('.tune-play')!;
+  const soundButton = app.querySelector<HTMLButtonElement>('.tune-sound')!;
+  const lengthSelect = app.querySelector<HTMLSelectElement>('.tune-length')!;
+  const tempoSelect = app.querySelector<HTMLSelectElement>('.tune-tempo')!;
+
+  const voices = createTuneVoices(() => {
+    const AudioContextClass =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    return AudioContextClass ? (new AudioContextClass() as unknown as VoiceContext) : undefined;
+  });
+  const player = createTunePlayer(
+    () => tune,
+    (step, tracks) => {
+      playhead = step;
+      voices.sound(tracks);
+      drawPlayhead();
+    },
+    {
+      setInterval: (cb, ms) => window.setInterval(cb, ms),
+      clearInterval: (id) => window.clearInterval(id),
+    },
+  );
+
+  function buildGrid() {
+    grid.style.setProperty('--tune-steps', String(tune.length));
+    grid.innerHTML = TUNE_TRACKS.map(
+      (track) => `
+        <span class="tune-track tune-${track}">${TUNE_TRACK_NAMES[track]}</span>
+        ${tune.steps[track]
+          .map(
+            (_, i) =>
+              `<button type="button" class="tune-step tune-${track}${i % 4 === 0 ? ' tune-downbeat' : ''}" data-track="${track}" data-step="${i}" aria-label="${TUNE_TRACK_NAMES[track].split(' ')[1]} step ${i + 1}" aria-pressed="false"></button>`,
+          )
+          .join('')}`,
+    ).join('');
+    update();
+  }
+
+  function update() {
+    for (const cell of grid.querySelectorAll<HTMLButtonElement>('.tune-step')) {
+      const on = tune.steps[cell.dataset.track as TuneTrack][Number(cell.dataset.step)];
+      cell.setAttribute('aria-pressed', String(on));
+    }
+    lengthSelect.value = String(tune.length);
+    tempoSelect.value = String(tune.tempo);
+    drawPlayhead();
+  }
+
+  // Quiet mode keeps a lit column, but turns off its glow transition.
+  function drawPlayhead() {
+    grid.classList.toggle('tune-quiet', quiet);
+    for (const cell of grid.querySelectorAll<HTMLButtonElement>('.tune-step')) {
+      cell.classList.toggle('tune-current', Number(cell.dataset.step) === playhead);
+    }
+    now.textContent = playhead === undefined ? 'Stopped.' : describeStep(tune, playhead);
+  }
+
+  function edit(next: Tune) {
+    const rebuild = next.length !== tune.length;
+    tune = next;
+    status.textContent = '';
+    if (playhead !== undefined && playhead >= tune.length) playhead = undefined;
+    if (rebuild) buildGrid();
+    else update();
+  }
+
+  function stopPlaying() {
+    player.stop();
+    playhead = undefined;
+    playButton.textContent = '▶ Play';
+    playButton.setAttribute('aria-pressed', 'false');
+    drawPlayhead();
+  }
+
+  function soundOff() {
+    voices.silence();
+    soundButton.textContent = '🔇 Tune sound: off';
+    soundButton.setAttribute('aria-pressed', 'false');
+  }
+
+  grid.addEventListener('click', (event) => {
+    const cell = (event.target as HTMLElement).closest<HTMLButtonElement>('.tune-step');
+    if (!cell) return;
+    edit(toggleStep(tune, cell.dataset.track as TuneTrack, Number(cell.dataset.step)));
+  });
+  playButton.addEventListener('click', () => {
+    if (player.isPlaying()) {
+      stopPlaying();
+      return;
+    }
+    player.play();
+    playButton.textContent = '⏸ Pause';
+    playButton.setAttribute('aria-pressed', 'true');
+  });
+  soundButton.addEventListener('click', () => {
+    if (voices.enabled()) {
+      soundOff();
+      return;
+    }
+    if (!voices.enable()) {
+      soundButton.disabled = true;
+      soundButton.textContent = 'Sound is not available in this browser';
+      return;
+    }
+    soundButton.textContent = '🔊 Tune sound: on';
+    soundButton.setAttribute('aria-pressed', 'true');
+  });
+  lengthSelect.addEventListener('change', () =>
+    edit(setLength(tune, Number(lengthSelect.value) as TuneLength)),
+  );
+  tempoSelect.addEventListener('change', () =>
+    edit(setTempo(tune, Number(tempoSelect.value) as TuneTempo)),
+  );
+  app.querySelector('.tune-starter')!.addEventListener('click', () => edit(STARTER_TUNE));
+  app.querySelector('.tune-clear')!.addEventListener('click', () => {
+    edit(clearTune(tune));
+    status.textContent = 'Cleared. Starter tune brings back a pattern.';
+  });
+  app.querySelector('.tune-save')!.addEventListener('click', () => {
+    status.textContent = tuneStore.save(tune)
+      ? 'Saved in this browser. It replaces any tune you saved before.'
+      : 'This browser would not save your tune.';
+  });
+
+  // Hiding the page stops the music and the sound; both wait for a click to return.
+  const onVisibility = () => {
+    if (document.hidden) {
+      stopPlaying();
+      soundOff();
+    }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  const stopWatching = watchReducedMotion(window, (systemReduces) => {
+    quiet = isQuiet(motionPreference.load(), systemReduces);
+    drawPlayhead();
+  });
+
+  buildGrid();
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+    stopWatching();
+    document.removeEventListener('visibilitychange', onVisibility);
+    player.stop();
+    voices.dispose();
+  };
+}
+
 function renderBooths() {
   document.body.dataset.view = 'booths';
   let entries = directoryEntries(registry.all(), bestScore, favorites.load());
@@ -2487,6 +2691,7 @@ function route() {
   else if (location.hash === '#/booths') renderBooths();
   else if (location.hash === '#/postcard') renderPostcard();
   else if (location.hash === '#/plush') renderPlush();
+  else if (location.hash === '#/tune') renderTune();
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
   else if (location.hash === '#/expedition') renderExpedition();

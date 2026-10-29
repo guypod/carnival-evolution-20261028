@@ -1947,3 +1947,64 @@ kbd {
   min-height: 3rem;
   font-size: 1.4rem;
 }
+
+.tune-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.tune-grid {
+  display: grid;
+  grid-template-columns: 7rem repeat(var(--tune-steps, 8), minmax(1.5rem, 2.5rem));
+  gap: 4px;
+  align-items: center;
+  overflow-x: auto;
+}
+
+.tune-step {
+  aspect-ratio: 1;
+  min-width: 1.5rem;
+  padding: 0;
+  border-radius: 6px;
+  border: 2px solid var(--color-muted);
+  background: var(--color-surface);
+  transition: box-shadow 0.12s;
+}
+
+.tune-step.tune-downbeat {
+  border-width: 3px;
+}
+
+.tune-step[aria-pressed='true'].tune-bells {
+  background: var(--color-accent);
+}
+
+.tune-step[aria-pressed='true'].tune-organ {
+  background: var(--color-stripeA);
+}
+
+.tune-step[aria-pressed='true'].tune-bass {
+  background: var(--color-water);
+}
+
+.tune-step[aria-pressed='true'].tune-drum {
+  background: var(--color-wood);
+  border-style: dashed;
+}
+
+.tune-step.tune-current {
+  outline: 3px solid var(--color-text);
+  outline-offset: 1px;
+  box-shadow: 0 0 10px var(--color-accent);
+}
+
+.tune-quiet .tune-step {
+  transition: none;
+}
+
+.tune-quiet .tune-step.tune-current {
+  box-shadow: none;
+}
