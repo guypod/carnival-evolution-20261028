@@ -2026,3 +2026,73 @@ kbd {
 .balloon-keepsakes {
   overflow-wrap: anywhere;
 }
+
+.room h1:focus {
+  outline: none;
+}
+
+.room-intro,
+.room .note,
+.room-source {
+  color: var(--color-muted);
+}
+
+.room-bench {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.room-canvas {
+  width: 640px;
+  max-width: 100%;
+  border-radius: var(--radius);
+  border: 3px solid transparent;
+}
+
+.room-canvas:focus-visible {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+.room-slots {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+  max-width: 640px;
+}
+
+.room-slots button.picked,
+.room-collection button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.room-collection {
+  list-style: none;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.room-collection li {
+  margin: 0.25rem 0;
+}
+
+.room-collection button.in-room::after {
+  content: ' (in the room)';
+}
+
+.room-controls fieldset {
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius);
+  margin: 0 0 0.75rem;
+}
+
+.room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
