@@ -17,6 +17,7 @@ import {
   toTile,
   updateVisitor,
   walk,
+  keyAction,
 } from './world';
 
 describe('layoutMidway', () => {
@@ -212,5 +213,22 @@ describe('the fair gateway', () => {
     expect(fairGateInReach(map, map.spawn)).toBe(false);
     expect(fairGateInReach(map, { x: gate.x - 0.5, y: gate.y + 0.5 })).toBe(true);
     expect(findPath(map, map.spawn, { x: gate.x - 1, y: gate.y })).toBeDefined();
+  });
+});
+
+describe('keyAction', () => {
+  it('goes through the fair gateway on E, Enter or Space when only it is in reach', () => {
+    for (const code of ['KeyE', 'Enter', 'Space'])
+      expect(keyAction(code, false, true)).toBe('fair');
+  });
+
+  it('plays the booth instead when a booth is in reach too', () => {
+    expect(keyAction('KeyE', true, true)).toBe('play');
+  });
+
+  it('never goes in on Escape or other keys, or away from the gateway', () => {
+    expect(keyAction('Escape', false, true)).toBeUndefined();
+    expect(keyAction('KeyW', false, true)).toBeUndefined();
+    expect(keyAction('KeyE', false, false)).toBeUndefined();
   });
 });

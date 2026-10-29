@@ -51,6 +51,7 @@ import {
   findPath,
   followPath,
   inputDirection,
+  keyAction,
   layoutMidway,
   pathToBooth,
   strollTiles,
@@ -116,7 +117,6 @@ const MOVE_KEYS: Record<string, [number, number]> = {
   ArrowRight: [1, 0],
   KeyD: [1, 0],
 };
-const PLAY_KEYS = new Set(['KeyE', 'Enter', 'Space']);
 const DEVCON_URL =
   'https://tessl.io/devcon?utm_source=carnival&utm_medium=midway-billboard&utm_campaign=tessl-carnival';
 const MIN_QUALITY = 0.5;
@@ -239,10 +239,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       keys.add(event.code);
       cancelWalk();
       event.preventDefault();
-    } else if (PLAY_KEYS.has(event.code) && inReach?.gameId) {
+    } else if (keyAction(event.code, Boolean(inReach?.gameId), nearGate) === 'play' && inReach) {
       event.preventDefault();
       play(inReach);
-    } else if (PLAY_KEYS.has(event.code) && nearGate && !inReach) {
+    } else if (keyAction(event.code, Boolean(inReach), nearGate) === 'fair') {
       event.preventDefault();
       enterFair();
     }

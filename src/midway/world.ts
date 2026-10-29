@@ -527,3 +527,18 @@ export function updateVisitor(
   visitor.path = findPath(map, visitor, tile) ?? [];
   visitor.rest = 1;
 }
+
+/**
+ * What a key press does on the midway: play the booth in reach, go through the
+ * fair gateway when only it is in reach, or nothing. Escape and other keys never
+ * go through the gateway.
+ */
+export function keyAction(
+  code: string,
+  boothNear: boolean,
+  gateNear: boolean,
+): 'play' | 'fair' | undefined {
+  if (!['KeyE', 'Enter', 'Space'].includes(code)) return undefined;
+  if (boothNear) return 'play';
+  return gateNear ? 'fair' : undefined;
+}
