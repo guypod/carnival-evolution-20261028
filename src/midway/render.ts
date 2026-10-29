@@ -1915,3 +1915,55 @@ export function label(ctx: Ctx, text: string, x: number, y: number) {
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y + 1);
 }
+
+const PINWHEEL_COLORS = [palette.red, palette.gold, palette.blue, palette.pink] as const;
+
+/**
+ * One pinwheel on a stick, its feet at `p`. In quiet mode it holds still and
+ * `cue` shows the gust instead: a lit dot while the gust is on this wheel, a
+ * soft one once it has settled.
+ */
+export function drawPinwheel(
+  ctx: Ctx,
+  p: { x: number; y: number },
+  angle: number,
+  n: number,
+  cue: false | 'still' | 'turning' | 'settled',
+) {
+  const hub = { x: p.x, y: p.y - 20 };
+  ctx.fillStyle = palette.shadow;
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, 4, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = palette.woodDark;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(hub.x, hub.y);
+  ctx.stroke();
+  for (let blade = 0; blade < 4; blade++) {
+    const a = angle + (blade * Math.PI) / 2;
+    ctx.fillStyle = PINWHEEL_COLORS[(blade + n) % PINWHEEL_COLORS.length];
+    ctx.beginPath();
+    ctx.moveTo(hub.x, hub.y);
+    ctx.lineTo(hub.x + Math.cos(a) * 7, hub.y + Math.sin(a) * 7);
+    ctx.lineTo(hub.x + Math.cos(a + 0.9) * 5, hub.y + Math.sin(a + 0.9) * 5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = palette.cream;
+  ctx.beginPath();
+  ctx.arc(hub.x, hub.y, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  if (cue === 'turning' || cue === 'settled') {
+    ctx.globalAlpha = cue === 'turning' ? 1 : 0.45;
+    ctx.fillStyle = palette.gold;
+    ctx.strokeStyle = palette.goldShade;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(hub.x, hub.y - 11, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
