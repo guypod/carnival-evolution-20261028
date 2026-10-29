@@ -1480,19 +1480,34 @@ kbd {
   margin: 0;
 }
 
-/* The docks are far from every booth, so the booth card never opens under this. */
-.midway-ferry {
+/*
+ * The way back and the ferry's panels stack at the bottom, so neither covers
+ * the other however far they wrap. The docks are far from every booth, so the
+ * booth card never opens under them.
+ */
+.midway-waterside {
+  position: absolute;
+  right: 16px;
   bottom: 16px;
-  left: 50%;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.midway-ferry {
+  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 10px;
   align-items: center;
   justify-content: center;
-  max-width: min(460px, calc(100% - 32px));
+  max-width: min(460px, 100%);
   padding: 6px 10px;
   font-size: 14px;
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .midway-ferry[hidden] {
@@ -1508,19 +1523,18 @@ kbd {
   gap: 6px;
 }
 
-/* Sits above the ferry's panel, so both fit by the docks. */
+/* Sits above the ferry's panel in .midway-waterside. */
 .midway-homeward {
-  bottom: 72px;
-  left: 50%;
+  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 10px;
   align-items: center;
   justify-content: center;
-  max-width: min(460px, calc(100% - 32px));
+  max-width: min(460px, 100%);
   padding: 6px 10px;
   font-size: 14px;
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .midway-homeward[hidden] {

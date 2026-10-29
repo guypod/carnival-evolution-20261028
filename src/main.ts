@@ -546,13 +546,15 @@ function renderMidway() {
         <p class="message" role="status"></p>
         <button type="button" class="cancel" hidden>Cancel walk</button>
       </div>
-      <div class="midway-homeward" role="group" aria-label="Way back" hidden>
-        <p class="message" role="status" aria-live="polite"></p>
-        <button type="button" class="return">Return to midway</button>
-      </div>
-      <div class="midway-ferry" role="group" aria-label="Ferry" hidden>
-        <p class="message" role="status" aria-live="polite"></p>
-        <div class="actions"></div>
+      <div class="midway-waterside">
+        <div class="midway-homeward" role="group" aria-label="Way back" hidden>
+          <p class="message" role="status" aria-live="polite"></p>
+          <button type="button" class="return">Return to midway</button>
+        </div>
+        <div class="midway-ferry" role="group" aria-label="Ferry" hidden>
+          <p class="message" role="status" aria-live="polite"></p>
+          <div class="actions"></div>
+        </div>
       </div>
       <div class="midway-stones" role="group" aria-label="Chime stones" hidden>
         <p class="message" role="status" aria-live="polite"></p>

@@ -224,7 +224,8 @@ export interface MidwayControls {
   /**
    * From the waterside, starts a walk back towards the midway: through the
    * hedge gap from the promenade, or to the ferry home from the far shore.
-   * Returns false when there is no way back to start from here.
+   * Returns false when there is no way back to start from here, or aboard the
+   * ferry.
    */
   returnToMidway(): boolean;
   /** Plays the chime stones' call, or presses a stone by index, as a button would. */
@@ -1197,6 +1198,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       useFerry(request);
     },
     returnToMidway() {
+      // Aboard, the player's shore is not settled until they land, so the
+      // ferry's own controls end the ride first. The panel is hidden then too.
+      if (ferry.riding) return false;
       const way = homeward(map, player);
       if (!way) return false;
       return walkNamed(way.destination, () => findPath(map, player, way.target));
