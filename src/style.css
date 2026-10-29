@@ -1887,3 +1887,43 @@ kbd {
 .party canvas {
   margin-top: 16px;
 }
+
+.plush-bench {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.plush-preview {
+  width: 320px;
+  max-width: 100%;
+  border-radius: var(--radius);
+  border: 3px solid transparent;
+}
+
+.plush-preview.plush-drop {
+  border-color: var(--color-accent);
+}
+
+.plush-controls fieldset {
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius);
+  margin: 0 0 0.75rem;
+}
+
+.plush-part {
+  touch-action: none;
+  margin: 0.25rem;
+}
+
+.plush-part[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+
+.plush-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}

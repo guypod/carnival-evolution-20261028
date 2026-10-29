@@ -172,6 +172,25 @@ import { canZoomIn, canZoomOut, DEFAULT_VIEW_SCALE, zoomIn, zoomOut } from './mi
 import { layoutMidway, type BoothSlot } from './midway/world';
 import { boothPrompt } from './booth-prompt';
 import {
+  PLUSH_BODIES,
+  PLUSH_COLORS,
+  PLUSH_COLOR_NAMES,
+  PLUSH_FACES,
+  PLUSH_NAME_MAX,
+  PLUSH_SIZE,
+  STARTER_PLUSH,
+  availableAccessories,
+  benchApply,
+  benchFor,
+  benchReset,
+  benchUndo,
+  describePlush,
+  drawPlush,
+  plushStore,
+  type PlushAccessory,
+  type PlushAction,
+} from './plush';
+import {
   CLOSED_TOUR,
   TOUR_STEPS,
   isLastStep,
@@ -254,6 +273,7 @@ function renderMidway() {
             <a class="circuit-link" href="#/party">🎉 Two-Player Party</a>
             <a class="records-link" href="#/records">📜 Hall of Records</a>
             <a class="postcard-link" href="#/postcard">💌 Souvenir Postcard</a>
+            <a class="plush-link" href="#/plush">🧸 Plush Workshop</a>
             <a class="fair-link" href="#/fair">🛠️ Run Your Own Fair</a>
             <a class="fair-link" href="#/parade">🎉 Parade Composer</a>
             <button type="button" class="guide-back" aria-label="Back to the guide contents">↑ Contents</button>
@@ -1818,6 +1838,184 @@ function renderPostcard() {
   };
 }
 
+function renderPlush() {
+  document.body.dataset.view = 'plush';
+  const hasScore = registry.all().some((game) => bestScore(game.id) !== undefined);
+  const accessories = availableAccessories(hasScore);
+  const label = (value: string) => value.replace('-', ' ');
+  const radios = (group: string, values: readonly string[], names?: Record<string, string>) =>
+    values
+      .map(
+        (value) =>
+          `<label><input type="radio" name="plush-${group}" value="${value}" /> ${names?.[value] ?? label(value)}</label>`,
+      )
+      .join('');
+  app.innerHTML = `
+    <section class="plush" aria-labelledby="plush-title">
+      <div class="game-header">
+        <a href="#/">← Back to the midway</a>
+        <h1 id="plush-title" tabindex="-1">Plush Workshop</h1>
+      </div>
+      <p class="plush-intro">Stitch your own carnival plush. Pick a body, a face and a colour, then drag parts from the tray onto the plush, or use their buttons. Drag a part off the plush to take it away.</p>
+      <div class="plush-bench">
+        <canvas class="plush-preview" aria-hidden="true"></canvas>
+        <div class="plush-controls">
+          <fieldset><legend>Body</legend>${radios('body', PLUSH_BODIES)}</fieldset>
+          <fieldset><legend>Face</legend>${radios('face', PLUSH_FACES)}</fieldset>
+          <fieldset><legend>Colour</legend>${radios('color', PLUSH_COLORS, PLUSH_COLOR_NAMES)}</fieldset>
+          <fieldset><legend>Parts tray</legend>
+            ${accessories
+              .map(
+                (item) =>
+                  `<button type="button" class="plush-part" data-part="${item}" aria-pressed="false">${label(item)}</button>`,
+              )
+              .join('')}
+            ${hasScore ? '' : '<p class="note">Play any booth to unlock a crown.</p>'}
+          </fieldset>
+          <label for="plush-name">Name (optional, up to ${PLUSH_NAME_MAX} characters)</label>
+          <input id="plush-name" type="text" autocomplete="off" maxlength="${PLUSH_NAME_MAX}" />
+          <div class="plush-actions">
+            <button type="button" class="plush-undo">Undo</button>
+            <button type="button" class="plush-reset">Start over</button>
+            <button type="button" class="plush-save">Save my plush</button>
+          </div>
+        </div>
+      </div>
+      <p class="plush-description" role="status" aria-live="polite"></p>
+      <p class="plush-status" role="status"></p>
+      <p class="note">Your plush is kept in this browser only, one at a time. Nothing is uploaded or shared.</p>
+    </section>
+  `;
+
+  let bench = benchFor(plushStore.load() ?? STARTER_PLUSH);
+  const canvas = app.querySelector<HTMLCanvasElement>('.plush-preview')!;
+  canvas.width = PLUSH_SIZE.width;
+  canvas.height = PLUSH_SIZE.height;
+  const ctx = canvas.getContext('2d');
+  const name = app.querySelector<HTMLInputElement>('#plush-name')!;
+  const status = app.querySelector<HTMLElement>('.plush-status')!;
+  const undo = app.querySelector<HTMLButtonElement>('.plush-undo')!;
+  const reset = app.querySelector<HTMLButtonElement>('.plush-reset')!;
+  let confirmReset = false;
+
+  function update() {
+    const plush = bench.current;
+    for (const [group, value] of [
+      ['body', plush.body],
+      ['face', plush.face],
+      ['color', plush.color],
+    ]) {
+      for (const input of app.querySelectorAll<HTMLInputElement>(`input[name="plush-${group}"]`)) {
+        input.checked = input.value === value;
+      }
+    }
+    for (const part of app.querySelectorAll<HTMLButtonElement>('.plush-part')) {
+      const on = plush.accessories.includes(part.dataset.part as PlushAccessory);
+      part.setAttribute('aria-pressed', String(on));
+      part.textContent = `${on ? 'Remove' : 'Attach'} ${label(part.dataset.part!)}`;
+    }
+    if (document.activeElement !== name) name.value = plush.name;
+    undo.disabled = bench.history.length === 0;
+    app.querySelector('.plush-description')!.textContent = describePlush(plush);
+    if (ctx) drawPlush(ctx, plush);
+  }
+
+  function act(action: PlushAction) {
+    bench = benchApply(bench, action);
+    confirmReset = false;
+    reset.textContent = 'Start over';
+    status.textContent = '';
+    update();
+  }
+
+  for (const group of ['body', 'face', 'color'] as const) {
+    for (const input of app.querySelectorAll<HTMLInputElement>(`input[name="plush-${group}"]`)) {
+      input.addEventListener('change', () =>
+        act({ type: group, [group]: input.value } as PlushAction),
+      );
+    }
+  }
+
+  // A part is attached with its button, or by dragging it onto the plush,
+  // where it snaps into place. Dragging an attached part off the plush removes it.
+  let dragging:
+    { part: PlushAccessory; startX: number; startY: number; moved: boolean } | undefined;
+  const overCanvas = (x: number, y: number) => {
+    const box = canvas.getBoundingClientRect();
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  };
+  for (const part of app.querySelectorAll<HTMLButtonElement>('.plush-part')) {
+    const item = part.dataset.part as PlushAccessory;
+    part.addEventListener('pointerdown', (event) => {
+      dragging = { part: item, startX: event.clientX, startY: event.clientY, moved: false };
+      part.setPointerCapture(event.pointerId);
+    });
+    part.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      if (Math.hypot(event.clientX - dragging.startX, event.clientY - dragging.startY) > 8) {
+        dragging.moved = true;
+        canvas.classList.toggle('plush-drop', overCanvas(event.clientX, event.clientY));
+      }
+    });
+    part.addEventListener('pointerup', (event) => {
+      const drag = dragging;
+      dragging = undefined;
+      canvas.classList.remove('plush-drop');
+      if (!drag?.moved) return;
+      part.dataset.dragged = 'true';
+      act({
+        type: overCanvas(event.clientX, event.clientY) ? 'attach' : 'remove',
+        accessory: item,
+      });
+    });
+    part.addEventListener('pointercancel', () => {
+      dragging = undefined;
+      canvas.classList.remove('plush-drop');
+    });
+    part.addEventListener('click', () => {
+      if (part.dataset.dragged) {
+        delete part.dataset.dragged;
+        return;
+      }
+      const on = bench.current.accessories.includes(item);
+      act({ type: on ? 'remove' : 'attach', accessory: item });
+    });
+  }
+
+  name.addEventListener('input', () => act({ type: 'name', name: name.value }));
+  name.addEventListener('blur', update);
+  undo.addEventListener('click', () => {
+    bench = benchUndo(bench);
+    update();
+  });
+  // Starting over asks once more, so a stray press does not lose the plush.
+  reset.addEventListener('click', () => {
+    if (!confirmReset) {
+      confirmReset = true;
+      reset.textContent = 'Press again to start over';
+      return;
+    }
+    confirmReset = false;
+    reset.textContent = 'Start over';
+    bench = benchReset(bench);
+    status.textContent = 'Started over. Undo brings your plush back.';
+    update();
+  });
+  app.querySelector('.plush-save')!.addEventListener('click', () => {
+    status.textContent = plushStore.save(bench.current)
+      ? 'Saved in this browser. It replaces any plush you saved before.'
+      : 'This browser would not save your plush.';
+  });
+
+  update();
+  if (!ctx) canvas.hidden = true;
+  app.querySelector<HTMLElement>('h1')!.focus();
+  const stopEscape = onEscapeKey(window, () => (location.hash = '#/'));
+  stop = () => {
+    stopEscape();
+  };
+}
+
 function renderBooths() {
   document.body.dataset.view = 'booths';
   let entries = directoryEntries(registry.all(), bestScore, favorites.load());
@@ -2035,6 +2233,7 @@ function route() {
   else if (location.hash === '#/records') renderRecords();
   else if (location.hash === '#/booths') renderBooths();
   else if (location.hash === '#/postcard') renderPostcard();
+  else if (location.hash === '#/plush') renderPlush();
   else if (location.hash === '#/fair') renderFair();
   else if (location.hash === '#/parade') renderParade();
   else renderMidway();
