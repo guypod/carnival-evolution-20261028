@@ -22,7 +22,13 @@ import {
   type MotionHost,
   type MotionPreference,
 } from './motion';
-import { evening, palette } from './palette';
+import { evening, gardenLights, palette } from './palette';
+import {
+  GARDEN_COLUMNS,
+  GARDEN_ROWS,
+  lightGardenStore,
+  type LightGardenDesign,
+} from './light-garden';
 import {
   createGarden,
   gardenInReach,
@@ -126,6 +132,8 @@ export interface MidwayControls {
   enterFair(): void;
   /** Changes what the finale ticket mystery shows at the landmarks. */
   setLandmarkDetail(detail: LandmarkDetail): void;
+  /** Shows a new light garden design. It lights the map in lantern evening only. */
+  setLightGarden(design: LightGardenDesign): void;
   stop(): void;
 }
 
@@ -252,6 +260,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
    * The pinwheel garden on the grass left of the entrance path, on the row by
    * the hedge and far enough left that the ticket booth never covers it. See pinwheels.ts.
    */
+  /** The light garden's patch, on the grass right of the entrance. See light-garden.ts. */
+  const lightOrigin = { x: map.spawn.x + 2.5, y: map.spawn.y - 4 };
+  let lightDesign = lightGardenStore.load();
   let garden: PinwheelGarden = createGarden({ x: map.spawn.x - 8.9, y: map.spawn.y + 1.25 });
   let wheelAngles = garden.wheels.map((_, i) => i * 0.7);
   /** The garden's own clock, which runs in quiet mode too so the still-state sequence plays. */
@@ -346,6 +357,55 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       const b = propBounds(prop);
       return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
     });
+
+  // The light garden lies on the ground: steady glows, garlands and a faint
+  // bed outline, with nothing that blocks a walk or covers a hit area.
+  function drawLightGarden() {
+    const at = (col: number, row: number) =>
+      toScreen(lightOrigin.x + col + 0.5, lightOrigin.y + row + 0.5);
+    const corners = [
+      toScreen(lightOrigin.x, lightOrigin.y),
+      toScreen(lightOrigin.x + GARDEN_COLUMNS, lightOrigin.y),
+      toScreen(lightOrigin.x + GARDEN_COLUMNS, lightOrigin.y + GARDEN_ROWS),
+      toScreen(lightOrigin.x, lightOrigin.y + GARDEN_ROWS),
+    ];
+    ctx!.strokeStyle = gardenLights.bed;
+    ctx!.lineWidth = 1;
+    ctx!.beginPath();
+    corners.forEach((c, i) => (i ? ctx!.lineTo(c.x, c.y) : ctx!.moveTo(c.x, c.y)));
+    ctx!.closePath();
+    ctx!.stroke();
+    ctx!.globalCompositeOperation = 'lighter';
+    for (const l of lightDesign.lanterns) {
+      const c = at(l.col, l.row);
+      const glow = ctx!.createRadialGradient(c.x, c.y, 0, c.x, c.y, 30);
+      glow.addColorStop(0, l.color === 'warm' ? gardenLights.warmGlow : gardenLights.coolGlow);
+      glow.addColorStop(1, gardenLights.glowEdge);
+      ctx!.fillStyle = glow;
+      ctx!.beginPath();
+      ctx!.ellipse(c.x, c.y, 30, 15, 0, 0, Math.PI * 2);
+      ctx!.fill();
+    }
+    ctx!.globalCompositeOperation = 'source-over';
+    ctx!.strokeStyle = gardenLights.garland;
+    for (const [a, b] of lightDesign.garlands) {
+      const p = lightDesign.lanterns[a];
+      const q = lightDesign.lanterns[b];
+      const from = at(p.col, p.row);
+      const to = at(q.col, q.row);
+      ctx!.beginPath();
+      ctx!.moveTo(from.x, from.y - 10);
+      ctx!.quadraticCurveTo((from.x + to.x) / 2, (from.y + to.y) / 2 - 2, to.x, to.y - 10);
+      ctx!.stroke();
+    }
+    for (const l of lightDesign.lanterns) {
+      const c = at(l.col, l.row);
+      ctx!.fillStyle = l.color === 'warm' ? gardenLights.warm : gardenLights.cool;
+      ctx!.beginPath();
+      ctx!.arc(c.x, c.y - 10, 3.5, 0, Math.PI * 2);
+      ctx!.fill();
+    }
+  }
 
   const gardenAt = (point: Point) =>
     garden.wheels.some((w) => {
@@ -511,6 +571,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         ctx.fill();
       });
       ctx.globalCompositeOperation = 'source-over';
+      drawLightGarden();
     }
 
     // A sparse trail of lanterns along the steps still ahead of a named walk.
@@ -710,6 +771,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     },
     setLandmarkDetail(next) {
       detail = next;
+    },
+    setLightGarden(next) {
+      lightDesign = next;
     },
     landmarks,
     setMotion(next) {

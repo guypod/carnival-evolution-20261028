@@ -121,6 +121,17 @@ import {
   type Turn,
 } from './party';
 import { progressText, trailIntro, trailMissions, trailRecommendation } from './trail';
+import {
+  connectLanterns,
+  createLightGarden,
+  describeDesign,
+  lightGardenStore,
+  placeLantern,
+  resetGarden,
+  undo as undoGarden,
+  type LanternColor,
+  type LightGardenDesign,
+} from './midway/light-garden';
 import { startMidway } from './midway/midway';
 import type { LandmarkDetail } from './midway/render';
 import {
@@ -470,6 +481,24 @@ function renderMidway() {
           <section class="guide-settings" aria-label="Settings" data-guide-section="settings">
             <h2 id="guide-settings-title" tabindex="-1">Settings</h2>
             <button type="button" class="scene-toggle" aria-pressed="false"></button>
+            <details class="light-garden">
+              <summary>🏮 Light garden</summary>
+              <p class="note">Hang up to 8 lanterns and 6 garlands on the patch right of the entrance. They light the map in lantern evening. Saved in this browser only.</p>
+              <form class="light-garden-place">
+                <label>Column (1 to 6) <input name="col" type="number" min="1" max="6" value="1" required /></label>
+                <label>Row (1 to 4) <input name="row" type="number" min="1" max="4" value="1" required /></label>
+                <label>Colour <select name="color"><option value="warm">Warm</option><option value="cool">Cool</option></select></label>
+                <button type="submit">Place lantern</button>
+              </form>
+              <form class="light-garden-connect">
+                <label>From lantern <input name="a" type="number" min="1" value="1" required /></label>
+                <label>to lantern <input name="b" type="number" min="1" value="2" required /></label>
+                <button type="submit">String garland</button>
+              </form>
+              <button type="button" class="light-garden-undo">Undo</button>
+              <button type="button" class="light-garden-reset">Reset to starter</button>
+              <p class="light-garden-summary" aria-live="polite"></p>
+            </details>
             <button type="button" class="motion-toggle" aria-pressed="false" aria-describedby="motion-note"></button>
             <p class="note" id="motion-note">Off follows your system's reduced-motion setting. On holds the scenery still. Walking and games are never slowed.</p>
             <button type="button" class="sound-toggle" aria-pressed="false" aria-describedby="sound-note"></button>
@@ -575,6 +604,7 @@ function renderMidway() {
   setUpVisit(midway.walkTo, midway.walkToLandmark);
   setUpPocket();
   setUpSceneToggle(midway.setScene);
+  setUpLightGarden(midway.setLightGarden);
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   const stopSound = setUpSound();
@@ -1084,6 +1114,62 @@ function setUpPocket() {
   markVisit(booth, 'booth');
   markVisit(place, 'destination');
   render();
+}
+
+// The light garden, from the guide: keyboard and form controls that place
+// lanterns by column and row, with a text summary of the whole design.
+function setUpLightGarden(show: (design: LightGardenDesign) => void) {
+  const panel = app.querySelector<HTMLDetailsElement>('.light-garden')!;
+  const summary = panel.querySelector<HTMLParagraphElement>('.light-garden-summary')!;
+  let garden = createLightGarden(lightGardenStore.load());
+  const update = (note = '') => {
+    lightGardenStore.save(garden.design);
+    show(garden.design);
+    summary.textContent = `${note}${describeDesign(garden.design)}`;
+  };
+  const place = panel.querySelector<HTMLFormElement>('.light-garden-place')!;
+  place.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const data = new FormData(place);
+    const next = placeLantern(
+      garden,
+      Number(data.get('col')) - 1,
+      Number(data.get('row')) - 1,
+      data.get('color') as LanternColor,
+    );
+    garden = next.garden;
+    const notes = {
+      placed: 'Lantern placed. ',
+      'out-of-bounds': 'That spot is outside the garden. ',
+      taken: 'A lantern already hangs there. ',
+      full: 'All 8 lanterns are hung: undo or reset to move one. ',
+    };
+    update(notes[next.result]);
+  });
+  const connect = panel.querySelector<HTMLFormElement>('.light-garden-connect')!;
+  connect.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const data = new FormData(connect);
+    const next = connectLanterns(garden, Number(data.get('a')) - 1, Number(data.get('b')) - 1);
+    garden = next.garden;
+    const notes = {
+      connected: 'Garland strung. ',
+      missing: 'There is no lantern with that number. ',
+      same: 'Pick two different lanterns. ',
+      already: 'Those two are already joined. ',
+      full: 'All 6 garlands are strung. ',
+    };
+    update(notes[next.result]);
+  });
+  panel.querySelector('.light-garden-undo')!.addEventListener('click', () => {
+    garden = undoGarden(garden);
+    update('Undone. ');
+  });
+  panel.querySelector('.light-garden-reset')!.addEventListener('click', () => {
+    garden = resetGarden(garden);
+    update('Back to the starter garden. ');
+  });
+  update();
 }
 
 // Day or lantern evening, from the guide. The choice is remembered when the
