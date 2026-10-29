@@ -212,29 +212,35 @@ export function undoTurn(state: Expedition): Expedition {
   return { ...state, at: last.at, flipped: last.flipped, history: state.history.slice(0, -1) };
 }
 
-/** What the player is heading for next: a landmark not yet found, else the exit. */
-export function nextGoal(state: Expedition): number {
+/** What is left to reach: the landmarks not yet found, else the exit. */
+function targets(state: Expedition): number[] {
   const left = state.maze.landmarks.filter((l) => !state.found.includes(l.name));
-  if (!left.length) return state.maze.exit;
-  const dist = distances(openPassages(state.maze, true), state.at);
-  return left.reduce((a, b) => (dist[b.cell] < dist[a.cell] ? b : a)).cell;
+  return left.length ? left.map((l) => l.cell) : [state.maze.exit];
+}
+
+/**
+ * What the player is heading for next: the nearest target reachable with the
+ * mirror as it is, or the mirror itself when none is.
+ */
+export function nextGoal(state: Expedition): number {
+  const dist = distances(openPassages(state.maze, state.flipped), state.at);
+  const open = targets(state).filter((c) => dist[c] >= 0);
+  if (!open.length) return state.maze.mirror;
+  return open.reduce((a, b) => (dist[b] < dist[a] ? b : a));
 }
 
 export type Hint = { type: 'step'; dir: Dir } | { type: 'turn' } | { type: 'done' };
 
 /**
- * One step toward the next goal. When the mirror blocks the way, the hint
- * leads to the mirror, which is always reachable, so a hint never traps.
+ * One step toward the next goal. Goal and route use the same mirror state, so
+ * each step brings the nearest reachable target one cell closer. When none is
+ * reachable the hint leads to the mirror, which is always reachable, and with
+ * the mirror facing north every cell is reachable, so hints never loop.
  */
 export function hint(state: Expedition): Hint {
   if (state.finished) return { type: 'done' };
   const goal = nextGoal(state);
-  const open = openPassages(state.maze, state.flipped);
-  let path = pathBetween(open, state.at, goal);
-  if (!path.length) {
-    if (state.at === state.maze.mirror) return { type: 'turn' };
-    path = pathBetween(open, state.at, state.maze.mirror);
-  }
+  const path = pathBetween(openPassages(state.maze, state.flipped), state.at, goal);
   if (path.length < 2) return { type: 'turn' };
   const [x, y] = xy(path[0]);
   const [nx, ny] = xy(path[1]);
@@ -318,6 +324,6 @@ export function resumeExpedition(saved: NonNullable<ExpeditionProgress['current'
     at: saved.at,
     flipped: saved.flipped,
     visited: saved.visited.filter((c) => Number.isInteger(c) && c >= 0 && c < cells),
-    found: saved.found.filter((n) => names.includes(n)),
+    found: names.filter((n) => saved.found.includes(n)),
   };
 }

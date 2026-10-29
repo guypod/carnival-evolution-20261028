@@ -2370,6 +2370,7 @@ function renderExpedition() {
     ? resumeExpedition(saved.current)
     : startExpedition(Date.now() % 100000);
   let message = '';
+  const finishedHere = new Set<number>();
   const canvas = app.querySelector<HTMLCanvasElement>('.expedition-maze')!;
   canvas.width = MAZE_W * CELL;
   canvas.height = MAZE_H * CELL;
@@ -2383,13 +2384,16 @@ function renderExpedition() {
     const wasFinished = state.finished;
     state = next;
     message = note;
-    expeditionStore.save(state);
+    const kept = expeditionStore.save(state);
+    if (state.finished) finishedHere.add(state.maze.seed);
     if (state.finished && !wasFinished)
       message = `Expedition ${state.maze.seed} complete! All three landmarks found.`;
+    if (!kept)
+      message += ` Progress could not be saved in this browser, so it lasts only until you leave this page. It will try again on your next move.`;
     if (ctx) drawExpedition(ctx, state, mapBox.checked);
     turn.disabled = state.at !== state.maze.mirror || state.finished;
     undo.disabled = state.history.length === 0 || state.finished;
-    const done = expeditionStore.load().completed.length;
+    const done = new Set([...expeditionStore.load().completed, ...finishedHere]).size;
     status.textContent = `Seed ${state.maze.seed}. Landmarks ${state.found.length} of 3${state.found.length ? `: ${state.found.join(', ')}` : ''}. Mirror faces ${state.flipped ? 'north' : 'east'}. Expeditions finished here: ${done}. ${message}`;
   };
   const walk = (dir: Dir) => {
