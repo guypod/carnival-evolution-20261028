@@ -444,7 +444,7 @@ function runBell(toy: ToyState): Run {
   const travel = hole / RING_HOLE;
   const message =
     hole < RING_HOLE
-      ? 'The hammer only taps the bell: the rod is too near the pivot to swing it far.'
+      ? 'The hammer swings short and never reaches the bell: the rod is too near the pivot to swing it far.'
       : hole > RING_HOLE
         ? 'The hammer swings past the bell and thumps the rubber stop. Too far from the pivot.'
         : 'The hammer strikes the bell squarely. Ding!';

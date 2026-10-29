@@ -13,7 +13,7 @@ toy's mechanism, so what moves follows from where the parts are.
   makes it dance.
 - **Rooster Bell.** A lever drives the hammer through a link rod. While the
   pivot pin is loose the rod just slides. Tighten it with the screwdriver, and
-  the hole the rod sits in sets the swing: too near the pivot only taps the
+  the hole the rod sits in sets the swing: too near the pivot swings short of the
   bell, too far thumps the rubber stop. The middle hole rings it. Loosen the pin
   again to move the rod.
 - **Hopping Frog Automaton.** The frog sits on a rod whose foot stands on the

@@ -189,9 +189,9 @@ describe('rooster bell linkage', () => {
     expect(useTool(faultyToy('rooster-bell'), 'screwdriver', 'pin').toy.pinTight).toBe(true);
   });
 
-  it('taps, rings or overshoots by the hole the rod is in', () => {
+  it('falls short, rings or overshoots by the hole the rod is in', () => {
     const tight = useTool(faultyToy('rooster-bell'), 'screwdriver', 'pin').toy;
-    expect(runToy(tight).message).toMatch(/taps/);
+    expect(runToy(tight).message).toMatch(/short/);
     const loose = useTool(tight, 'screwdriver', 'pin').toy;
     const atThree = useTool(movePart(loose, 'rod', 'hole-3').toy, 'screwdriver', 'pin').toy;
     const over = runToy(atThree);
