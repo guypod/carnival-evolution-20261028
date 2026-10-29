@@ -234,13 +234,14 @@ describe('the voices', () => {
   });
 
   it('cuts unfinished notes on silence, so they do not return on the next enable', () => {
-    const { context, disconnected } = fakeContext();
+    const { context, started, disconnected } = fakeContext();
     const voices = createTuneVoices(() => context);
     voices.enable();
     voices.sound(['bells', 'drum']);
     voices.silence();
     expect(disconnected).toHaveBeenCalledTimes(2);
     voices.enable();
+    expect(started).toEqual(['sine', 'sawtooth']);
     voices.silence();
     expect(disconnected).toHaveBeenCalledTimes(2);
   });
@@ -255,6 +256,28 @@ describe('the voices', () => {
     await Promise.resolve();
     expect(failed).toHaveBeenCalledOnce();
     expect(voices.enabled()).toBe(false);
+    context.resume = vi.fn(() => Promise.resolve());
+    expect(voices.enable(failed)).toBe(true);
+    expect(context.resume).toHaveBeenCalledOnce();
+    expect(voices.enabled()).toBe(true);
+  });
+
+  it('stays off and reports nothing when disposed while resume is pending', async () => {
+    const { context, started } = fakeContext();
+    let refuse: (error: Error) => void = () => {};
+    context.resume = vi.fn(() => new Promise<void>((_resolve, reject) => (refuse = reject)));
+    const voices = createTuneVoices(() => context);
+    const failed = vi.fn();
+    voices.enable(failed);
+    voices.dispose();
+    refuse(new Error('closed'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(failed).not.toHaveBeenCalled();
+    expect(voices.enabled()).toBe(false);
+    voices.sound(['bells']);
+    expect(started).toHaveLength(0);
+    expect(context.close).toHaveBeenCalled();
   });
 
   it('closes the context on dispose', () => {

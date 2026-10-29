@@ -302,7 +302,10 @@ export function createTuneVoices(createContext: () => VoiceContext | undefined):
         if (!context) return false;
       }
       on = true;
-      context.resume().catch(() => {
+      const opened = context;
+      opened.resume().catch(() => {
+        // A later silence or dispose already turned sound off.
+        if (!on || context !== opened) return;
         on = false;
         onFailed?.();
       });
