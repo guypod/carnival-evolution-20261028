@@ -1552,6 +1552,11 @@ kbd {
     bottom: 8px;
   }
 
+  /* While the walk line shows, the waterside panels sit above it. */
+  .midway:has(.midway-route:not([hidden])) .midway-waterside {
+    bottom: 56px;
+  }
+
   /* A finished walk's line gives way to the booth card that opens on arrival. */
   .midway:has(.booth-card:not([hidden])) .midway-route:has(.cancel[hidden]) {
     display: none;

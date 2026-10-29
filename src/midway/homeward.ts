@@ -42,6 +42,6 @@ export function homeward(map: MidwayMap, point: Point): Homeward | undefined {
 export function homewardMessage(way: Homeward | undefined): string {
   if (!way) return '';
   return way.area === 'the far shore'
-    ? `You are on the far shore. Return to midway walks you to ${way.destination} for the ferry home.`
+    ? `You are on the far shore. Return to midway walks you to ${way.destination} only: board the ferry there to cross home.`
     : 'You are on the promenade. Return to midway walks you back through the hedge gap.';
 }
