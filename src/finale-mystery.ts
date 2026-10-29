@@ -200,7 +200,7 @@ export function misreadHint(state: MysteryState): string | undefined {
   if (supports(state, state.misread))
     return state.misread === 'stencil'
       ? 'Otto wanted to know what paint. Now you have seen fresh gold paint, so the stencil theory is worth putting to him again.'
-      : 'Mara had heard nothing about her lamp. Now you know it went out at nine, so the lamp theory is worth putting to her again.';
+      : 'Mara had heard nothing about her lamp. Now you know her booth lamp went out, so the lamp theory is worth putting to her again.';
   const evidence = evidenceOf(state);
   if (state.misread === 'wind')
     return evidence.includes('bridle')

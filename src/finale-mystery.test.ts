@@ -174,7 +174,8 @@ describe('finale mystery: theories and recovery', () => {
     for (const state of [relit, parseMystery(JSON.stringify(relit))]) {
       expect(state.theory).toBeUndefined();
       expect(misreadHint(state)).not.toContain('Nobody said anything');
-      expect(misreadHint(state)).toContain('went out at nine');
+      expect(misreadHint(state)).toContain('booth lamp went out');
+      expect(misreadHint(state)).not.toContain('nine');
       expect(mysteryStatus(state)).toContain('New evidence');
       expect(mysteryStep(state, rescue).theory).toBe('rescue');
     }
