@@ -107,6 +107,7 @@ body[data-view='midway'] main {
 .discovery-toast,
 .midway-route,
 .midway-ferry,
+.midway-homeward,
 .midway-stones,
 .mystery-card,
 .booth-card {
@@ -178,7 +179,8 @@ kbd {
 }
 
 .midway-view button,
-.midway-ferry button {
+.midway-ferry button,
+.midway-homeward button {
   min-width: 36px;
   padding: 4px 10px;
   border: 2px solid var(--color-accent);
@@ -193,7 +195,9 @@ kbd {
 .midway-view button:hover:not(:disabled),
 .midway-view button:focus-visible,
 .midway-ferry button:hover,
-.midway-ferry button:focus-visible {
+.midway-ferry button:focus-visible,
+.midway-homeward button:hover,
+.midway-homeward button:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
 }
@@ -1476,19 +1480,34 @@ kbd {
   margin: 0;
 }
 
-/* The docks are far from every booth, so the booth card never opens under this. */
-.midway-ferry {
+/*
+ * The way back, the chime stones and the ferry's panels stack at the bottom,
+ * so none covers another however far they wrap. The docks and the stones are
+ * far from every booth, so the booth card never opens under them.
+ */
+.midway-waterside {
+  position: absolute;
+  right: 16px;
   bottom: 16px;
-  left: 50%;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.midway-ferry {
+  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 10px;
   align-items: center;
   justify-content: center;
-  max-width: min(460px, calc(100% - 32px));
+  max-width: min(460px, 100%);
   padding: 6px 10px;
   font-size: 14px;
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .midway-ferry[hidden] {
@@ -1504,11 +1523,62 @@ kbd {
   gap: 6px;
 }
 
+/* Sits above the ferry's panel in .midway-waterside. */
+.midway-homeward {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  justify-content: center;
+  max-width: min(460px, 100%);
+  padding: 6px 10px;
+  font-size: 14px;
+  pointer-events: auto;
+}
+
+.midway-homeward[hidden] {
+  display: none;
+}
+
+.midway-homeward .message {
+  margin: 0;
+}
+
+/* On wide screens the walk line and the waterside panels place themselves. */
+.midway-bottom {
+  display: contents;
+}
+
 @media (max-width: 720px) {
-  /* The panels fill the top on narrow screens, so the walk line sits at the bottom. */
-  .midway-route {
-    top: auto;
+  /*
+   * The panels fill the top on narrow screens, so the walk line sits at the
+   * bottom, under the waterside panels in one column. Each takes its own
+   * height, so none covers another however far they wrap.
+   */
+  .midway-bottom {
+    position: absolute;
+    right: 8px;
     bottom: 8px;
+    left: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+  }
+
+  .midway-waterside {
+    position: static;
+    align-self: stretch;
+  }
+
+  .midway-route {
+    position: static;
+    order: 1;
+    max-width: 100%;
+    transform: none;
+    pointer-events: auto;
   }
 
   /* A finished walk's line gives way to the booth card that opens on arrival. */
@@ -2285,18 +2355,17 @@ body[data-photo='on'] .midway > :not(.midway-map, .midway-panels, .photo-frame-o
   pointer-events: none;
 }
 
-/* The chime stones sit far from the docks and every booth, so this never overlaps the ferry panel. */
+/* Stacks between the way back and the ferry's panels in .midway-waterside. */
 .midway-stones {
-  bottom: 16px;
-  left: 50%;
+  position: static;
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: center;
-  max-width: min(460px, calc(100% - 32px));
+  max-width: min(460px, 100%);
   padding: 6px 10px;
   font-size: 14px;
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .midway-stones[hidden] {

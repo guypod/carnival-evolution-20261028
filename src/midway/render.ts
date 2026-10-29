@@ -618,7 +618,46 @@ function ferrySign(ctx: Ctx, prop: Prop) {
   ctx.fillStyle = palette.white;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('FERRY', 0, 1);
+  ctx.fillText(prop.variant === 1 ? 'HOME' : 'FERRY', 0, 1);
+  ctx.restore();
+}
+
+/** A small plank by the hedge gap with an arrow pointing back into the midway. */
+function homewardSign(ctx: Ctx, prop: Prop) {
+  const c = at(prop.x + 0.5, prop.y + 0.5);
+  // One tile west, on screen: the way into the midway.
+  const west = at(prop.x - 0.5, prop.y + 0.5);
+  const dx = Math.sign(west[0] - c[0]);
+  oval(ctx, c[0] + 2, c[1] + 1, 6, 2, palette.shadow);
+  stroke(
+    ctx,
+    [
+      [c[0], c[1]],
+      [c[0], c[1] - 16],
+    ],
+    palette.woodDark,
+    2,
+  );
+  poly(
+    ctx,
+    [
+      [c[0] - 11 * dx, c[1] - 27],
+      [c[0] + 9 * dx, c[1] - 27],
+      [c[0] + 14 * dx, c[1] - 21.5],
+      [c[0] + 9 * dx, c[1] - 16],
+      [c[0] - 11 * dx, c[1] - 16],
+    ],
+    palette.gold,
+  );
+  ctx.save();
+  ctx.font = canvasFont('small', 'bold');
+  const fit = Math.min(8 / theme.font.small, 18 / ctx.measureText('MIDWAY').width);
+  ctx.translate(c[0] + dx, c[1] - 21.5);
+  ctx.scale(fit, fit);
+  ctx.fillStyle = palette.ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('MIDWAY', 0, 1);
   ctx.restore();
 }
 
@@ -1949,6 +1988,7 @@ const PROP_HEIGHTS: Record<Prop['kind'], number> = {
   lighthouse: 100,
   'lamp-post': 36,
   'ferry-sign': 34,
+  'homeward-sign': 30,
 };
 
 /** Roughly the screen box a prop is drawn in. */
@@ -2196,6 +2236,8 @@ export function drawProp(ctx: Ctx, prop: Prop, t: number, detail?: LandmarkDetai
       return lampPost(ctx, prop);
     case 'ferry-sign':
       return ferrySign(ctx, prop);
+    case 'homeward-sign':
+      return homewardSign(ctx, prop);
   }
 }
 

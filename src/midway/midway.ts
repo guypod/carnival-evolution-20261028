@@ -77,6 +77,7 @@ import {
   tickLocate,
   type LocateState,
 } from './locate';
+import { homeward, homewardMessage } from './homeward';
 import { lanternGlow, type Scene } from './scene';
 import {
   archBounds,
@@ -161,6 +162,11 @@ export interface MidwayOptions {
    */
   onFerry?(message: string, requests: FerryRequest[]): void;
   /**
+   * Called when the player crosses into or out of the waterside district: the
+   * away line, empty back inside the midway. See homeward.ts.
+   */
+  onHomeward?(message: string): void;
+  /**
    * Called when the player walks up to the chime stones with what the words
    * beside the map say, again whenever that changes, and with undefined when
    * they walk away.
@@ -215,6 +221,13 @@ export interface MidwayControls {
   hideLocate(): boolean;
   /** Asks the ferry for something, as a key or click would. See ferry.ts. */
   ferry(request: FerryRequest): void;
+  /**
+   * From the waterside, starts a walk back towards the midway: through the
+   * hedge gap from the promenade, or to the ferry home from the far shore.
+   * Returns false when there is no way back to start from here, or aboard the
+   * ferry.
+   */
+  returnToMidway(): boolean;
   /** Plays the chime stones' call, or presses a stone by index, as a button would. */
   stones(input: 'call' | number): void;
   stop(): void;
@@ -431,6 +444,13 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       nearDock = ferry.dock;
     }
     reportFerry();
+  };
+  let homewardReport: string | undefined;
+  const reportHomeward = () => {
+    const message = ferry.riding ? '' : homewardMessage(homeward(map, player));
+    if (message === homewardReport) return;
+    homewardReport = message;
+    options.onHomeward?.(message);
   };
   const useFerry = (request: FerryRequest) => setFerry(requestFerry(ferry, request, nearDock));
 
@@ -1127,6 +1147,7 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     stoneUnderfoot = underfoot;
     reportStones();
     reportFerry();
+    reportHomeward();
     gustClock += dt;
     wheelAngles = turnWheels(wheelAngles, garden, gustClock, dt, quiet);
 
@@ -1175,6 +1196,14 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     enterFair,
     ferry(request) {
       useFerry(request);
+    },
+    returnToMidway() {
+      // Aboard, the player's shore is not settled until they land, so the
+      // ferry's own controls end the ride first. The panel is hidden then too.
+      if (ferry.riding) return false;
+      const way = homeward(map, player);
+      if (!way) return false;
+      return walkNamed(way.destination, () => findPath(map, player, way.target));
     },
     stones(input) {
       if (!nearChimes) return;

@@ -53,7 +53,8 @@ export type PropKind =
   | 'fair-gate'
   | 'lighthouse'
   | 'lamp-post'
-  | 'ferry-sign';
+  | 'ferry-sign'
+  | 'homeward-sign';
 
 export interface Prop extends Rect {
   kind: PropKind;
@@ -309,13 +310,16 @@ export function layoutMidway(gameIds: readonly string[]): MidwayMap {
   // The promenade: lamps along the hedge, benches by the water, a sign at the dock.
   for (let y = 3; y < height - 3; y += 5) add('lamp-post', PROMENADE_X, y);
   add('ferry-sign', PROMENADE_X + 3, 9);
+  // A way back sign beside the hedge gap, pointing into the midway.
+  add('homeward-sign', PROMENADE_X, gap.y - 1);
   add('bench', PROMENADE_X + 3, 5);
   add('bench', PROMENADE_X + 3, 16);
   add('planter', PROMENADE_X + 3, 20);
   add('balloons', PROMENADE_X, 15);
   // The far shore: a lighthouse at the head of its boardwalk, and places to sit.
   add('lighthouse', FAR_SHORE_X + 1, 2, 2, 2);
-  add('ferry-sign', FAR_SHORE_X, 21);
+  // Variant 1: the far shore's sign reads FERRY HOME.
+  add('ferry-sign', FAR_SHORE_X, 21, 1, 1, 1);
   add('bench', FAR_SHORE_X + 4, 8);
   add('bench', FAR_SHORE_X + 4, 15);
   add('planter', FAR_SHORE_X + 4, 11);
