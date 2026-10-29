@@ -374,7 +374,10 @@ export function drawGroundLayer(map: MidwayMap, wanted: number): GroundLayer {
   for (let i = 0; i < map.width; i += 2) tree(ctx, i + 0.5 + hash(i, 1) * 0.6, -1.4 - hash(i, 2));
   for (let i = 2; i < map.height; i += 2) tree(ctx, -1.4 - hash(1, i), i + 0.5 + hash(2, i) * 0.6);
 
-  hedge(ctx, { x: 0, y: 0, w: map.width, h: 1 });
+  // The back hedge stops at the river's banks rather than running over the water.
+  const { water } = map.waterside;
+  hedge(ctx, { x: 0, y: 0, w: water.x, h: 1 });
+  hedge(ctx, { x: water.x + water.w, y: 0, w: map.width - water.x - water.w, h: 1 });
   hedge(ctx, { x: 0, y: 0, w: 1, h: map.height });
   return { canvas, scale };
 }
@@ -660,7 +663,10 @@ export function drawFrontHedge(ctx: Ctx, map: MidwayMap) {
   hedge(ctx, { x: gap.x, y: 1, w: 1, h: gap.y - 1 });
   hedge(ctx, { x: gap.x, y: gap.y + gap.h, w: 1, h: h - gap.y - gap.h });
   hedge(ctx, { x: 1, y: h, w: map.avenueX - 1, h: 1 });
-  hedge(ctx, { x: map.avenueX + 2, y: h, w: map.width - map.avenueX - 3, h: 1 });
+  hedge(ctx, { x: map.avenueX + 2, y: h, w: map.midwayWidth - map.avenueX - 3, h: 1 });
+  const { water } = map.waterside;
+  hedge(ctx, { x: map.midwayWidth - 1, y: h, w: water.x - map.midwayWidth + 1, h: 1 });
+  hedge(ctx, { x: water.x + water.w, y: h, w: map.width - water.x - water.w - 1, h: 1 });
 }
 
 // ── Round things: tents, the big top, the carousel ────────────────────────
