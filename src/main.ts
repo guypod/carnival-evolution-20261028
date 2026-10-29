@@ -246,6 +246,29 @@ import {
   type PlushAction,
 } from './plush';
 import {
+  BACKDROPS,
+  BACKDROP_NAMES,
+  EMPTY_ROOM,
+  ROOM_SIZE,
+  ROOM_SLOTS,
+  describeLook,
+  describeRoom,
+  describeSlot,
+  drawRoom,
+  editorApply,
+  editorFor,
+  editorReset,
+  editorUndo,
+  neighbourSlot,
+  placementOf,
+  reconcileRoom,
+  roomObjects,
+  roomStore,
+  slotAt,
+  type Direction,
+  type RoomAction,
+} from './prize-room';
+import {
   CLOSED_TOUR,
   TOUR_STEPS,
   isLastStep,
@@ -1262,6 +1285,7 @@ function renderPrizes() {
           <p></p>
         </div>
       </div>
+      <p><a class="pavilion-link room-link" href="#/room">🪴 Arrange your Prize Room</a></p>
       <ul class="pavilion-shelves"></ul>
       <p class="note">Prizes come from your best scores in this browser. Nothing to buy, and nothing is spent.</p>
     </section>`;
@@ -1307,6 +1331,251 @@ function renderPrizes() {
 
   app.querySelector<HTMLElement>('h1')!.focus();
   stop = onEscapeKey(window, () => (location.hash = '#/'));
+}
+
+function renderRoom() {
+  document.body.dataset.view = 'room';
+  const objects = roomObjects(registry.all());
+  const owned = new Set(objects.filter((o) => o.owned).map((o) => o.id));
+  app.innerHTML = `
+    <section class="room" aria-labelledby="room-title">
+      <div class="game-header">
+        <a href="#/prizes">← Back to the Prize Pavilion</a>
+        <h1 id="room-title" tabindex="-1">Prize Room</h1>
+      </div>
+      <p class="room-intro">Arrange the prizes you have won, and some starter decor, on two shelves and the floor. Pick an object, then pick a spot. With the room picture focused, arrow keys move the picked object, R turns it and Delete takes it back to your collection.</p>
+      <div class="room-bench">
+        <div>
+          <canvas class="room-canvas" tabindex="0" aria-describedby="room-keys"></canvas>
+          <p id="room-keys" class="note">Room picture: arrow keys move, R turns, Delete removes the picked object.</p>
+          <div class="room-slots" role="group" aria-label="Spots in the room"></div>
+        </div>
+        <div class="room-controls">
+          <h2>Your collection</h2>
+          <ul class="room-collection"></ul>
+          <fieldset><legend>Backdrop</legend>${BACKDROPS.map(
+            (b) =>
+              `<label><input type="radio" name="room-backdrop" value="${b}" /> ${BACKDROP_NAMES[b]}</label>`,
+          ).join('')}</fieldset>
+          <div class="room-actions">
+            <button type="button" class="room-rotate">Turn</button>
+            <button type="button" class="room-remove">Put away</button>
+            <button type="button" class="room-undo">Undo</button>
+            <button type="button" class="room-reset">Clear the room</button>
+          </div>
+        </div>
+      </div>
+      <p class="room-status" role="status" aria-live="polite"></p>
+      <h2>Walk the room</h2>
+      <div class="room-actions">
+        <button type="button" class="room-walk-prev">← Previous spot</button>
+        <button type="button" class="room-walk-next">Next spot →</button>
+      </div>
+      <p class="room-look" role="status" aria-live="polite"></p>
+      <p class="room-summary"></p>
+      <ol class="room-inspect"></ol>
+      <p class="note">Your room is kept in this browser only, apart from your scores. Clearing the room never touches scores or prizes. Nothing to buy.</p>
+    </section>`;
+
+  const saved = roomStore.load() ?? EMPTY_ROOM;
+  let editor = editorFor(reconcileRoom(saved, owned));
+  let selected: string | undefined;
+  let visitor = 0;
+  // Stays empty until the visitor first walks, then follows every edit.
+  let looking = false;
+  let confirmReset = false;
+  const canvas = app.querySelector<HTMLCanvasElement>('.room-canvas')!;
+  canvas.width = ROOM_SIZE.width;
+  canvas.height = ROOM_SIZE.height;
+  const ctx = canvas.getContext('2d');
+  const status = app.querySelector<HTMLElement>('.room-status')!;
+  const look = app.querySelector<HTMLElement>('.room-look')!;
+  const collection = app.querySelector<HTMLUListElement>('.room-collection')!;
+  const slots = app.querySelector<HTMLElement>('.room-slots')!;
+  const inspect = app.querySelector<HTMLOListElement>('.room-inspect')!;
+  const rotate = app.querySelector<HTMLButtonElement>('.room-rotate')!;
+  const remove = app.querySelector<HTMLButtonElement>('.room-remove')!;
+  const undo = app.querySelector<HTMLButtonElement>('.room-undo')!;
+  const reset = app.querySelector<HTMLButtonElement>('.room-reset')!;
+  const nameOf = (id: string) => objects.find((o) => o.id === id)?.name ?? id;
+
+  // Objects and their locks are built once, with textContent.
+  for (const object of objects) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.object = object.id;
+    button.textContent = object.name;
+    const source = document.createElement('span');
+    source.className = 'room-source';
+    source.textContent = object.owned ? ` ${object.source}` : ` Locked: ${object.howToEarn}`;
+    if (!object.owned) {
+      button.disabled = true;
+      item.classList.add('locked');
+    }
+    button.addEventListener('click', () => {
+      selected = object.id;
+      const placed = placementOf(editor.current, object.id);
+      status.textContent = placed
+        ? `Picked ${object.name}. Choose a spot, or use arrow keys on the room picture.`
+        : `Picked ${object.name}. Choose a spot to place it.`;
+      update();
+    });
+    item.append(button, source);
+    collection.append(item);
+  }
+
+  for (const slot of ROOM_SLOTS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.slot = slot.id;
+    button.addEventListener('click', () => chooseSlot(slot.id));
+    slots.append(button);
+  }
+
+  function chooseSlot(slotId: string) {
+    const here = editor.current.placements.find((p) => p.slot === slotId);
+    if (!selected) {
+      if (here) {
+        selected = here.objectId;
+        status.textContent = `Picked ${nameOf(here.objectId)}.`;
+        update();
+      } else status.textContent = 'Pick an object from your collection first.';
+      return;
+    }
+    act({ type: 'place', objectId: selected, slot: slotId });
+  }
+
+  function act(action: RoomAction) {
+    const next = editorApply(editor, action, owned);
+    if (next === editor) {
+      if (action.type === 'move') status.textContent = 'That is the edge of the room.';
+      return;
+    }
+    editor = next;
+    confirmReset = false;
+    reset.textContent = 'Clear the room';
+    const place = selected && placementOf(editor.current, selected);
+    const where = place && ROOM_SLOTS.find((s) => s.id === place.slot);
+    if (action.type === 'backdrop')
+      status.textContent = `Backdrop: ${BACKDROP_NAMES[action.backdrop]}.`;
+    else if (action.type === 'remove')
+      status.textContent = `${nameOf(action.objectId)} is back in your collection.`;
+    else if (where) status.textContent = describeSlot(editor.current, objects, where);
+    persist();
+    update();
+  }
+
+  function persist() {
+    if (!roomStore.save(editor.current))
+      status.textContent += ' This browser would not keep the room.';
+  }
+
+  function update() {
+    const layout = editor.current;
+    const placed = selected ? placementOf(layout, selected) : undefined;
+    for (const button of collection.querySelectorAll<HTMLButtonElement>('button')) {
+      button.setAttribute('aria-pressed', String(button.dataset.object === selected));
+      const inRoom = placementOf(layout, button.dataset.object!);
+      button.classList.toggle('in-room', Boolean(inRoom));
+    }
+    for (const button of slots.querySelectorAll<HTMLButtonElement>('button')) {
+      const slot = ROOM_SLOTS.find((s) => s.id === button.dataset.slot)!;
+      const here = layout.placements.find((p) => p.slot === slot.id);
+      button.textContent = here ? nameOf(here.objectId) : '·';
+      button.setAttribute('aria-label', describeSlot(layout, objects, slot));
+      button.classList.toggle('picked', Boolean(here && here.objectId === selected));
+    }
+    for (const input of app.querySelectorAll<HTMLInputElement>('input[name="room-backdrop"]')) {
+      input.checked = input.value === layout.backdrop;
+    }
+    rotate.disabled = !placed;
+    remove.disabled = !placed;
+    undo.disabled = editor.history.length === 0;
+    app.querySelector('.room-summary')!.textContent = describeRoom(layout);
+    inspect.replaceChildren(
+      ...ROOM_SLOTS.map((slot) => {
+        const item = document.createElement('li');
+        item.textContent = describeSlot(layout, objects, slot);
+        return item;
+      }),
+    );
+    canvas.setAttribute('aria-label', `Prize room picture. ${describeRoom(layout)}`);
+    look.textContent = describeLook(layout, objects, ROOM_SLOTS[visitor], looking);
+    if (ctx) drawRoom(ctx, layout, objects, { selected, visitorSlot: ROOM_SLOTS[visitor].id });
+  }
+
+  function walk(step: number) {
+    visitor = (visitor + step + ROOM_SLOTS.length) % ROOM_SLOTS.length;
+    looking = true;
+    update();
+  }
+
+  for (const input of app.querySelectorAll<HTMLInputElement>('input[name="room-backdrop"]')) {
+    input.addEventListener('change', () =>
+      act({ type: 'backdrop', backdrop: input.value as (typeof BACKDROPS)[number] }),
+    );
+  }
+  rotate.addEventListener('click', () => selected && act({ type: 'rotate', objectId: selected }));
+  remove.addEventListener('click', () => selected && act({ type: 'remove', objectId: selected }));
+  undo.addEventListener('click', () => {
+    editor = editorUndo(editor);
+    status.textContent = 'Undone.';
+    persist();
+    update();
+  });
+  // Clearing asks once more, so a stray press does not lose the room.
+  reset.addEventListener('click', () => {
+    if (!confirmReset) {
+      confirmReset = true;
+      reset.textContent = 'Press again to clear the room';
+      return;
+    }
+    confirmReset = false;
+    reset.textContent = 'Clear the room';
+    editor = editorReset(editor);
+    status.textContent = 'Room cleared. Scores and prizes are untouched. Undo brings it back.';
+    persist();
+    update();
+  });
+  app.querySelector('.room-walk-prev')!.addEventListener('click', () => walk(-1));
+  app.querySelector('.room-walk-next')!.addEventListener('click', () => walk(1));
+
+  const arrows: Record<string, Direction> = {
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+    ArrowUp: 'up',
+    ArrowDown: 'down',
+  };
+  canvas.addEventListener('keydown', (event) => {
+    const direction = arrows[event.key];
+    if (direction) {
+      event.preventDefault();
+      if (selected && placementOf(editor.current, selected)) {
+        act({ type: 'move', objectId: selected, direction });
+      } else {
+        const next = neighbourSlot(ROOM_SLOTS[visitor].id, direction);
+        if (next) walk(ROOM_SLOTS.findIndex((s) => s.id === next) - visitor);
+      }
+    } else if ((event.key === 'r' || event.key === 'R') && selected) {
+      act({ type: 'rotate', objectId: selected });
+    } else if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
+      event.preventDefault();
+      act({ type: 'remove', objectId: selected });
+    }
+  });
+  canvas.addEventListener('click', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) * ROOM_SIZE.width) / rect.width;
+    const y = ((event.clientY - rect.top) * ROOM_SIZE.height) / rect.height;
+    const slot = slotAt(x, y);
+    if (slot) chooseSlot(slot.id);
+  });
+
+  if (!ctx) canvas.hidden = true;
+  update();
+  app.querySelector<HTMLElement>('h1')!.focus();
+  stop = onEscapeKey(window, () => (location.hash = '#/prizes'));
 }
 
 function renderTrail() {
@@ -2810,6 +3079,7 @@ function route() {
   const game = match ? registry.get(match[1]) : undefined;
   if (game) renderGame(game);
   else if (location.hash === '#/prizes') renderPrizes();
+  else if (location.hash === '#/room') renderRoom();
   else if (location.hash === '#/trail') renderTrail();
   else if (location.hash === '#/circuit') renderCircuit();
   else if (location.hash === '#/party') renderParty();
