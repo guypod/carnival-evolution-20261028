@@ -1856,7 +1856,7 @@ function renderPlush() {
         <a href="#/">← Back to the midway</a>
         <h1 id="plush-title" tabindex="-1">Plush Workshop</h1>
       </div>
-      <p class="plush-intro">Stitch your own carnival plush. Pick a body, a face and a colour, then drag parts from the tray onto the plush, or use their buttons. Drag a part off the plush to take it away.</p>
+      <p class="plush-intro">Stitch your own carnival plush. Pick a body, a face and a colour, then drag parts from the tray onto the plush, or use their buttons. Drag a part's button off the plush, or press it again, to take the part away.</p>
       <div class="plush-bench">
         <canvas class="plush-preview" aria-hidden="true"></canvas>
         <div class="plush-controls">
@@ -1873,7 +1873,7 @@ function renderPlush() {
             ${hasScore ? '' : '<p class="note">Play any booth to unlock a crown.</p>'}
           </fieldset>
           <label for="plush-name">Name (optional, up to ${PLUSH_NAME_MAX} characters)</label>
-          <input id="plush-name" type="text" autocomplete="off" maxlength="${PLUSH_NAME_MAX}" />
+          <input id="plush-name" type="text" autocomplete="off" />
           <div class="plush-actions">
             <button type="button" class="plush-undo">Undo</button>
             <button type="button" class="plush-reset">Start over</button>
@@ -1937,7 +1937,7 @@ function renderPlush() {
   }
 
   // A part is attached with its button, or by dragging it onto the plush,
-  // where it snaps into place. Dragging an attached part off the plush removes it.
+  // where it snaps into place. Dropping a part's button anywhere off the plush removes it.
   let dragging:
     { part: PlushAccessory; startX: number; startY: number; moved: boolean } | undefined;
   const overCanvas = (x: number, y: number) => {
@@ -1982,7 +1982,12 @@ function renderPlush() {
     });
   }
 
-  name.addEventListener('input', () => act({ type: 'name', name: name.value }));
+  // The limit counts characters as cleanPlushName does, not the UTF-16 units maxlength counts.
+  name.addEventListener('input', () => {
+    const chars = Array.from(name.value);
+    if (chars.length > PLUSH_NAME_MAX) name.value = chars.slice(0, PLUSH_NAME_MAX).join('');
+    act({ type: 'name', name: name.value });
+  });
   name.addEventListener('blur', update);
   undo.addEventListener('click', () => {
     bench = benchUndo(bench);

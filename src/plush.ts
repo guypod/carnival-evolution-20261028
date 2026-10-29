@@ -274,7 +274,8 @@ export function drawPlush(ctx: CanvasRenderingContext2D, plush: Plush) {
     ctx.stroke();
   }
 
-  const top = plush.body === 'bunny' ? cy - 190 : plush.body === 'bear' ? cy - 115 : cy - 95;
+  // The bunny's hat sits on its head between the ears, so it stays inside the canvas.
+  const top = plush.body === 'bunny' ? cy - 100 : plush.body === 'bear' ? cy - 115 : cy - 95;
   ctx.strokeStyle = c.background;
   if (plush.accessories.includes('party-hat')) {
     shape(() => {
