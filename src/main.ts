@@ -705,8 +705,9 @@ function setUpPhotoMode() {
   const setOpen = (next: boolean) => {
     open = next;
     session += 1;
-    pending = false;
-    take.disabled = false;
+    // An encode from an earlier session still counts as pending, so exiting
+    // and reopening cannot start a second one alongside it.
+    take.disabled = pending;
     toggle.setAttribute('aria-expanded', String(open));
     panel.hidden = !open;
     outline.hidden = !open;
@@ -746,9 +747,9 @@ function setUpPhotoMode() {
     pending = true;
     take.disabled = true;
     shot.toBlob((blob) => {
-      if (!open || owner !== session) return;
       pending = false;
       take.disabled = false;
+      if (!open || owner !== session) return;
       if (!blob) {
         status.textContent = 'This browser could not make the photo.';
         return;
