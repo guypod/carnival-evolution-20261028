@@ -333,6 +333,7 @@ import {
   tourMemory,
   type TourState,
 } from './welcome-tour';
+import { watersideMaxHeight, watersideOverflows } from './waterside-layout';
 import { PHOTO_FRAMES, createCaptureGuard, frameRect, photoFilename } from './photo-mode';
 
 applyTheme();
@@ -672,6 +673,7 @@ function renderMidway() {
   setUpSceneToggle(midway.setScene);
   const stopLightGarden = setUpLightGarden(midway.setLightGarden, midway.editLightGarden);
   const stopPhoto = setUpPhotoMode();
+  const stopWatersideFit = setUpWatersideFit();
   setUpMotionToggle(midway.setMotion);
   setUpViewControls(midway.setViewScale);
   app.querySelector('.view-locate')!.addEventListener('click', midway.locate);
@@ -702,6 +704,7 @@ function renderMidway() {
     stopGuide();
     stopLightGarden();
     stopPhoto();
+    stopWatersideFit();
     midway.stop();
   };
 }
@@ -929,6 +932,46 @@ function setUpHomeward(back: () => boolean) {
       // A panel that went away must not drop focus to the page.
       if (hadFocus && box.hidden) app.querySelector<HTMLElement>('.midway-map')?.focus();
     },
+  };
+}
+
+// Keeps the waterside stack under the top controls: its height is measured
+// against where the map view buttons end, and anything taller scrolls inside
+// the stack, so short or zoomed screens keep Help, Guide, Photo and the map
+// view reachable. Focus moving into the stack scrolls the focused button into
+// view. On narrow screens the walk line shares the stack.
+function setUpWatersideFit() {
+  const midway = app.querySelector<HTMLElement>('.midway')!;
+  const bottom = app.querySelector<HTMLElement>('.midway-bottom')!;
+  const waterside = app.querySelector<HTMLElement>('.midway-waterside')!;
+  const view = app.querySelector<HTMLElement>('.midway-view')!;
+  const fit = () => {
+    const stack = getComputedStyle(bottom).display === 'contents' ? waterside : bottom;
+    const other = stack === bottom ? waterside : bottom;
+    other.style.maxHeight = '';
+    delete other.dataset.overflow;
+    const box = midway.getBoundingClientRect();
+    const inset = parseFloat(getComputedStyle(stack).bottom) || 0;
+    const max = watersideMaxHeight(
+      box.height,
+      view.getBoundingClientRect().bottom - box.top,
+      inset,
+    );
+    stack.style.maxHeight = `${max}px`;
+    if (watersideOverflows(stack.scrollHeight, max)) stack.dataset.overflow = '';
+    else delete stack.dataset.overflow;
+  };
+  const observer = new ResizeObserver(fit);
+  [
+    midway,
+    view,
+    ...bottom.querySelectorAll<HTMLElement>('.midway-route, .midway-waterside > *'),
+  ].forEach((element) => observer.observe(element));
+  window.addEventListener('resize', fit);
+  fit();
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('resize', fit);
   };
 }
 

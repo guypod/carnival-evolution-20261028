@@ -1545,6 +1545,27 @@ kbd {
   margin: 0;
 }
 
+/*
+ * The waterside stack's max-height is set from main.ts so it ends under the
+ * top controls; taller content scrolls inside it. Panels keep their height.
+ */
+.midway-waterside,
+.midway-bottom {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.midway-waterside > *,
+.midway-bottom > * {
+  flex-shrink: 0;
+}
+
+/* A scrolling stack takes the pointer so its scrollbar can be dragged. */
+.midway-waterside[data-overflow],
+.midway-bottom[data-overflow] {
+  pointer-events: auto;
+}
+
 /* On wide screens the walk line and the waterside panels place themselves. */
 .midway-bottom {
   display: contents;
