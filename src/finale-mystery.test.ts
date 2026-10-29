@@ -222,6 +222,21 @@ describe('finale mystery: saving', () => {
     expect(misreadHint(loaded)).toBe(misreadHint(misread));
   });
 
+  it('never accepts a rejected theory when a save is loaded, even mid-reinvestigation', () => {
+    // Ledger, Otto and log reject stencil; then the carousel is looked at again as the star.
+    const partial = play(...lampTrail, stencil, { type: 'look-again', at: 'carousel' });
+    const repainted = mysteryStep(partial, {
+      type: 'investigate',
+      at: 'carousel',
+      approach: 'star',
+    });
+    expect(repainted.misread).toBe('stencil');
+    const loaded = parseMystery(JSON.stringify(repainted));
+    expect(loaded.theory).toBeUndefined();
+    expect(sameMystery(loaded, repainted)).toBe(true);
+    expect(mysteryStep(loaded, { type: 'theorize', theory: 'rescue' }).theory).toBe('rescue');
+  });
+
   it('reads malformed or impossible saves safely', () => {
     expect(parseMystery('nope')).toEqual(NEW_MYSTERY);
     expect(parseMystery('null')).toEqual(NEW_MYSTERY);

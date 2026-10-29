@@ -301,11 +301,13 @@ export function parseMystery(raw: string | null): MysteryState {
       if (typeof approach === 'string' && approach in APPROACHES)
         state = mysteryStep(state, { type: 'investigate', at, approach: approach as Approach });
     }
-    for (const key of ['misread', 'theory'] as const) {
-      const theory = value[key];
-      if (typeof theory === 'string' && theory in THEORIES)
-        state = mysteryStep(state, { type: 'theorize', theory: theory as Theory });
-    }
+    const theory = value.theory;
+    if (typeof theory === 'string' && theory in THEORIES)
+      state = mysteryStep(state, { type: 'theorize', theory: theory as Theory });
+    // A rejected theory is history, not a submission: restore it as it was, never accept it.
+    const misread = value.misread;
+    if (!state.theory && typeof misread === 'string' && misread in THEORIES)
+      state = { ...state, misread: misread as Theory };
     const ending = value.ending;
     if (typeof ending === 'string' && ending in ENDINGS)
       state = mysteryStep(state, { type: 'resolve', ending: ending as MysteryEnding });
