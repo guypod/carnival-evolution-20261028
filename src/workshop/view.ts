@@ -333,11 +333,17 @@ export function startWorkshop(
     ctx.moveTo(pin.x - 50 * Math.cos(leverA), pin.y - 50 * Math.sin(leverA));
     ctx.lineTo(pin.x + 140 * Math.cos(leverA), pin.y + 140 * Math.sin(leverA));
     ctx.stroke();
+    // The holes ride on the lever: each keeps its distance from the pin as the lever turns.
+    const onLever = (t: { x: number; y: number }) => {
+      const d = Math.hypot(t.x - pin.x, t.y - pin.y);
+      return { x: pin.x + d * Math.cos(leverA), y: pin.y + d * Math.sin(leverA) };
+    };
     for (const t of bits()) {
       if (t.kind !== 'slot') continue;
+      const at = onLever(t);
       ctx.fillStyle = colors.background;
       ctx.beginPath();
-      ctx.arc(t.x, t.y, 5, 0, Math.PI * 2);
+      ctx.arc(at.x, at.y, 5, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.fillStyle = bench.toy.pinTight ? colors.accent : colors.danger;
@@ -355,7 +361,8 @@ export function startWorkshop(
       x: hammerPivot.x + Math.cos(ha) * 130,
       y: hammerPivot.y + Math.sin(ha) * 130,
     };
-    const rodAt = bits().find((t) => t.id === 'rod');
+    const rodTarget = bits().find((t) => t.id === 'rod');
+    const rodAt = rodTarget && onLever(rodTarget);
     if (rodAt && held !== 'rod') {
       ctx.strokeStyle = colors.muted;
       ctx.lineWidth = 4;
