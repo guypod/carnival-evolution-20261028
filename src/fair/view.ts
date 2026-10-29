@@ -206,6 +206,11 @@ export function startFair(
   const tourStore = createCampaignStore(storage);
   /** The travelling fair campaign while it is being played; undefined in the sandbox. */
   let tour: Campaign | undefined;
+  /** The campaign set aside on the way back to the plaza, so unsaved progress survives the switch. */
+  let parkedTour: Campaign | undefined;
+  /** Whether the campaign in memory is also in storage. */
+  let tourSaved = true;
+  const UNSAVED = 'This browser could not save the campaign. It is kept until you leave the page.';
   /** The sandbox plaza set aside while the campaign is played, restored as it was on return. */
   let sandbox: { layout: Layout; history: Layout[]; day: typeof day } | undefined;
 
@@ -241,7 +246,7 @@ export function startFair(
   });
 
   function say(text: string) {
-    status.textContent = text;
+    status.textContent = tour && !tourSaved ? `${text} ${UNSAVED}` : text;
   }
 
   function describe(cell: Cell): string {
@@ -273,7 +278,8 @@ export function startFair(
 
   function saveTour(next: Campaign) {
     tour = next;
-    if (!tourStore.save(next)) say('This browser could not save the campaign. It is still here.');
+    tourSaved = tourStore.save(next);
+    if (!tourSaved) status.textContent = UNSAVED;
   }
 
   /** Placing on the grid: the sandbox's budget rules, or the stop's ground and packed wagons. */
@@ -385,8 +391,8 @@ export function startFair(
   function enterTour() {
     if (gatesOpen()) closeDay(false);
     sandbox = { layout, history, day };
-    const loaded = tourStore.load();
-    tour = loaded;
+    if (!parkedTour) tourSaved = true;
+    tour = parkedTour ?? tourStore.load();
     history = [];
     day = tour.at ? { phase: 'build' } : undefined;
     setLayout(tour.layout);
@@ -402,12 +408,16 @@ export function startFair(
   function leaveTour() {
     if (gatesOpen()) closeDay(false);
     const back = sandbox!;
+    const saved = tourSaved;
+    parkedTour = tour;
     tour = undefined;
     sandbox = undefined;
     history = back.history;
     day = back.day;
     setLayout(back.layout);
-    say('Back to your plaza, exactly as you left it. The campaign is saved.');
+    say(
+      `Back to your plaza, exactly as you left it. ${saved ? 'The campaign is saved.' : 'The campaign is kept until you leave the page, but this browser could not save it.'}`,
+    );
   }
 
   function tourAct(name: string): boolean {
@@ -425,17 +435,23 @@ export function startFair(
       )
         return true;
       if (gatesOpen()) closeDay(false);
-      tourStore.reset();
+      tourSaved = tourStore.reset();
       tour = NEW_CAMPAIGN;
       history = [];
       day = undefined;
       setLayout(tour.layout);
-      say('Campaign reset. Choose the first stop. Your plaza and scores are untouched.');
+      say(
+        tourSaved
+          ? 'Campaign reset. Choose the first stop. Your plaza and scores are untouched.'
+          : 'Campaign reset for this visit, but this browser could not clear the saved campaign, so it may return after a reload. Choose the first stop.',
+      );
       return true;
     }
     if (gatesOpen()) {
-      say(GATES_OPEN);
-      return true;
+      // Pause, finish and end early still reach the day; only the campaign's own buttons wait.
+      const own = /^(go|pack|unpack)-/.test(name);
+      if (own) say(GATES_OPEN);
+      return own;
     }
     const go = STOPS.find((s) => name === `go-${s.id}`);
     if (go) {
@@ -549,10 +565,11 @@ export function startFair(
       const problem = tour && (stop ? layoutProblem(stop, tour.packing, layout) : 'Choose a stop.');
       if (problem) return (say(`The gates cannot open yet: ${problem}`), draw());
       // The campaign keeps its own save, so opening its gates never writes the sandbox plaza.
-      const saved = tour ? tourStore.save(tour) : store.save(layout);
+      const saved = tour ? (tourSaved = tourStore.save(tour)) : store.save(layout);
       day = { phase: 'open', freeSim: sim, last: day.last };
       carrying = undefined;
-      sim = { ...openGates(layout, forecast), paused: quiet };
+      // Forecasts belong to the sandbox, so a campaign day always runs in clear skies.
+      sim = { ...openGates(layout, tour ? undefined : forecast), paused: quiet };
       selected = undefined;
       setPauseButton();
       say(
@@ -741,7 +758,7 @@ export function startFair(
   /** The forecast the grid shows: the one the gates opened under, or the one picked for the next try. */
   function shownForecast(): Weather | undefined {
     if (!day) return undefined;
-    return day.phase === 'open' ? sim.weather : forecast;
+    return day.phase === 'open' ? sim.weather : tour ? undefined : forecast;
   }
 
   /**

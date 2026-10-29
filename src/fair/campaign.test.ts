@@ -165,5 +165,21 @@ describe('choosing stops', () => {
     expect(parseCampaign({ ...old, keepsakes: [] })).toBeUndefined();
     expect(parseCampaign({ ...old, at: 'riverside' })).toBeUndefined();
     expect(parseCampaign({ ...old, at: 'hilltop' })?.at).toBe('hilltop');
+    expect(parseCampaign(old)?.at).toBeUndefined();
+  });
+
+  it('resumes an old save with work in progress at the stop it was playing', () => {
+    const old = {
+      ...NEW_CAMPAIGN,
+      stop: 1,
+      reputation: 2,
+      keepsakes: ['riverside'],
+      packing: { ...NEW_CAMPAIGN.packing, path: 2 },
+      layout: { '1,1': 'path' },
+    };
+    const c = parseCampaign(old)!;
+    expect(c.at).toBe('market');
+    expect(c.packing.path).toBe(2);
+    expect(c.layout).toEqual({ '1,1': 'path' });
   });
 });

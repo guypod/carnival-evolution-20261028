@@ -254,15 +254,18 @@ export function parseCampaign(raw: unknown): Campaign | undefined {
     if (!inBounds({ x: Number(m[1]), y: Number(m[2]) })) return undefined;
     layout[k] = piece as Piece;
   }
-  return {
+  const c: Campaign = {
     version: CAMPAIGN_VERSION,
     stop: d.stop as number,
     reputation: d.reputation as number,
     keepsakes: d.keepsakes as StopId[],
-    ...(d.at ? { at: d.at as StopId } : {}),
     packing,
     layout,
   };
+  // A first-checkpoint save with work in progress was playing the first stop not yet passed.
+  const started = Object.values(packing).some((n) => n > 0) || Object.keys(layout).length > 0;
+  const at = (d.at as StopId | undefined) ?? (started ? unvisited(c)[0]?.id : undefined);
+  return at ? { ...c, at } : c;
 }
 
 type CampaignStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
