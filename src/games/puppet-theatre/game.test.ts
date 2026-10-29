@@ -4,6 +4,8 @@ import {
   HOLD_CAPTION,
   PRACTICE_BUTTON,
   REHEARSE_BUTTON,
+  UNDO_BUTTON,
+  UNDO_HOLD_CAPTION,
   DISCARD_BUTTON,
   RETRY_BUTTON,
   ENDINGS,
@@ -166,6 +168,7 @@ describe('undo and rehearse', () => {
     expect(rewinds({ type: 'undo' })).toBe(true);
     expect(rewinds({ type: 'rehearse' })).toBe(true);
     expect(rewinds({ type: 'replay' })).toBe(true);
+    expect(rewinds({ type: 'askReset' })).toBe(true);
     expect(rewinds({ type: 'move', id: 'knight', x: 200, record: false })).toBe(false);
   });
 
@@ -560,6 +563,42 @@ describe('rehearsal curtain and scene reset', () => {
     const at = (b: { x: number; y: number }) => buttonAction(stage, b.x + 5, b.y + 5);
     expect(at(PRACTICE_BUTTON)).toEqual({ type: 'practice' });
     expect(at(REHEARSE_BUTTON)).toEqual({ type: 'askReset' });
+  });
+
+  it('ignores drag events while the reset question is open', () => {
+    const holding = act(toSceneTwo(), { type: 'move', id: 'cake', x: 620, record: false });
+    const asking = act(holding, { type: 'askReset' });
+    const released = run(
+      asking,
+      { type: 'move', id: 'cake', x: 630, record: false },
+      { type: 'drop', id: 'cake', record: false },
+      { type: 'practice' },
+    );
+    expect(released).toBe(asking);
+    expect(released.confirmReset).toBe(true);
+    expect(released.stage.scene).toBe(2);
+    expect(act(released, { type: 'rehearse' }).stage.positions.cake).toBe(
+      createStage().positions.cake,
+    );
+  });
+
+  it('confirms or cancels the reset with the pointer', () => {
+    const stage = createStage();
+    const at = (b: { x: number; y: number }) => buttonAction(stage, b.x + 5, b.y + 5, false, true);
+    expect(at(REHEARSE_BUTTON)).toEqual({ type: 'rehearse' });
+    expect(at(UNDO_BUTTON)).toEqual({ type: 'cancel' });
+    expect(at(PRACTICE_BUTTON)).toBeUndefined();
+  });
+
+  it('rehearsal undo stops at the scene start and keeps the earlier history', () => {
+    const live = toSceneTwo();
+    const practising = act(live, { type: 'practice' });
+    const held = act(act(practising, { type: 'undo' }), { type: 'undo' });
+    expect(held.stage.scene).toBe(2);
+    expect(held.stage.caption).toBe(UNDO_HOLD_CAPTION);
+    expect(held.history).toEqual(live.history);
+    const moved = act(practising, { type: 'move', id: 'cake', x: 500 });
+    expect(act(moved, { type: 'undo' }).stage.positions.cake).toBe(createStage().positions.cake);
   });
 
   it('keyboard play in live mode still ends a scene with an audience reaction', () => {

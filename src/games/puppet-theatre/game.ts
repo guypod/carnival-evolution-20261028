@@ -57,7 +57,9 @@ export const REACTIONS: Record<AudienceEvent, { mood: Mood; caption: string }> =
 export const PATIENT_CAPTION = 'The audience waits patiently.';
 export const PRACTICE_CAPTION = 'Rehearsal: the curtain is down and the audience is away.';
 export const HOLD_CAPTION = 'Rehearsal: that would finish the scene. Go live to perform it.';
-export const CONFIRM_CAPTION = 'Reset this scene to how it began? Enter or Y resets, N cancels.';
+export const CONFIRM_CAPTION =
+  'Reset this scene to how it began? Enter, Y or Yes resets. N or No cancels.';
+export const UNDO_HOLD_CAPTION = 'Rehearsal: undo stops at the start of this scene.';
 
 export interface Audience {
   mood: Mood;
@@ -292,29 +294,34 @@ function apply(stage: StageState, action: Action): StageState {
 
 /** Applies one action to the theatre. Undo, rehearse and replay rewind; the rest change the stage. */
 export function act(theatre: Theatre, action: Action): Theatre {
-  if (action.type === 'cancel') {
-    return theatre.confirmReset ? { ...theatre, confirmReset: false } : theatre;
+  // While the reset question is open, only its answer counts, so a drag still
+  // in progress cannot change the stage or dismiss the question.
+  if (theatre.confirmReset) {
+    if (action.type === 'cancel') return { ...theatre, confirmReset: false };
+    if (action.type !== 'rehearse') return theatre;
   }
+  if (action.type === 'cancel') return theatre;
   if (action.type === 'askReset') {
     return theatre.stage.scene === 'curtain' ? theatre : { ...theatre, confirmReset: true };
   }
   if (action.type === 'practice') {
-    if (theatre.live) return { ...theatre, ...theatre.live, live: null, confirmReset: false };
+    if (theatre.live) return { ...theatre, ...theatre.live, live: null };
     if (theatre.stage.scene === 'curtain') return theatre;
     const { stage, history, sceneStart } = theatre;
-    return { ...theatre, live: { stage, history, sceneStart }, confirmReset: false };
+    return { ...theatre, live: { stage, history, sceneStart } };
   }
   const next = actOnStage(
     theatre.confirmReset ? { ...theatre, confirmReset: false } : theatre,
     action,
   );
-  if (!theatre.live || next === theatre) return next;
-  // In rehearsal a scene never ends and the audience stays away.
-  const held =
-    next.stage.scene !== theatre.stage.scene
-      ? { ...theatre.stage, caption: HOLD_CAPTION }
-      : { ...next.stage, audience: theatre.stage.audience };
-  return { ...next, stage: held, sceneStart: theatre.sceneStart };
+  if (!theatre.live || next.stage === theatre.stage) return next;
+  // In rehearsal a scene never ends and the audience stays away. A held change
+  // leaves the undo history as it was.
+  if (next.stage.scene !== theatre.stage.scene) {
+    const caption = action.type === 'undo' ? UNDO_HOLD_CAPTION : HOLD_CAPTION;
+    return { ...theatre, confirmReset: false, stage: { ...theatre.stage, caption } };
+  }
+  return { ...next, stage: { ...next.stage, audience: theatre.stage.audience } };
 }
 
 function actOnStage(theatre: Theatre, action: Action): Theatre {
@@ -353,10 +360,11 @@ function actOnStage(theatre: Theatre, action: Action): Theatre {
   };
 }
 
-/** True for the actions that rewind the stage, which end any drag in progress. */
+/** True for the actions that rewind the stage or ask to, which end any drag in progress. */
 export const rewinds = (action: Action) =>
   action.type === 'undo' ||
   action.type === 'rehearse' ||
+  action.type === 'askReset' ||
   action.type === 'replay' ||
   action.type === 'discard' ||
   action.type === 'practice';
@@ -530,7 +538,13 @@ export function buttonAction(
   x: number,
   y: number,
   scoreFailed = false,
+  confirmReset = false,
 ): Action | undefined {
+  if (confirmReset) {
+    if (inBox(REHEARSE_BUTTON, x, y)) return { type: 'rehearse' };
+    if (inBox(UNDO_BUTTON, x, y)) return { type: 'cancel' };
+    return undefined;
+  }
   if (inBox(PRACTICE_BUTTON, x, y) && stage.scene !== 'curtain') return { type: 'practice' };
   if (stage.scene === 'curtain' && scoreFailed) {
     if (inBox(RETRY_BUTTON, x, y)) return { type: 'replay' };
@@ -841,8 +855,13 @@ function draw(ctx: CanvasRenderingContext2D, theatre: Theatre) {
   }
   const actor = isActor(stage.selected) ? stage.selected : 'knight';
   for (const b of POSE_BUTTONS) drawButton(ctx, b, b.pose, stage.poses[actor] === b.pose);
-  drawButton(ctx, UNDO_BUTTON, 'Undo', false);
-  drawButton(ctx, REHEARSE_BUTTON, 'Reset scene', theatre.confirmReset);
+  drawButton(ctx, UNDO_BUTTON, theatre.confirmReset ? 'No' : 'Undo', false);
+  drawButton(
+    ctx,
+    REHEARSE_BUTTON,
+    theatre.confirmReset ? 'Yes, reset' : 'Reset scene',
+    theatre.confirmReset,
+  );
   drawButton(
     ctx,
     PRACTICE_BUTTON,
@@ -890,8 +909,9 @@ export const puppetTheatre: CarnivalGame = {
     };
     const onDown = (event: PointerEvent) => {
       const { x, y } = toCanvas(event);
-      const button = buttonAction(theatre.stage, x, y, theatre.scoreFailed);
+      const button = buttonAction(theatre.stage, x, y, theatre.scoreFailed, theatre.confirmReset);
       if (button) return run(button);
+      if (theatre.confirmReset) return;
       const id = itemAt(theatre.stage, x, y);
       if (!id) return;
       dragging = id;

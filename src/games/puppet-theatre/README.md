@@ -48,8 +48,8 @@ off.
 | Release a dragged prop                | `Space` or `Enter` | Drop the selected prop                            |
 | Undo button                           | `Z`                | Undo the last change                              |
 | Reset scene button                    | `R`                | Ask to put the current scene back to how it began |
-| Confirm the reset                     | `Enter` or `Y`     | Reset the scene                                   |
-| Cancel the reset                      | `N`                | Keep the scene as it is                           |
+| Yes, reset button (while asked)       | `Enter` or `Y`     | Reset the scene                                   |
+| No button (while asked)               | `N`                | Keep the scene as it is                           |
 | Rehearse in private / go live button  | `P`                | Lower or raise the rehearsal curtain              |
 | Click after the curtain               | `Space` or `Enter` | Perform it again                                  |
 
@@ -67,10 +67,16 @@ exactly as you left it, with its undo history, so nothing practised carries
 over. Leaving the theatre with Escape while rehearsing drops the rehearsal, and
 you come back to the live performance.
 
-**Reset scene** (`R`) asks first. It puts only the scene on stage back to how
+**Reset scene** (`R`) asks first. While it asks, the Undo and Reset scene
+buttons become **No** and **Yes, reset**, and everything else waits for the
+answer: other keys, the rehearsal switch and any drag are ignored. A reset puts only the scene on stage back to how
 it began, and can be undone. It keeps the endings you have found, and never
 touches your scores or any other game. Reset during rehearsal resets the
 rehearsal only.
+
+In rehearsal, undo works within the scene on stage. It never goes back into an
+earlier scene: it stops at the scene start, says so, and keeps the live undo
+history untouched.
 
 ## Scoring
 
