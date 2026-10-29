@@ -55,6 +55,9 @@ export const REACTIONS: Record<AudienceEvent, { mood: Mood; caption: string }> =
   fall: { mood: 'amused', caption: 'The audience laughs at the tumble.' },
 };
 export const PATIENT_CAPTION = 'The audience waits patiently.';
+export const PRACTICE_CAPTION = 'Rehearsal: the curtain is down and the audience is away.';
+export const HOLD_CAPTION = 'Rehearsal: that would finish the scene. Go live to perform it.';
+export const CONFIRM_CAPTION = 'Reset this scene to how it began? Enter or Y resets, N cancels.';
 
 export interface Audience {
   mood: Mood;
@@ -91,6 +94,14 @@ export interface Theatre {
   scoreTaken: boolean;
   /** True while the finished performance's score write keeps failing. */
   scoreFailed: boolean;
+  /**
+   * The live performance, kept aside while the rehearsal curtain is down. In
+   * rehearsal the audience never reacts and no scene ends; going live puts
+   * this back exactly, so nothing practised carries over. Null when live.
+   */
+  live: Pick<Theatre, 'stage' | 'history' | 'sceneStart'> | null;
+  /** True while the scene reset waits for the player to confirm or cancel it. */
+  confirmReset: boolean;
 }
 
 export type Action =
@@ -102,6 +113,9 @@ export type Action =
   | { type: 'grab'; id: ItemId }
   | { type: 'undo' }
   | { type: 'rehearse' }
+  | { type: 'askReset' }
+  | { type: 'cancel' }
+  | { type: 'practice' }
   | { type: 'replay' }
   | { type: 'discard' };
 
@@ -143,6 +157,8 @@ export function createTheatre(
     // A restored finished performance was scored before it was saved.
     scoreTaken: stage.scene === 'curtain',
     scoreFailed: false,
+    live: null,
+    confirmReset: false,
   };
 }
 
@@ -276,6 +292,32 @@ function apply(stage: StageState, action: Action): StageState {
 
 /** Applies one action to the theatre. Undo, rehearse and replay rewind; the rest change the stage. */
 export function act(theatre: Theatre, action: Action): Theatre {
+  if (action.type === 'cancel') {
+    return theatre.confirmReset ? { ...theatre, confirmReset: false } : theatre;
+  }
+  if (action.type === 'askReset') {
+    return theatre.stage.scene === 'curtain' ? theatre : { ...theatre, confirmReset: true };
+  }
+  if (action.type === 'practice') {
+    if (theatre.live) return { ...theatre, ...theatre.live, live: null, confirmReset: false };
+    if (theatre.stage.scene === 'curtain') return theatre;
+    const { stage, history, sceneStart } = theatre;
+    return { ...theatre, live: { stage, history, sceneStart }, confirmReset: false };
+  }
+  const next = actOnStage(
+    theatre.confirmReset ? { ...theatre, confirmReset: false } : theatre,
+    action,
+  );
+  if (!theatre.live || next === theatre) return next;
+  // In rehearsal a scene never ends and the audience stays away.
+  const held =
+    next.stage.scene !== theatre.stage.scene
+      ? { ...theatre.stage, caption: HOLD_CAPTION }
+      : { ...next.stage, audience: theatre.stage.audience };
+  return { ...next, stage: held, sceneStart: theatre.sceneStart };
+}
+
+function actOnStage(theatre: Theatre, action: Action): Theatre {
   const { stage } = theatre;
   if (action.type === 'undo') {
     const previous = theatre.history.at(-1);
@@ -316,7 +358,8 @@ export const rewinds = (action: Action) =>
   action.type === 'undo' ||
   action.type === 'rehearse' ||
   action.type === 'replay' ||
-  action.type === 'discard';
+  action.type === 'discard' ||
+  action.type === 'practice';
 
 /** The performance's score once the curtain falls: one point per ending seen so far. */
 export function takeFinalScore(theatre: Theatre): number | null {
@@ -473,6 +516,7 @@ export const POSE_BUTTONS = POSES.map((pose, i) => ({
 }));
 export const UNDO_BUTTON = { x: 600, y: 440, w: 80, h: 34 };
 export const REHEARSE_BUTTON = { x: 690, y: 440, w: 100, h: 34 };
+export const PRACTICE_BUTTON = { x: 600, y: 398, w: 190, h: 34 };
 export const RETRY_BUTTON = { x: 230, y: 420, w: 140, h: 34 };
 export const DISCARD_BUTTON = { x: 390, y: 420, w: 220, h: 34 };
 
@@ -487,6 +531,7 @@ export function buttonAction(
   y: number,
   scoreFailed = false,
 ): Action | undefined {
+  if (inBox(PRACTICE_BUTTON, x, y) && stage.scene !== 'curtain') return { type: 'practice' };
   if (stage.scene === 'curtain' && scoreFailed) {
     if (inBox(RETRY_BUTTON, x, y)) return { type: 'replay' };
     if (inBox(DISCARD_BUTTON, x, y)) return { type: 'discard' };
@@ -494,7 +539,7 @@ export function buttonAction(
   }
   if (stage.scene === 'curtain') return { type: 'replay' };
   if (inBox(UNDO_BUTTON, x, y)) return { type: 'undo' };
-  if (inBox(REHEARSE_BUTTON, x, y)) return { type: 'rehearse' };
+  if (inBox(REHEARSE_BUTTON, x, y)) return { type: 'askReset' };
   const button = POSE_BUTTONS.find((b) => inBox(b, x, y));
   if (!button) return undefined;
   const actor = isActor(stage.selected) ? stage.selected : 'knight';
@@ -506,7 +551,14 @@ export function keyAction(
   stage: StageState,
   code: string,
   scoreFailed = false,
+  confirmReset = false,
 ): Action | undefined {
+  if (confirmReset) {
+    if (code === 'Enter' || code === 'KeyY') return { type: 'rehearse' };
+    if (code === 'KeyN') return { type: 'cancel' };
+    return undefined;
+  }
+  if (code === 'KeyP' && stage.scene !== 'curtain') return { type: 'practice' };
   if (stage.scene === 'curtain' && scoreFailed && code === 'KeyN') return { type: 'discard' };
   if (stage.scene === 'curtain') {
     return code === 'Enter' || code === 'Space' ? { type: 'replay' } : undefined;
@@ -532,7 +584,7 @@ export function keyAction(
     case 'KeyZ':
       return { type: 'undo' };
     case 'KeyR':
-      return { type: 'rehearse' };
+      return { type: 'askReset' };
     default:
       return undefined;
   }
@@ -719,7 +771,8 @@ function drawTableau(ctx: CanvasRenderingContext2D, stage: StageState, tableau: 
   }
 }
 
-function draw(ctx: CanvasRenderingContext2D, stage: StageState, scoreFailed: boolean) {
+function draw(ctx: CanvasRenderingContext2D, theatre: Theatre) {
+  const { stage, scoreFailed } = theatre;
   const { colors } = theme;
   ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -753,7 +806,7 @@ function draw(ctx: CanvasRenderingContext2D, stage: StageState, scoreFailed: boo
   ctx.fillStyle = colors.text;
   ctx.font = canvasFont('body', 'bold');
   ctx.textAlign = 'center';
-  wrap(ctx, stage.caption, CENTRE, 80, WIDTH - 140);
+  wrap(ctx, theatre.confirmReset ? CONFIRM_CAPTION : stage.caption, CENTRE, 80, WIDTH - 140);
 
   ctx.font = canvasFont('small');
   ctx.fillStyle = colors.muted;
@@ -762,8 +815,8 @@ function draw(ctx: CanvasRenderingContext2D, stage: StageState, scoreFailed: boo
   ctx.fillText(`${label}  ·  Endings found ${stage.endingsSeen.length}/2`, 16, 24);
   ctx.textAlign = 'right';
   ctx.fillStyle = colors.text;
-  ctx.fillText(stage.audience.caption, WIDTH - 16, 24);
-  drawAudience(ctx, stage.audience);
+  ctx.fillText(theatre.live ? PRACTICE_CAPTION : stage.audience.caption, WIDTH - 16, 24);
+  if (!theatre.live) drawAudience(ctx, stage.audience);
 
   if (stage.scene === 'curtain') {
     ctx.fillStyle = colors.accent;
@@ -789,7 +842,13 @@ function draw(ctx: CanvasRenderingContext2D, stage: StageState, scoreFailed: boo
   const actor = isActor(stage.selected) ? stage.selected : 'knight';
   for (const b of POSE_BUTTONS) drawButton(ctx, b, b.pose, stage.poses[actor] === b.pose);
   drawButton(ctx, UNDO_BUTTON, 'Undo', false);
-  drawButton(ctx, REHEARSE_BUTTON, 'Rehearse', false);
+  drawButton(ctx, REHEARSE_BUTTON, 'Reset scene', theatre.confirmReset);
+  drawButton(
+    ctx,
+    PRACTICE_BUTTON,
+    theatre.live ? 'Rehearsing: go live (P)' : 'Rehearse in private (P)',
+    theatre.live !== null,
+  );
   ctx.fillStyle = colors.muted;
   ctx.font = canvasFont('small');
   ctx.textAlign = 'left';
@@ -816,9 +875,11 @@ export const puppetTheatre: CarnivalGame = {
     const record = (score: number) => recordScore(puppetTheatre.id, score);
     const run = (action: Action) => {
       if (rewinds(action)) dragging = undefined;
-      theatre = perform(theatre, action, record, (next) =>
-        slot.save({ stage: next.stage, sceneStart: next.sceneStart }),
-      );
+      // Only the live performance is saved, never a rehearsal.
+      theatre = perform(theatre, action, record, (next) => {
+        const live = next.live ?? next;
+        slot.save({ stage: live.stage, sceneStart: live.sceneStart });
+      });
     };
     const toCanvas = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -859,7 +920,12 @@ export const puppetTheatre: CarnivalGame = {
         target?.tagName === 'TEXTAREA'
       )
         return;
-      const action = keyAction(theatre.stage, event.code, theatre.scoreFailed);
+      const action = keyAction(
+        theatre.stage,
+        event.code,
+        theatre.scoreFailed,
+        theatre.confirmReset,
+      );
       if (!action) return;
       event.preventDefault();
       run(action);
@@ -872,7 +938,7 @@ export const puppetTheatre: CarnivalGame = {
 
     let frame = 0;
     const loop = () => {
-      draw(ctx, theatre.stage, theatre.scoreFailed);
+      draw(ctx, theatre);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
