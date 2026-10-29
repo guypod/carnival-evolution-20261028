@@ -23,6 +23,14 @@ import {
   type MotionPreference,
 } from './motion';
 import { evening, palette } from './palette';
+import {
+  createGarden,
+  gardenInReach,
+  raiseGust,
+  turnWheels,
+  wheelState,
+  type PinwheelGarden,
+} from './pinwheels';
 import { DEFAULT_VIEW_SCALE, unproject, viewZoom } from './view';
 import { lanternGlow, type Scene } from './scene';
 import {
@@ -37,6 +45,7 @@ import {
   drawFrontHedge,
   drawField,
   drawGroundLayer,
+  drawPinwheel,
   drawProp,
   drawWalker,
   groundBounds,
@@ -239,6 +248,18 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
 
   const gate = fairGate(map);
   let nearGate = false;
+  /**
+   * The pinwheel garden on the grass left of the entrance path, on the row by
+   * the hedge and far enough left that the ticket booth never covers it. See pinwheels.ts.
+   */
+  let garden: PinwheelGarden = createGarden({ x: map.spawn.x - 8.9, y: map.spawn.y + 1.25 });
+  let wheelAngles = garden.wheels.map((_, i) => i * 0.7);
+  /** The garden's own clock, which runs in quiet mode too so the still-state sequence plays. */
+  let gustClock = 0;
+  let nearGarden = false;
+  const gust = () => {
+    garden = raiseGust(garden, gustClock);
+  };
   const enterFair = () => {
     if (!options.onFairGate) return;
     returnTo = { x: player.x, y: player.y };
@@ -259,6 +280,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     } else if (keyAction(event.code, Boolean(inReach), nearGate) === 'fair') {
       event.preventDefault();
       enterFair();
+    } else if (event.code === 'KeyG' && nearGarden) {
+      event.preventDefault();
+      // A held key repeats; only a fresh press restarts the gust.
+      if (!event.repeat) gust();
     }
   };
   const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
@@ -322,9 +347,19 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
     });
 
+  const gardenAt = (point: Point) =>
+    garden.wheels.some((w) => {
+      const p = toScreen(w.x, w.y);
+      return Math.abs(point.x - p.x) <= 9 && point.y >= p.y - 26 && point.y <= p.y + 2;
+    });
+
   const onPointerDown = (event: PointerEvent) => {
     const point = toWorld(event);
     const booth = boothAt(point);
+    if (!booth && gardenAt(point)) {
+      gust();
+      return;
+    }
     if (!booth && billboardAt(point)) {
       window.open(DEVCON_URL, '_blank', 'noopener');
       return;
@@ -357,7 +392,9 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
   const onPointerMove = (event: PointerEvent) => {
     const point = toWorld(event);
     canvas.style.cursor =
-      boothAt(point) || billboardAt(point) || gateAt(point) ? 'pointer' : 'default';
+      boothAt(point) || billboardAt(point) || gateAt(point) || gardenAt(point)
+        ? 'pointer'
+        : 'default';
   };
 
   window.addEventListener('keydown', onKeyDown);
@@ -540,6 +577,15 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
         box: walkerBox(v),
         draw: () => drawWalker(ctx, v, visitorLook(v.look)),
       })),
+      ...garden.wheels.map((w, i) => {
+        const p = toScreen(w.x, w.y);
+        return {
+          depth: w.x + w.y,
+          box: { left: p.x - 9, right: p.x + 9, top: p.y - 35, bottom: p.y + 2 },
+          draw: () =>
+            drawPinwheel(ctx, p, wheelAngles[i], i, quiet && wheelState(garden, i, gustClock)),
+        };
+      }),
       {
         depth: playerDepth,
         box: walkerBox(player),
@@ -578,6 +624,11 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const c = toScreen(gate.x + 0.5, gate.y + 0.5);
       label(ctx, 'Press E to run your fair', (c.x - cam.x) * zoom, (c.y - 76 - cam.y) * zoom);
+    } else if (nearGarden) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const mid = garden.wheels[Math.floor(garden.wheels.length / 2)];
+      const c = toScreen(mid.x, mid.y);
+      label(ctx, 'Press G for a gust', (c.x - cam.x) * zoom, (c.y - 48 - cam.y) * zoom);
     }
   };
 
@@ -632,6 +683,10 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
       nearLandmark = landmark;
       if (landmark) options.onLandmark?.(landmark);
     }
+
+    nearGarden = !inReach && !nearGate && gardenInReach(garden, player);
+    gustClock += dt;
+    wheelAngles = turnWheels(wheelAngles, garden, gustClock, dt, quiet);
 
     updateFloaters(dt);
     updateCamera(dt);
