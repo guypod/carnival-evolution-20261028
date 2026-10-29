@@ -107,6 +107,7 @@ body[data-view='midway'] main {
 .discovery-toast,
 .midway-route,
 .midway-ferry,
+.midway-stones,
 .mystery-card,
 .booth-card {
   position: absolute;
@@ -2282,4 +2283,58 @@ body[data-photo='on'] .midway > :not(.midway-map, .midway-panels, .photo-frame-o
   box-sizing: border-box;
   border: 3px dashed var(--color-text);
   pointer-events: none;
+}
+
+/* The chime stones sit far from the docks and every booth, so this never overlaps the ferry panel. */
+.midway-stones {
+  bottom: 16px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  max-width: min(460px, calc(100% - 32px));
+  padding: 6px 10px;
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+
+.midway-stones[hidden] {
+  display: none;
+}
+
+.midway-stones .message,
+.midway-stones .note {
+  margin: 0;
+  text-align: center;
+}
+
+.midway-stones .note {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.midway-stones .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.midway-stones button {
+  min-width: 36px;
+  padding: 4px 10px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.midway-stones button:hover,
+.midway-stones button:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
 }
