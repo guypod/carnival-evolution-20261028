@@ -8,6 +8,7 @@
 
 import { createSaveSlot, type SaveStorage } from '../carnival';
 import type { RepairedToyId } from '../midway/repaired-toys';
+import { CAM_REACH, PEBBLE, type CamShape } from './cams';
 
 export type ToyId = RepairedToyId;
 export type Tool = 'hand' | 'screwdriver' | 'tweezers';
@@ -92,10 +93,10 @@ export const HOLES = [1, 2, 3];
 const RING_HOLE = 2;
 
 // The hopping frog: a shaft, three cams to choose from, and a pebble.
-export const CAMS = ['round', 'snail', 'tall'] as const;
+export const CAMS = ['round', 'snail', 'tall'] as const satisfies readonly CamShape[];
 export type Cam = (typeof CAMS)[number];
-/** How far each cam reaches from the shaft at its widest, as drawn. */
-export const CAM_REACH: Record<Cam, number> = { round: 22, snail: 30, tall: 34 };
+/** Where the cam shaft is on the bench. */
+export const SHAFT = { x: 200, y: 200 };
 const ROD_REACH = 12;
 
 /** A gear's drawn radius to its teeth's base; the teeth stand GEAR_TEETH further out. */
@@ -163,10 +164,17 @@ export function targets(toy: ToyState): Target[] {
     out.push({ id: 'pin', kind: 'fixture', label: 'pivot pin', x: 120, y: 200, r: 14 });
   } else {
     const room = Math.max(...CAMS.map(partRadius));
-    slot('shaft', 'cam shaft', 200, 200, room);
+    slot('shaft', 'cam shaft', SHAFT.x, SHAFT.y, room);
     [1, 2, 3].forEach((n) => slot(`tray-${n}`, `tray spot ${n}`, 330 + n * 70, 280, room));
     if (toy.pebble)
-      out.push({ id: 'pebble', kind: 'fixture', label: 'pebble', x: 236, y: 172, r: 12 });
+      out.push({
+        id: 'pebble',
+        kind: 'fixture',
+        label: 'pebble',
+        x: SHAFT.x + PEBBLE.dx,
+        y: SHAFT.y + PEBBLE.dy,
+        r: 12,
+      });
   }
   for (const [part, at] of Object.entries(toy.parts)) {
     const s = slotAt.get(at)!;
@@ -429,15 +437,6 @@ function runCam(toy: ToyState): Run {
         ? 'The tall cam lifts the frog right off its rod, and the safety guard catches it.'
         : 'The snail cam lifts the frog slowly and drops it: a proper hop!';
   return { kind: 'cam', cam, stalled: false, working: cam === 'snail', message };
-}
-
-/** The frog's lift, 0 to 1 and above, at a point (0 to 1) of one cam turn. */
-export function camLift(cam: Cam | undefined, t: number): number {
-  const p = ((t % 1) + 1) % 1;
-  if (cam === 'round') return 0.3 * (1 - Math.cos(p * Math.PI * 2));
-  if (cam === 'snail') return p;
-  if (cam === 'tall') return Math.min(1.5, 2 * p);
-  return 0;
 }
 
 // The bench: the toy in hand, an undo history, and the toys already repaired.

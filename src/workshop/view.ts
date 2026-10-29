@@ -7,7 +7,6 @@ import {
   TOYS,
   benchPoint,
   benchStops,
-  camLift,
   commit,
   createRepairsStore,
   drawOrder,
@@ -19,6 +18,7 @@ import {
   movePart,
   openBench,
   partLabel,
+  SHAFT,
   recordRepair,
   resetBench,
   runToy,
@@ -33,6 +33,7 @@ import {
   type Tool,
   type ToyId,
 } from './workshop';
+import { camOutline, frogPose, frogRig, PEBBLE, stillPhase, type CamShape } from './cams';
 
 const { width: WIDTH, height: HEIGHT } = BENCH;
 /** How long a test run animates, in milliseconds. */
@@ -215,10 +216,14 @@ export function startWorkshop(
 
   // Drawing.
 
-  /** How far through the test run, 0 to 1; in quiet mode a run shows its middle at once. */
+  /**
+   * How far through the test run, 0 to 1. In quiet mode a run shows one still
+   * frame at once: for the frog, the frame that shows why it did what it did.
+   */
   function runPhase(): number {
     if (!run) return 0;
-    if (quiet) return 0.25;
+    if (quiet)
+      return run.result.kind === 'cam' ? stillPhase(run.result.cam, run.result.stalled) : 0.25;
     return Math.min(1, (performance.now() - run.startedAt) / RUN_MS);
   }
 
@@ -259,7 +264,7 @@ export function startWorkshop(
     else if (part === 'rod') {
       ctx.fillStyle = colors.muted;
       ctx.fillRect(x - 6, y - 6, 12, 12);
-    } else cam(part, x, y, angle);
+    } else cam(part, x, y, angle / (Math.PI * 2));
     ctx.restore();
   }
 
@@ -403,20 +408,13 @@ export function startWorkshop(
     ctx.fillText('stop', 655, 215);
   }
 
-  function cam(kind: string, x: number, y: number, angle: number) {
+  function cam(kind: string, x: number, y: number, turns: number) {
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(angle);
     ctx.fillStyle =
       kind === 'snail' ? colors.accent : kind === 'tall' ? colors.stripeA : colors.water;
     ctx.beginPath();
-    if (kind === 'round') ctx.arc(0, 0, 22, 0, Math.PI * 2);
-    else
-      for (let i = 0; i <= 32; i++) {
-        const a = (i / 32) * Math.PI * 2;
-        const r = kind === 'snail' ? 14 + (i / 32) * 16 : 16 + Math.max(0, Math.cos(a)) * 18;
-        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      }
+    for (const p of camOutline(kind as CamShape, turns)) ctx.lineTo(p.x, p.y);
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = colors.background;
@@ -428,8 +426,12 @@ export function startWorkshop(
 
   function drawFrog(phase: number) {
     const result = run?.result.kind === 'cam' ? run.result : undefined;
-    const turns = result?.stalled ? Math.min(phase, 0.08) : phase * 2;
     const camOn = result?.cam ?? undefined;
+    // The same pose drives the cam's turn, the follower's foot on it and the frog.
+    const pose = run
+      ? frogPose(camOn, phase, result?.stalled ?? false)
+      : { turns: 0, lift: 0, frogLift: 0, caught: false };
+    const rig = frogRig(pose);
     for (const t of bits()) {
       if (t.kind !== 'slot') continue;
       ctx.fillStyle = colors.background;
@@ -440,40 +442,50 @@ export function startWorkshop(
     for (const t of drawOrder(bits())) {
       if (t.id === held) continue;
       const onShaft = bench.toy.parts[t.id] === 'shaft';
-      drawPart(t.id, t.x, t.y, onShaft ? turns * Math.PI * 2 : 0);
+      drawPart(t.id, t.x, t.y, onShaft ? pose.turns * Math.PI * 2 : 0);
     }
-    const lift = run && camOn ? camLift(camOn, turns) : 0;
-    const guarded = lift > 1;
-    const frogY = 110 - Math.min(lift, 1.2) * 60;
-    ctx.strokeStyle = colors.muted;
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(200, guarded ? 110 - 60 : frogY + 10);
-    ctx.lineTo(200, 166);
-    ctx.stroke();
+    const { x, y } = SHAFT;
+    // The fixed guide the follower slides up and down in, and the safety guard above it.
+    ctx.fillStyle = colors.muted;
+    ctx.fillRect(x - 12, y - 60, 6, 22);
+    ctx.fillRect(x + 6, y - 60, 6, 22);
     ctx.fillStyle = colors.water;
     ctx.globalAlpha = 0.6;
-    ctx.fillRect(150, 20, 100, 4);
+    ctx.fillRect(x - 50, y + rig.guard - 4, 100, 4);
     ctx.globalAlpha = 1;
     ctx.fillStyle = theme.colors.stripeB;
-    ctx.fillText('safety guard', 200, 12);
+    ctx.fillText('safety guard', x + 95, y + rig.guard - 2);
+    // The follower: its foot stands on the cam, wherever the cam's outline crosses above the shaft.
+    ctx.strokeStyle = colors.text;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x, y + rig.foot);
+    ctx.lineTo(x, y + rig.rodTop);
+    ctx.stroke();
+    ctx.fillStyle = colors.text;
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y + rig.foot - 6);
+    ctx.lineTo(x + 5, y + rig.foot - 6);
+    ctx.lineTo(x, y + rig.foot);
+    ctx.fill();
+    const frogY = y + rig.frog;
     ctx.fillStyle = colors.accent;
     ctx.beginPath();
-    ctx.ellipse(200, frogY, 26, 14, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, frogY, 26, 14, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = colors.text;
     ctx.beginPath();
-    ctx.arc(188, frogY - 12, 5, 0, Math.PI * 2);
-    ctx.arc(212, frogY - 12, 5, 0, Math.PI * 2);
+    ctx.arc(x - 12, frogY - 12, 5, 0, Math.PI * 2);
+    ctx.arc(x + 12, frogY - 12, 5, 0, Math.PI * 2);
     ctx.fill();
     if (bench.toy.pebble) {
       ctx.fillStyle = colors.muted;
       ctx.beginPath();
-      ctx.arc(236, 172, 7, 0, Math.PI * 2);
+      ctx.arc(x + PEBBLE.dx, y + PEBBLE.dy, PEBBLE.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.fillStyle = colors.text;
-    ctx.fillText('frog', 260, frogY);
+    ctx.fillText('frog', x + 60, frogY);
   }
 
   // Input.

@@ -16,10 +16,14 @@ toy's mechanism, so what moves follows from where the parts are.
   the hole the rod sits in sets the swing: too near the pivot only taps the
   bell, too far thumps the rubber stop. The middle hole rings it. Loosen the pin
   again to move the rod.
-- **Hopping Frog Automaton.** A pebble in the cam track stalls the shaft and
-  wedges the cam on it; lift it out with the tweezers. Then the round cam only
-  bobs the frog, the tall cam lifts it into the safety guard, and the snail cam
-  lifts it slowly and drops it: a hop.
+- **Hopping Frog Automaton.** The frog sits on a rod whose foot stands on the
+  cam, straight above the shaft, so the frog rises and falls with the cam's
+  edge as it turns. A pebble in the cam track stalls the shaft as soon as the
+  cam turns into it, and wedges the cam on it; lift it out with the tweezers.
+  Then the round cam, a disc set off the shaft, only bobs the frog gently. The
+  tall cam's lobe lifts it into the safety guard, which holds it while the rod
+  drops away. The snail cam's spiral lifts it slowly, then the rod drops off
+  the spiral's step: a hop.
 
 ## Controls
 
@@ -35,7 +39,9 @@ toy's mechanism, so what moves follows from where the parts are.
   faults it came in with (Undo brings the work back), and Escape puts a held
   part down or goes back to the midway.
 - With Quiet midway or the system's reduced motion, a test shows one still
-  frame instead of animating. The words under the bench always say what
+  frame instead of animating. For the frog it is the frame that explains the
+  result: the cam pressed on the pebble, the round cam at the top of its bob,
+  the frog held by the guard, or the rod at the top of the snail's spiral. The words under the bench always say what
   happened.
 
 ## Repairs and the midway

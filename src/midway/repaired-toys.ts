@@ -5,6 +5,7 @@
  * no repairs, or with them hidden, the midway looks just as it always did.
  */
 
+import { CAM_BASE, camOutline, followerLift } from '../workshop/cams';
 import { palette } from './palette';
 import type { MidwayMap, Point } from './world';
 
@@ -42,6 +43,23 @@ export function bellHammerHead(p: Point, t: number): Point {
   const hit = Math.atan2(-Math.sqrt(HAMMER_LENGTH ** 2 - 2.9 ** 2), 2.9);
   const a = hit - 0.9 + swing * 0.9;
   return { x: p.x - 5 + Math.cos(a) * HAMMER_LENGTH, y: top + Math.sin(a) * HAMMER_LENGTH };
+}
+
+/** The midway frog's cam is drawn at this share of the bench's size. */
+export const FROG_SCALE = 0.25;
+const FROG_ROD = 5;
+
+/** How far the midway frog's snail cam has turned at scenery clock `t`. */
+export function frogTurns(t: number): number {
+  return t * 0.8;
+}
+
+/**
+ * The bottom of the midway frog: on top of its rod, whose foot stands on the
+ * snail cam straight above the shaft, using the bench's cam profile.
+ */
+export function frogSeat(shaft: Point, turns: number): number {
+  return shaft.y - (CAM_BASE + followerLift('snail', turns)) * FROG_SCALE - FROG_ROD;
 }
 
 /** Draws one toy at its spot. `t` is the scenery clock, which stands still in quiet mode. */
@@ -93,17 +111,30 @@ export function drawRepairedToy(
     ctx.arc(head.x, head.y, HAMMER_HEAD, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // The frog rises slowly on its snail cam, then drops.
-    const lift = (((t * 0.8) % 1) + 1) % 1;
-    const y = top - 4 - lift * 6;
+    // The frog rides a rod on a small snail cam: the same profile as the bench, at quarter size.
+    const turns = frogTurns(t);
+    const shaft = { x: p.x, y: top - 8 };
+    ctx.fillStyle = palette.gold;
+    ctx.beginPath();
+    for (const q of camOutline('snail', turns, 32))
+      ctx.lineTo(shaft.x + q.x * FROG_SCALE, shaft.y + q.y * FROG_SCALE);
+    ctx.closePath();
+    ctx.fill();
+    const y = frogSeat(shaft, turns);
+    ctx.strokeStyle = palette.woodDark;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(shaft.x, shaft.y - (CAM_BASE + followerLift('snail', turns)) * FROG_SCALE);
+    ctx.lineTo(shaft.x, y);
+    ctx.stroke();
     ctx.fillStyle = palette.hedgeLight;
     ctx.beginPath();
-    ctx.ellipse(p.x, y, 6, 3.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x, y - 3, 6, 3.5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = palette.cream;
     ctx.beginPath();
-    ctx.arc(p.x - 3, y - 3, 1.5, 0, Math.PI * 2);
-    ctx.arc(p.x + 3, y - 3, 1.5, 0, Math.PI * 2);
+    ctx.arc(p.x - 3, y - 6, 1.5, 0, Math.PI * 2);
+    ctx.arc(p.x + 3, y - 6, 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
 }

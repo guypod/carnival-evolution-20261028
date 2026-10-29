@@ -12,7 +12,6 @@ import {
   TOYS,
   benchPoint,
   benchStops,
-  camLift,
   commit,
   createRepairsStore,
   dropSlot,
@@ -34,6 +33,7 @@ import {
   type Target,
   type ToyState,
 } from './workshop';
+import { PEBBLE } from './cams';
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = { ...initial };
@@ -160,14 +160,6 @@ describe('hopping frog cam', () => {
     expect(runToy(tall).message).toMatch(/safety guard/);
     const snail = movePart(clear, 'snail', 'shaft').toy;
     expect(runToy(snail)).toMatchObject({ working: true, cam: 'snail' });
-  });
-
-  it('lifts in the shape of each cam', () => {
-    expect(camLift('snail', 0.9)).toBeGreaterThan(camLift('snail', 0.1));
-    expect(camLift('snail', 1)).toBe(0);
-    expect(camLift('tall', 0.9)).toBeGreaterThan(1);
-    expect(camLift('round', 0.5)).toBeLessThanOrEqual(0.6);
-    expect(camLift(undefined, 0.5)).toBe(0);
   });
 });
 
@@ -436,7 +428,7 @@ describe('picking parts with the pointer', () => {
     const bell = faultyToy('rooster-bell');
     expect(hitTarget(bell, { x: 120, y: 200 })?.id).toBe('pin');
     const frog = faultyToy('hopping-frog');
-    expect(hitTarget(frog, { x: 236, y: 172 })?.id).toBe('pebble');
+    expect(hitTarget(frog, { x: 200 + PEBBLE.dx, y: 200 + PEBBLE.dy })?.id).toBe('pebble');
   });
 
   it('maps a pointer onto the same bench pixels at any shown size', () => {
