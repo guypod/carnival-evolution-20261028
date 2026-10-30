@@ -7,7 +7,8 @@ pins that file to an approved contract and tests the routes offline.
   `claude-code`, model `claude-opus-5-5`, environment, timeouts) and the eleven
   triggers, with their guards, concurrency keys (the existing 90s shepherd
   debounce, and replies sharing the implement lock) and actions, plus the
-  `test-health` action and its one weekly schedule.
+  `test-health` and `visual-repair` actions with their two schedules (weekly
+  and every six hours).
 - `check-contract.mjs`: fails when `tessl.json`'s `actions`, `triggers` or `schedules`
   differ from the contract. It does not check the top-level `name`, `mode` or
   `dependencies`, which `tessl install` manages.

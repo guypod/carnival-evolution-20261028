@@ -1,0 +1,131 @@
+<!doctype html>
+<!-- Compliant sample for the visual-design lens: a framed stall with a drawn
+     focal point and themed native controls. Colours copy src/carnival/theme.ts
+     because a standalone fixture cannot import it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compliant sample</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #1b1035;
+        color: #fff8e7;
+        font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px 16px;
+      }
+      .stall {
+        display: grid;
+        grid-template-columns: 3fr 2fr;
+        border: 3px solid #8a5a3b;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 10px 0 #8a5a3b;
+        background: #2a1a52;
+      }
+      .counter {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 34px 20px 20px;
+        border-left: 3px solid #8a5a3b;
+        background:
+          repeating-linear-gradient(90deg, #e63946 0 24px, #fff8e7 24px 48px) top / 100% 14px
+            no-repeat,
+          #2a1a52;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      fieldset {
+        display: flex;
+        gap: 8px;
+        border: 2px solid #8a5a3b;
+        border-radius: 12px;
+      }
+      fieldset label {
+        padding: 6px 12px;
+        border: 2px solid #b9a9d9;
+        border-radius: 999px;
+        background: #1b1035;
+      }
+      fieldset label:has(:checked) {
+        border-color: #ffcc33;
+        font-weight: bold;
+      }
+      fieldset input {
+        accent-color: #ffcc33;
+      }
+      input[type='text'] {
+        padding: 10px;
+        border: 2px solid #8a5a3b;
+        border-radius: 12px;
+        background: #fff8e7;
+        color: #1b1035;
+        font: inherit;
+      }
+      button {
+        padding: 10px;
+        border: 2px solid #1b1035;
+        border-radius: 12px;
+        background: #ffcc33;
+        color: #1b1035;
+        font: inherit;
+        font-weight: bold;
+        box-shadow: 0 4px 0 #8a5a3b;
+      }
+      :focus-visible {
+        outline: 3px solid #ffcc33;
+        outline-offset: 2px;
+      }
+      @media (max-width: 720px) {
+        .stall {
+          grid-template-columns: 1fr;
+        }
+        .counter {
+          border-left: 0;
+          border-top: 3px solid #8a5a3b;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Ticket Counter</h1>
+      <div class="stall">
+        <svg viewBox="0 0 480 360" aria-hidden="true">
+          <rect width="480" height="360" fill="#1b1035" />
+          <circle cx="80" cy="50" r="10" fill="#ffcc33" />
+          <circle cx="240" cy="70" r="10" fill="#ffcc33" />
+          <circle cx="400" cy="50" r="10" fill="#ffcc33" />
+          <path d="M0 40 Q240 90 480 40" stroke="#b9a9d9" fill="none" />
+          <path d="M110 150 h260 l-20 -40 h-220 z" fill="#e63946" />
+          <rect x="130" y="150" width="12" height="130" fill="#8a5a3b" />
+          <rect x="338" y="150" width="12" height="130" fill="#8a5a3b" />
+          <rect x="110" y="270" width="260" height="70" fill="#e63946" />
+          <rect x="180" y="290" width="120" height="30" fill="#1b1035" stroke="#ffcc33" />
+          <text x="240" y="311" fill="#ffcc33" font-size="16" text-anchor="middle">TICKETS</text>
+          <rect y="340" width="480" height="20" fill="#8a5a3b" />
+        </svg>
+        <form class="counter">
+          <fieldset>
+            <legend>How many</legend>
+            <label><input type="radio" name="n" checked /> One</label>
+            <label><input type="radio" name="n" /> Two</label>
+          </fieldset>
+          <label for="name">Your name</label>
+          <input id="name" type="text" />
+          <button type="submit">Buy tickets</button>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

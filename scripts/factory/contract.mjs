@@ -33,15 +33,32 @@ export const EXPECTED_ACTIONS = {
     model: 'claude-opus-5-5',
     timeout: '15m',
   },
+  // The visual repair loop, from the repository's own skill. It renders changed
+  // screens in a headless browser and opens at most one draft repair PR a run,
+  // deferring to any open Tessl work.
+  'visual-repair': {
+    skill: 'file:tessl-factory#visual-repair',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '30m',
+  },
 };
 
-// Weekly, per WORKSHOP module 04. No other schedules: gameplay batching is
-// owned outside this repository.
+// Test health weekly, per WORKSHOP module 04, and visual repair every six
+// hours (issue #303). No other schedules: gameplay batching is owned outside
+// this repository.
 export const EXPECTED_SCHEDULES = {
   'test-health-weekly': {
     cron: '0 9 * * 1',
     description: 'Weekly test health check: file an issue for each test that cannot fail',
     action: 'test-health',
+  },
+  'visual-repair-six-hourly': {
+    cron: '17 */6 * * *',
+    description:
+      'Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR',
+    action: 'visual-repair',
   },
 };
 
