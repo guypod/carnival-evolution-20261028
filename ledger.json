@@ -114,12 +114,40 @@
           "url": "https://github.com/guypod/carnival-evolution-20261028/pull/263#discussion_r4417033845"
         }
       ],
-      "status": "open",
+      "status": "accepted",
       "firstSeen": "2026-10-30T14:47:51.000Z",
       "seenIn": [
         "01a18d46-50da-7046-b218-76d25345238a"
       ],
-      "decisions": []
+      "decisions": [
+        {
+          "decision": "apply",
+          "rationale": "Delayed recording of the18:00 assessment after approval. Current main still configures house rules only for src/games and has no dedicated drawn-geometry agreement lens for workshop/midway. Independent recorded PR283 and263 findings support the gap despite repairs to those examples. Additive lens only; no weakening. This decision does not endorse the disputed17:40 complete-coverage claim or execute its correction.",
+          "validation": "current",
+          "checkedAt": "d7a2efbc005de50e78d7700dd1ea60499ff88539",
+          "revision": 0,
+          "evidence": [
+            {
+              "kind": "pr",
+              "ref": "#283",
+              "url": "https://github.com/guypod/carnival-evolution-20261028/pull/283"
+            },
+            {
+              "kind": "review-finding",
+              "ref": "#283 r4418431361",
+              "url": "https://github.com/guypod/carnival-evolution-20261028/pull/283#discussion_r4418431361"
+            },
+            {
+              "kind": "pr",
+              "ref": "#263",
+              "url": "https://github.com/guypod/carnival-evolution-20261028/pull/263"
+            }
+          ],
+          "decidedBy": "imac-coordinator",
+          "slot": "2026-10-30T18:00:00+00:00",
+          "at": "2026-10-30T19:35:37.342Z"
+        }
+      ]
     },
     {
       "fingerprint": "a3060372ac14845d",
