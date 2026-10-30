@@ -7,3 +7,10 @@ lenses:
   - ref: ./review-lenses/carnival-house-rules/SKILL.md
     globs:
       - src/games/**
+  - ref: ./review-lenses/visual-design/SKILL.md
+    globs:
+      - index.html
+      - src/**
+      - docs/visual-baseline/**
+      - review-lenses/visual-design/**
+      - scripts/visual/**

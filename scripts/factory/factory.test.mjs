@@ -253,6 +253,18 @@ test('unsafe mutants fail the contract', () => {
       (m.schedules.extra = structuredClone(m.schedules['test-health-weekly'])),
     'make test health daily': (m) => (m.schedules['test-health-weekly'].cron = '0 9 * * *'),
     'drop the schedules': (m) => delete m.schedules,
+    'run visual repair hourly': (m) =>
+      (m.schedules['visual-repair-six-hourly'].cron = '17 * * * *'),
+    'drop visual repair': (m) => delete m.schedules['visual-repair-six-hourly'],
+    'point visual repair at implement': (m) =>
+      (m.schedules['visual-repair-six-hourly'].action = 'implement-github-issue'),
+    'lengthen visual repair': (m) => (m.actions['visual-repair'].timeout = '2h'),
+    'drop the writer key from shepherd': (m) => delete m.actions.shepherd.concurrency,
+    'raise the writer limit': (m) => (m.actions['visual-repair'].concurrency.keys[0].limit = 2),
+    'rename the writer key on implement': (m) =>
+      (m.actions['implement-github-issue'].concurrency.keys[0].key = 'implement-writer'),
+    'let visual repair join instead of queue': (m) =>
+      (m.actions['visual-repair'].concurrency.mode = 'join'),
   };
   for (const [label, change] of Object.entries(mutants)) {
     const m = clone();

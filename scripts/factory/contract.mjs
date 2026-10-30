@@ -12,18 +12,27 @@ export const REVIEWER_ID = 325629464;
 const ENVIRONMENT = 'carnival-evolution-20261028-factory';
 const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
 
-const action = (name, timeout) => ({
+// One static key every writing action holds, from any trigger, schedule or
+// manual `tessl action trigger`, so no two runs change the app at once. It sits
+// beside each trigger's own per-issue or per-PR key; it does not replace them.
+// follow-ticket-changes is left out on purpose: it cancels writers, and queued
+// behind the run it should cancel it could not.
+export const WRITER_KEY = 'carnival-app-writer';
+const writer = { keys: [{ key: WRITER_KEY, limit: 1 }], mode: 'queue' };
+
+const action = (name, timeout, concurrency = writer) => ({
   skill: `${SKILL_PREFIX}${name}`,
   environment: ENVIRONMENT,
   agent: 'claude-code',
   model: 'claude-opus-5-5',
   timeout,
+  ...(concurrency ? { concurrency } : {}),
 });
 
 export const EXPECTED_ACTIONS = {
   'implement-github-issue': action('implement-github-issue', '15m'),
   shepherd: action('shepherd', '10m'),
-  'follow-ticket-changes': action('follow-ticket-changes', '5m'),
+  'follow-ticket-changes': action('follow-ticket-changes', '5m', null),
   // The test health maintenance loop, from the repository's own skill. It files
   // issues only; a person labels them before the factory ships a fix.
   'test-health': {
@@ -32,16 +41,35 @@ export const EXPECTED_ACTIONS = {
     agent: 'claude-code',
     model: 'claude-opus-5-5',
     timeout: '15m',
+    concurrency: writer,
+  },
+  // The visual repair loop, from the repository's own skill. It renders changed
+  // screens in a headless browser and opens at most one draft repair PR a run,
+  // inspecting even while other pull requests are open and deferring only a repair whose files overlap one.
+  'visual-repair': {
+    skill: 'file:tessl-factory#visual-repair',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '30m',
+    concurrency: writer,
   },
 };
 
-// Weekly, per WORKSHOP module 04. No other schedules: gameplay batching is
-// owned outside this repository.
+// Test health weekly, per WORKSHOP module 04, and visual repair every six
+// hours (issue #303). No other schedules: gameplay batching is owned outside
+// this repository.
 export const EXPECTED_SCHEDULES = {
   'test-health-weekly': {
     cron: '0 9 * * 1',
     description: 'Weekly test health check: file an issue for each test that cannot fail',
     action: 'test-health',
+  },
+  'visual-repair-six-hourly': {
+    cron: '17 */6 * * *',
+    description:
+      'Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR',
+    action: 'visual-repair',
   },
 };
 

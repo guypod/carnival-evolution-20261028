@@ -8,14 +8,16 @@
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "15m"
+      "timeout": "15m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "shepherd": {
       "skill": "tessl-labs/factory@0.6.0#shepherd",
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "10m"
+      "timeout": "10m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "follow-ticket-changes": {
       "skill": "tessl-labs/factory@0.6.0#follow-ticket-changes",
@@ -29,7 +31,16 @@
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "15m"
+      "timeout": "15m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "visual-repair": {
+      "skill": "file:tessl-factory#visual-repair",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "30m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     }
   },
   "triggers": {
@@ -348,6 +359,11 @@
       "cron": "0 9 * * 1",
       "description": "Weekly test health check: file an issue for each test that cannot fail",
       "action": "test-health"
+    },
+    "visual-repair-six-hourly": {
+      "cron": "17 */6 * * *",
+      "description": "Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR",
+      "action": "visual-repair"
     }
   }
 }
