@@ -1131,3 +1131,16 @@ test('a revised repeat is kept and reopens acceptance; check paths are normal an
   const nullEvidence = { ...accepted, decisions: [{ decision: 'apply', evidence: [null] }] };
   assert.notDeepEqual(ledgerErrors({ ...saved, proposals: [nullEvidence] }), []);
 });
+
+test('inherited names are not learners, and a revision changes the issue marker', () => {
+  assert.equal(dueSlot(emptyLedger(), '2026-10-30T05:41:00Z', 'constructor').due, false);
+  assert.equal(manualStart(emptyLedger(), '2026-10-30T05:41:00Z', 'constructor').allowed, false);
+  assert.doesNotThrow(() => validateRun(run({ learner: 'constructor' }), opts()));
+  assert.notDeepEqual(validateRun(run({ learner: 'constructor' }), opts()), []);
+  let ledger = recordRun(emptyLedger(), run());
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
+  const first = implementationIssue(ledger.proposals[0]).body.split('\n')[0];
+  ledger = recordRun(ledger, run({ runId: 'run-2', proposals: [proposal({ netLines: 3 })] }));
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
+  assert.notEqual(implementationIssue(ledger.proposals[0]).body.split('\n')[0], first);
+});

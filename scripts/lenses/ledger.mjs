@@ -57,7 +57,7 @@ export const LOOP_NAME = 'review-lens-improvement';
 
 // Each learner's London slots and the proposal kinds it may make. weekday is
 // 1 for Monday, as in cron.
-export const LEARNERS = {
+export const LEARNERS = Object.freeze({
   'lens-tuning': { hours: [5, 11, 17, 23], minute: 40, kinds: ['amend-lens', 'new-lens'] },
   'review-feedback': {
     hours: [5],
@@ -71,8 +71,11 @@ export const LEARNERS = {
     weekday: 1,
     kinds: ['replace-with-check', 'scope-instruction'],
   },
-};
+});
 export const DEFAULT_LEARNER = 'lens-tuning';
+// Only the learners above, never an inherited property such as constructor.
+const learnerConfig = (name) =>
+  typeof name === 'string' && Object.hasOwn(LEARNERS, name) ? LEARNERS[name] : undefined;
 
 // The standards no proposal may relax. They are constants in this file, not
 // ledger data, so no proposal, decision or amount of evidence overrides them:
@@ -176,7 +179,7 @@ export function londonTime(instant) {
  * no slot falls in a DST change hour.
  */
 export function slotAt(instant, learner = DEFAULT_LEARNER) {
-  const config = LEARNERS[learner];
+  const config = learnerConfig(learner);
   if (!config) return null;
   const { date, weekday, hour, minute } = londonTime(instant);
   const since = minute - config.minute;
@@ -193,7 +196,7 @@ export function slotAt(instant, learner = DEFAULT_LEARNER) {
  * key is neither dropped nor dressed up as on time.
  */
 export function owedSlot(instant, learner = DEFAULT_LEARNER) {
-  const config = LEARNERS[learner];
+  const config = learnerConfig(learner);
   if (!config) return null;
   const at = Date.parse(instant);
   const minute = Math.floor(at / 60_000) * 60_000;
@@ -268,7 +271,8 @@ export function retrySince(ledger, scheduledFor, learner = DEFAULT_LEARNER) {
  * never back-filled. Manual runs never count here.
  */
 export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
-  if (!LEARNERS[learner]) return { due: false, slot: null, reason: `unknown learner ${learner}` };
+  if (!learnerConfig(learner))
+    return { due: false, slot: null, reason: `unknown learner ${learner}` };
   const owed = owedSlot(now, learner);
   if (!owed) {
     return {
@@ -304,7 +308,7 @@ export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
  * MANUAL_LOOKBACK_HOURS. It is bounded per learner per London day.
  */
 export function manualStart(ledger, now, learner = DEFAULT_LEARNER) {
-  if (!LEARNERS[learner]) return { allowed: false, reason: `unknown learner ${learner}` };
+  if (!learnerConfig(learner)) return { allowed: false, reason: `unknown learner ${learner}` };
   const today = londonTime(now).date;
   const used = ledger.runs.filter(
     (r) =>
@@ -406,7 +410,7 @@ export function touchesSafety(proposal) {
 function proposalErrors(p, at, learner, { lenses, exists }) {
   if (p === null || typeof p !== 'object' || Array.isArray(p)) return [`${at}: must be an object`];
   const errors = [];
-  const kinds = LEARNERS[learner]?.kinds ?? [];
+  const kinds = learnerConfig(learner)?.kinds ?? [];
   if (!kinds.includes(p?.kind)) {
     return [`${at}: kind must be one of ${kinds.join(', ')} for ${learner}`];
   }
@@ -454,7 +458,8 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
     return ['run must be an object'];
   const errors = [];
   const learner = run?.learner;
-  if (!LEARNERS[learner]) errors.push(`learner must be one of ${Object.keys(LEARNERS).join(', ')}`);
+  if (!learnerConfig(learner))
+    errors.push(`learner must be one of ${Object.keys(LEARNERS).join(', ')}`);
   if (!isText(run?.runId)) errors.push('run needs the Tessl runId');
   for (const field of ['startedAt', 'finishedAt']) {
     if (!isTime(run?.[field])) errors.push(`run needs ${field} as the actual time`);
@@ -481,7 +486,7 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
         errors.push(`a manual run looks back at most ${MANUAL_LOOKBACK_HOURS} hours`);
       }
     }
-    if (LEARNERS[learner] && isTime(run.startedAt)) {
+    if (learnerConfig(learner) && isTime(run.startedAt)) {
       // Saving the same run again is not a further manual run.
       const others = { ...ledger, runs: ledger.runs.filter((r) => r.runId !== run.runId) };
       const check = manualStart(others, run.startedAt, learner);
@@ -489,7 +494,7 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
     }
   } else if (run?.trigger === 'schedule') {
     if (run.manualId !== undefined) errors.push('a scheduled run has no manualId');
-    if (LEARNERS[learner] && isTime(run.startedAt)) {
+    if (learnerConfig(learner) && isTime(run.startedAt)) {
       const owed = owedSlot(run.startedAt, learner);
       if (!owed || owed.slot !== run.slot) {
         errors.push(
@@ -757,7 +762,7 @@ export function recordDecision(ledger, decision, now) {
 export function implementationIssue(proposal) {
   const last = proposal.decisions.at(-1);
   const lines = [
-    issueMarker(proposal.fingerprint),
+    issueMarker(proposal.fingerprint, proposal.revisions?.length ?? 0),
     `Accepted ${proposal.learner} proposal \`${proposal.fingerprint}\`.`,
     '',
     `Target: \`${proposal.target}\` (${proposal.kind})`,
@@ -785,8 +790,10 @@ export function implementationIssue(proposal) {
  * the coordinator searches for it, so a restart after `decide` never opens a
  * second issue for the same proposal.
  */
-export function issueMarker(fingerprintId) {
-  return `<!-- factory-learning:proposal ${fingerprintId} -->`;
+export function issueMarker(fingerprintId, revision = 0) {
+  // The revision count changes whenever the content does, so an issue opened
+  // for superseded content, even one never recorded, never matches.
+  return `<!-- factory-learning:proposal ${fingerprintId} r${revision} -->`;
 }
 
 /** Accepted proposals whose implementation issue is not yet recorded. */
@@ -844,7 +851,7 @@ export function ledgerErrors(ledger) {
   for (const [i, r] of ledger.runs.entries()) {
     const at = `runs[${i}]`;
     if (!isText(r.runId)) errors.push(`${at}: needs runId`);
-    if (r.learner !== undefined && !LEARNERS[r.learner]) errors.push(`${at}: unknown learner`);
+    if (r.learner !== undefined && !learnerConfig(r.learner)) errors.push(`${at}: unknown learner`);
     if (r.trigger !== undefined && !['schedule', 'manual'].includes(r.trigger)) {
       errors.push(`${at}: unknown trigger`);
     }
@@ -1057,7 +1064,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (proposal?.status !== 'accepted') fail([`proposal ${arg} is not accepted`]);
     if (touchesSafety(proposal)) fail([`proposal ${arg} now weakens a safety standard`]);
     print({
-      marker: issueMarker(arg),
+      marker: issueMarker(arg, proposal.revisions?.length ?? 0),
       ...(proposal.issue ? { recorded: proposal.issue } : {}),
       issue: implementationIssue(proposal),
     });

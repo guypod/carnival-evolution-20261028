@@ -137,10 +137,12 @@ From a clone of `main`:
    `current`, and applying a weakening proposal with evidence from fewer
    than two distinct pull requests, counted by the number in their URL.
 5. For `apply`, the output carries `issue: { title, body }`. The body starts
-   with the marker `<!-- factory-learning:proposal <fingerprint> -->` and the
+   with the marker `<!-- factory-learning:proposal <fingerprint> r<n> -->`,
+   where `n` counts the proposal's revisions, and the
    title ends with `[<fingerprint>]`. Before opening it, search the
-   repository's issues for that marker; if one exists that is not in the
-   proposal's `previousIssues`, use it instead of opening another. Then run
+   repository's issues for that exact marker; if one exists that is not in
+   the proposal's `previousIssues`, use it instead of opening another. An
+   issue for superseded content carries an older `r<n>` and never matches. Then run
    `node scripts/lenses/ledger.mjs issued <fingerprint> <issue url>`. The
    owner labels the issue `tessl` and the existing implement flow does the
    work under the `carnival-app-writer` key, with ordinary review. Nothing
