@@ -78,7 +78,10 @@ file it draws with. Shared files (`index.html`, `src/main.ts`,
 `src/style.css`, `src/carnival/`) and files it cannot place owe every route.
 The first run, with no ledger, owes every route, so screens changed before
 this loop existed are reviewed too. A game registry change (`src/games/index.ts`) owes every route too,
-since the midway lays out from it. Routes are reviewed four at a time.
+since the midway lays out from it. So does a module that another `src` module
+imports or that `src/main.ts` uses outside one screen's renderer, such as the
+midway's passport panel. If the import search fails, `plan` stops instead of
+narrowing. Routes are reviewed four at a time.
 `reviewedThrough` moves only when none is left owed, so a shared change is
 spread over several runs and no route is skipped. A new interval, from
 `reviewedThrough` to the newest `main`, opens only once the last one is done,
@@ -103,7 +106,7 @@ names route, state, criterion and what the image shows. Write the review to a
 file as `{ "head": <contents of <dir>/commit>, "reviewed": [<routes>],
 "findings": [{ "route", "state", "criterion", "note" }], "pr": null }` and
 save it with `node scripts/visual/ledger.mjs record <file>`, which refuses a
-review of any commit but the planned one. Do this before repairing, so
+review of any commit but the planned one, or a finding without a note. Do this before repairing, so
 the findings are kept even if the repair fails.
 
 ## Repair

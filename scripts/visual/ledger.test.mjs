@@ -13,6 +13,7 @@ import {
   affectedRoutes,
   allRoutes,
   emptyLedger,
+  importersAt,
   planRun,
   readLedger,
   reconcileOwnPrs,
@@ -450,6 +451,22 @@ test('a module another screen imports owes every route, not just its own', () =>
   ]);
 });
 
+test('a module the midway also draws with in main.ts owes every route', () => {
+  // src/passport.ts feeds both #/postcard and the midway's passport panel.
+  assert.deepEqual(routeModules(mainSource).get('src/passport.ts'), []);
+  assert.deepEqual(affectedRoutes(['src/passport.ts'], mainSource, routes), routes);
+  assert.deepEqual(routeModules(mainSource).get('src/snack-stand.ts'), ['#/snack']);
+});
+
+test('a failed importer search stops the plan instead of narrowing coverage', () => {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const importers = importersAt(process.cwd(), head);
+  assert.ok(importers('src/prize-pavilion.ts').includes('src/prize-room.ts'));
+  assert.deepEqual(importers('src/no-such-module-anywhere.ts'), []);
+  assert.throws(() => importersAt(process.cwd(), 'not-a-commit')('src/prize-pavilion.ts'));
+  assert.throws(() => importersAt(mkdtempSync(join(tmpdir(), 'no-repo-')), head)('src/x.ts'));
+});
+
 test('a review outside its plan or the rubric is refused', async () => {
   const { validateReview } = await import('./ledger.mjs');
   const criteria = JSON.parse(
@@ -464,6 +481,8 @@ test('a review outside its plan or the rubric is refused', async () => {
     { ...ok, findings: [finding('#/snack', 'control')] },
     { ...ok, findings: [finding('#/snack', 'controls', { state: 'wide' })] },
     { ...ok, findings: [finding('#/toy', 'controls')] },
+    { ...ok, findings: [finding('#/snack', 'controls', { note: undefined })] },
+    { ...ok, findings: [finding('#/snack', 'controls', { note: '  ' })] },
   ]) {
     assert.notDeepEqual(validateReview(bad, plan, criteria), [], JSON.stringify(bad));
   }

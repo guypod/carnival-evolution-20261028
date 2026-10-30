@@ -42,10 +42,25 @@ export function routeModules(mainSource) {
       m[1],
     ]),
   );
+  // A renderer's body ends at the next top-level statement, so helpers that
+  // follow it count as drawn elsewhere and a cut too short only errs wide.
   const starts = [...mainSource.matchAll(/^function (render\w+)\(/gm)];
+  const tops = [...mainSource.matchAll(/^\w/gm)].map((m) => m.index);
   const bodies = new Map(
-    starts.map((m, i) => [m[1], mainSource.slice(m.index, starts[i + 1]?.index)]),
+    starts.map((m) => [
+      m[1],
+      mainSource.slice(
+        m.index,
+        tops.find((i) => i > m.index),
+      ),
+    ]),
   );
+  // Whatever main.ts draws outside the standalone routes' renderers: the
+  // midway, its overlay and any helper. A module used there is not one route's.
+  const routed = new Set([...renderers.keys()].map((fn) => bodies.get(fn) ?? ''));
+  const elsewhere = [...routed]
+    .reduce((rest, body) => rest.replace(body, ''), mainSource)
+    .replace(/^import [^;]+;/gm, '');
   const modules = new Map();
   for (const m of mainSource.matchAll(/^import \{([^}]+)\} from '\.\/([\w-]+)';/gm)) {
     const names = m[1].split(',').map((n) =>
@@ -58,7 +73,12 @@ export function routeModules(mainSource) {
     const routes = [...renderers]
       .filter(([fn]) => names.some((n) => n && new RegExp(`\\b${n}\\b`).test(bodies.get(fn) ?? '')))
       .map(([, route]) => route);
-    modules.set(`src/${m[2]}.ts`, routes);
+    // Type imports draw nothing, and a type name can match page text.
+    const values = m[1].split(',').filter((n) => !/^\s*type\s/.test(n));
+    const usedElsewhere = values
+      .map((n) => n.trim().split(' as ').pop())
+      .some((n) => n && new RegExp(`\\b${n}\\b`).test(elsewhere));
+    modules.set(`src/${m[2]}.ts`, usedElsewhere ? [] : routes);
   }
   return modules;
 }
@@ -199,6 +219,7 @@ export function validateReview(review, plan, criteria) {
     if (!(review.reviewed ?? []).includes(f.route)) errors.push(`finding on unreviewed ${f.route}`);
     if (!criteria.includes(f.criterion)) errors.push(`unknown criterion ${f.criterion}`);
     if (!STATE.test(f.state ?? '')) errors.push(`unknown state ${f.state}`);
+    if (typeof f.note !== 'string' || !f.note.trim()) errors.push(`finding without a note`);
   }
   return errors;
 }
@@ -267,6 +288,28 @@ function isStale(finding, now) {
 
 const git = (cwd, ...args) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+/** Which src files import a module, at a commit. A failed search throws. */
+export function importersAt(repo, head) {
+  return (file) => {
+    const name = file
+      .replace(/^src\//, '')
+      .replace(/\.ts$/, '')
+      .split('/')
+      .pop();
+    try {
+      return git(repo, 'grep', '-l', '-E', `from '[./]+(.*/)?${name}'`, head, '--', 'src')
+        .split('\n')
+        .map((line) => line.slice(head.length + 1))
+        .filter((f) => f && f !== file);
+    } catch (error) {
+      // git grep exits 1 only when it searched and found nothing. Any other
+      // failure must stop the plan, not pass for a module nothing imports.
+      if (error.status === 1 && !String(error.stderr ?? '').trim()) return [];
+      throw error;
+    }
+  };
+}
 
 /** The ledger on origin and the commit it was read from, or an empty one. */
 export function readLedger(repo, remote = 'origin') {
@@ -393,22 +436,7 @@ function plan(repo, now) {
     others,
     openPr: reconciled.openPr,
     now,
-    // Which src files import a module, at the planned head.
-    importers: (file) => {
-      const name = file
-        .replace(/^src\//, '')
-        .replace(/\.ts$/, '')
-        .split('/')
-        .pop();
-      try {
-        return git(repo, 'grep', '-l', '-E', `from '[./]+(.*/)?${name}'`, head, '--', 'src')
-          .split('\n')
-          .map((line) => line.slice(head.length + 1))
-          .filter((f) => f && f !== file);
-      } catch {
-        return [];
-      }
-    },
+    importers: importersAt(repo, head),
   });
   result.ledger.reconciledAt = now;
   return { ...result, base, head, repairable: repairable(result.ledger, now) };
