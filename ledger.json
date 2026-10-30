@@ -34,6 +34,40 @@
       "fingerprints": [
         "12d72f039beaf6b6"
       ]
+    },
+    {
+      "runId": "01a18de5-aa80-720a-8fb2-54b58fc34259",
+      "learner": "lens-tuning",
+      "trigger": "schedule",
+      "slot": "2026-10-30T17:40 Europe/London",
+      "scheduledFor": "2026-10-30T17:40:00.000Z",
+      "delayMinutes": 0,
+      "since": "2026-10-29T17:40:00.000Z",
+      "startedAt": "2026-10-30T17:40:39.000Z",
+      "finishedAt": "2026-10-30T17:42:57.000Z",
+      "coverage": {
+        "status": "complete",
+        "inspected": [
+          "#250",
+          "#257",
+          "#262",
+          "#263",
+          "#271",
+          "#272",
+          "#276",
+          "#283",
+          "#304",
+          "#375",
+          "#299",
+          "#394",
+          "#398",
+          "#405",
+          "#409"
+        ]
+      },
+      "fingerprints": [
+        "a3060372ac14845d"
+      ]
     }
   ],
   "proposals": [
@@ -84,6 +118,41 @@
       "firstSeen": "2026-10-30T14:47:51.000Z",
       "seenIn": [
         "01a18d46-50da-7046-b218-76d25345238a"
+      ],
+      "decisions": []
+    },
+    {
+      "fingerprint": "a3060372ac14845d",
+      "learner": "lens-tuning",
+      "kind": "amend-lens",
+      "target": "./review-lenses/visual-design/SKILL.md",
+      "title": "Require a short viewport capture for screens with fixed or stacked overlay panels",
+      "change": "In 'What counts as evidence', after the desktop (1280x800) and narrow (390px) widths, add: when the change adds or moves fixed, absolute or stacked overlay panels (such as the midway's waterside, stones or ferry panels), also capture a short viewport (590x378, as at 200% browser zoom) and report a finding when a panel covers the toolbar or another control, or cannot be scrolled into view; without that capture the state is rendering unverified.",
+      "rationale": "On #257 review caught panels covering each other, but not the stack growing over the Help, Guide, Photo and map view toolbar on a short, zoomed viewport; live QA found it and #262 had to repair it with watersideMaxHeight. The visual-design lens (added in #304) still only asks for desktop and narrow widths, so the same overlap on short screens would still pass review.",
+      "weakens": false,
+      "standards": [],
+      "netLines": 5,
+      "evidence": [
+        {
+          "kind": "pr",
+          "ref": "#257",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/257"
+        },
+        {
+          "kind": "repair",
+          "ref": "#262",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/262"
+        },
+        {
+          "kind": "pr",
+          "ref": "#304",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/304"
+        }
+      ],
+      "status": "open",
+      "firstSeen": "2026-10-30T17:42:57.000Z",
+      "seenIn": [
+        "01a18de5-aa80-720a-8fb2-54b58fc34259"
       ],
       "decisions": []
     }
