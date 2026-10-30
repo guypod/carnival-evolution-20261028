@@ -435,13 +435,20 @@ export function startWorkshop(
     // Lever: pivots at the pin, rises from left to right, and turns as it is pulled.
     const pin = LEVER_PIN;
     const leverA = LEVER_REST + leverTurn(phase);
-    ctx.strokeStyle = colors.wood;
-    ctx.lineWidth = 12;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(pin.x - 50 * Math.cos(leverA), pin.y - 50 * Math.sin(leverA));
-    ctx.lineTo(pin.x + 140 * Math.cos(leverA), pin.y + 140 * Math.sin(leverA));
-    ctx.stroke();
+    drawBellFrame();
+    // A dark edge under the wood gives the lever depth; the same line is drawn either way.
+    for (const [color, width] of [
+      [colors.background, 16],
+      [colors.wood, 12],
+    ] as const) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pin.x - 50 * Math.cos(leverA), pin.y - 50 * Math.sin(leverA));
+      ctx.lineTo(pin.x + 140 * Math.cos(leverA), pin.y + 140 * Math.sin(leverA));
+      ctx.stroke();
+    }
     // The holes ride on the lever: `targets` turns them with it, so they are drawn where they are clicked.
     for (const t of bits()) {
       if (t.kind !== 'slot') continue;
@@ -454,6 +461,15 @@ export function startWorkshop(
     ctx.beginPath();
     ctx.arc(pin.x, pin.y, 9, 0, Math.PI * 2);
     ctx.fill();
+    // The pin's slot shows a tight pin as a bolt and a loose one as a slack ring.
+    ctx.strokeStyle = colors.background;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (bench.toy.pinTight) {
+      ctx.moveTo(pin.x - 5, pin.y);
+      ctx.lineTo(pin.x + 5, pin.y);
+    } else ctx.arc(pin.x, pin.y, 4, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.fillStyle = colors.text;
     ctx.fillText(bench.toy.pinTight ? 'tight' : 'loose', pin.x, pin.y + 24);
     // Hammer on its own pivot, swung by the rod.
@@ -474,16 +490,32 @@ export function startWorkshop(
       ctx.stroke();
       drawPart('rod', rodAt.x, rodAt.y, 0);
     }
-    ctx.strokeStyle = colors.wood;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(hammerPivot.x, hammerPivot.y);
-    ctx.lineTo(head.x, head.y);
-    ctx.stroke();
+    for (const [color, width] of [
+      [colors.background, 9],
+      [colors.wood, 6],
+    ] as const) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(hammerPivot.x, hammerPivot.y);
+      ctx.lineTo(head.x, head.y);
+      ctx.stroke();
+    }
+    // The rod's far end is pinned to the hammer where the rod line ends, so the joint is the real one.
+    if (rodAt && held !== 'rod') {
+      bolt(hammerPivot.x + Math.cos(ha) * 50, hammerPivot.y + Math.sin(ha) * 50, 4);
+    }
     ctx.fillStyle = colors.stripeA;
     ctx.beginPath();
     ctx.arc(head.x, head.y, 12, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = colors.background;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 12, 0, Math.PI * 2);
+    ctx.arc(head.x - 2, head.y - 2, 10, 0, Math.PI * 2, true);
+    ctx.fill();
+    // The hammer's own pivot: a bolt on its post.
+    bolt(hammerPivot.x, hammerPivot.y, 6);
     // The bell sits where a full swing lands; the rubber stop just past it.
     ctx.fillStyle = colors.accent;
     ctx.beginPath();
@@ -491,18 +523,128 @@ export function startWorkshop(
     ctx.lineTo(680, 150);
     ctx.lineTo(620, 150);
     ctx.fill();
+    // A lip and a shine inside the bell's outline give it its brass depth.
+    ctx.fillStyle = colors.wood;
+    ctx.fillRect(620, 146, 60, 4);
+    ctx.strokeStyle = colors.stripeB;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(BELL_AT.x, BELL_AT.y, 18, Math.PI * 1.15, Math.PI * 1.4);
+    ctx.stroke();
     ctx.fillStyle = colors.muted;
     ctx.fillRect(633, 253, 30, 12);
+    ctx.fillStyle = colors.background;
+    ctx.fillRect(633, 261, 30, 4);
     if (run?.result.working && pull > 0.9) {
       ctx.fillStyle = colors.text;
       ctx.font = canvasFont('body', 'bold');
-      ctx.fillText('DING!', 650, 70);
+      ctx.fillText('DING!', 600, 70);
     }
     ctx.font = canvasFont('small');
     ctx.fillStyle = colors.text;
     ctx.fillText('lever', 80, 240);
     ctx.fillText('bell', 650, 165);
     ctx.fillText('stop', 655, 215);
+  }
+
+  /** A bolt head: a dark ring round a light boss, for a pivot that holds still. */
+  function bolt(x: number, y: number, r: number) {
+    ctx.fillStyle = colors.background;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = colors.muted;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /**
+   * The bell's fixed frame: a base rail, a post under each pivot and a gallows
+   * the bell hangs from, with the wooden rooster perched on top. None of it
+   * moves, and none of it touches the lever, rod or hammer.
+   */
+  function drawBellFrame() {
+    ctx.fillStyle = colors.background;
+    ctx.fillRect(40, 246, 670, 6);
+    // A post under the lever's pin and under the hammer's pivot.
+    ctx.beginPath();
+    ctx.moveTo(LEVER_PIN.x - 22, 248);
+    ctx.lineTo(LEVER_PIN.x, LEVER_PIN.y);
+    ctx.lineTo(LEVER_PIN.x + 22, 248);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(HAMMER_PIVOT.x - 16, 248);
+    ctx.lineTo(HAMMER_PIVOT.x, HAMMER_PIVOT.y);
+    ctx.lineTo(HAMMER_PIVOT.x + 16, 248);
+    ctx.fill();
+    // The gallows: a post at the right and a beam out over the bell, which hangs on a short strap.
+    ctx.fillRect(694, 84, 10, 164);
+    ctx.fillRect(640, 84, 64, 8);
+    ctx.fillRect(BELL_AT.x - 3, 92, 6, 4);
+    ctx.fillStyle = colors.wood;
+    ctx.fillRect(696, 86, 6, 160);
+    ctx.fillRect(642, 86, 60, 4);
+    drawRooster(690, 84);
+  }
+
+  /** A wooden rooster, facing the bell, standing with its feet at `x`, `y`. */
+  function drawRooster(x: number, y: number) {
+    // Tail feathers fanned up behind it.
+    ctx.fillStyle = colors.stripeA;
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y - 22);
+    ctx.quadraticCurveTo(x + 26, y - 50, x + 22, y - 26);
+    ctx.quadraticCurveTo(x + 28, y - 40, x + 18, y - 14);
+    ctx.closePath();
+    ctx.fill();
+    // Legs.
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y - 12);
+    ctx.lineTo(x - 5, y);
+    ctx.moveTo(x + 4, y - 12);
+    ctx.lineTo(x + 5, y);
+    ctx.stroke();
+    // Body, neck and head.
+    ctx.fillStyle = colors.wood;
+    ctx.strokeStyle = colors.background;
+    ctx.beginPath();
+    ctx.ellipse(x, y - 20, 15, 10, -0.15, 0, Math.PI * 2);
+    ctx.moveTo(x - 6, y - 26);
+    ctx.lineTo(x - 13, y - 40);
+    ctx.lineTo(x - 19, y - 38);
+    ctx.lineTo(x - 13, y - 22);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x - 16, y - 42, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // A wing carved into the body.
+    ctx.beginPath();
+    ctx.arc(x + 1, y - 21, 7, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    // Comb, wattle, beak and eye.
+    ctx.fillStyle = colors.stripeA;
+    for (const dx of [-20, -16, -12]) {
+      ctx.beginPath();
+      ctx.arc(x + dx, y - 50, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.ellipse(x - 21, y - 35, 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = colors.accent;
+    ctx.beginPath();
+    ctx.moveTo(x - 22, y - 45);
+    ctx.lineTo(x - 30, y - 42);
+    ctx.lineTo(x - 22, y - 39);
+    ctx.fill();
+    ctx.fillStyle = colors.background;
+    ctx.beginPath();
+    ctx.arc(x - 17, y - 44, 1.5, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   function cam(kind: string, x: number, y: number, turns: number) {
