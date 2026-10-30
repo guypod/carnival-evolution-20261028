@@ -1,10 +1,8 @@
 {
   "version": 1,
-  "head": "6b03265cd61be971ca3453ff3f79e59114633829",
+  "head": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
   "reviewedThrough": null,
   "pending": [
-    "#/balloon",
-    "#/snack",
     "#/coaster",
     "#/fair",
     "#/parade",
@@ -28,33 +26,33 @@
       "route": "#/",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "The Photo button in the top-right toolbar is a raw white/grey default button with small default-size text, unlike the dark rounded theme buttons (Help, Guide, Start tour) beside it; same at narrow width.",
+      "note": "Still at e3dca5c: the Photo button in the top-right toolbar is a raw white/grey default button with small default text beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
       "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "seenOn": "2026-10-30T15:17:26.050Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:materials",
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "materials",
-      "note": "Booth prize cards are flat purple rectangles with a yellow outline and the page is a flat dark background under the awning: generic dashboard cards, no wood, paper tags or lantern glow; the Prize Room and desk toy links are plain full-width yellow bars.",
+      "note": "Still at e3dca5c: booth prize cards are flat purple rectangles with a yellow outline on a flat dark page; the Prize Room and desk toy links are plain full-width yellow bars; no wood, paper tags or lantern glow.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
       "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "seenOn": "2026-10-30T15:17:26.050Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:depth",
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Cards, the Carnival Collector panel and the link bars have no shadow, frame or counter edge; everything sits flat on the full-bleed dark background.",
+      "note": "Still at e3dca5c: cards, the dashed Carnival Collector panel and the link bars have no shadow, frame or counter edge on the full-bleed dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
       "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "seenOn": "2026-10-30T15:17:26.050Z"
     },
     {
       "fingerprint": "#/room:desktop-clean:controls",
@@ -308,11 +306,44 @@
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
       "status": "open",
       "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/snack:desktop-clean:controls",
+      "route": "#/snack",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Serve/Start over/Next visitor are raw grey default buttons with small default text and Base/Topping/Presentation use default white radio dots; same at 390px.",
+      "firstSeen": "2026-10-30T15:17:26.050Z",
+      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "status": "open",
+      "seenOn": "2026-10-30T15:17:26.050Z"
+    },
+    {
+      "fingerprint": "#/snack:desktop-clean:composition",
+      "route": "#/snack",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "Fieldsets run full width at the top, then a small visitor face floats in a large empty area above a 360px brown strip at the left; most of the 1280x800 screen is blank background with no stall as focal point.",
+      "firstSeen": "2026-10-30T15:17:26.050Z",
+      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "status": "open",
+      "seenOn": "2026-10-30T15:17:26.050Z"
+    },
+    {
+      "fingerprint": "#/snack:desktop-clean:depth",
+      "route": "#/snack",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "The visitor sits on flat background and the counter is a flat brown bar with no frame, shadow or awning; the controls are not in a framed panel with the scene.",
+      "firstSeen": "2026-10-30T15:17:26.050Z",
+      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "status": "open",
+      "seenOn": "2026-10-30T15:17:26.050Z"
     }
   ],
   "reviewedAt": {
-    "#/": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/prizes": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+    "#/prizes": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/toy": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/trail": "6b03265cd61be971ca3453ff3f79e59114633829",
@@ -322,7 +353,9 @@
     "#/booths": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/postcard": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/plush": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829"
+    "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+    "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb"
   },
-  "reconciledAt": "2026-10-30T12:17:49.505Z"
+  "reconciledAt": "2026-10-30T15:15:28.047Z"
 }
