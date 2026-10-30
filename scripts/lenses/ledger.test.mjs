@@ -85,6 +85,7 @@ const run = (extra = {}) => {
 };
 const decision = (ledger, extra = {}) => ({
   fingerprint: ledger.proposals[0].fingerprint,
+  revision: ledger.proposals[0].revisions?.length ?? 0,
   decision: 'apply',
   rationale: 'The leak is real and the check is cheap.',
   evidence: [evidence('pr', '#304')],
@@ -1328,4 +1329,21 @@ test('a persisted partial checkpoint must lie inside its own run window', () => 
       ),
     /malformed/,
   );
+});
+
+test('a decision validated before a revision cannot accept the revised content', () => {
+  let ledger = recordRun(emptyLedger(), run());
+  const validated = decision(ledger);
+  assert.equal(validated.revision, 0);
+  ledger = recordRun(
+    ledger,
+    run({ runId: 'run-2', proposals: [proposal({ change: 'Something else.' })] }),
+  );
+  assert.notDeepEqual(validateDecision(ledger, validated), []);
+  const missing = { ...validated };
+  delete missing.revision;
+  assert.notDeepEqual(validateDecision(ledger, missing), []);
+  assert.deepEqual(validateDecision(ledger, decision(ledger)), []);
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
+  assert.equal(ledger.proposals[0].decisions.at(-1).revision, 1);
 });

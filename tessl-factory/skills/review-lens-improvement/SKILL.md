@@ -159,10 +159,14 @@ real start followed or is already covered, a `scheduledFor` that is not the
 slot's, a `since` missing or later than the owed interval, a manual run with a slot, a window
 over 24 hours or over the daily limit, times in the future, a target outside
 the schema or not in normal form, a missing `netLines`, evidence outside this
-repository, and a partial or failed run without `gaps`. A proposal already in
-the ledger keeps its status and decisions and gains the new evidence; if the
-new sighting says it weakens something, or names more standards, that
-caution is kept.
+repository, and a partial or failed run without `gaps`. A repeat of a proposal
+already in the ledger with the same `change`, `check` and `netLines` and no
+new caution keeps its status and decisions and only gains the new evidence.
+A repeat that changes any of those, or says it weakens something, or names
+more standards, is a revision: the ledger keeps the earlier content under
+`revisions`, and an accepted proposal goes back to `deferred` for the
+coordinator to decide again. So repeat a proposal's content exactly unless
+you mean to revise it.
 Recording the same `runId` twice changes nothing. A failed run is still
 recorded, with its real times, so the gap is visible.
 

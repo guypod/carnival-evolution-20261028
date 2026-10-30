@@ -714,6 +714,12 @@ export function validateDecision(ledger, decision) {
   if (!VALIDATION.includes(decision.validation)) {
     errors.push(`validation must be one of ${VALIDATION.join(', ')}`);
   }
+  // A decision names the revision it validated, so content a later sighting
+  // recorded under the same fingerprint is never decided on the old check.
+  const revision = proposal.revisions?.length ?? 0;
+  if (decision.revision !== revision) {
+    errors.push(`revision must be ${revision}, the proposal content as it now stands`);
+  }
   if (!COMMIT.test(decision.checkedAt ?? '')) {
     errors.push('checkedAt must be the main commit the proposal was validated against');
   }
@@ -753,6 +759,7 @@ export function recordDecision(ledger, decision, now) {
     slot,
     validation,
     checkedAt,
+    revision,
   } = decision;
   return {
     ...ledger,
@@ -768,6 +775,7 @@ export function recordDecision(ledger, decision, now) {
                 rationale,
                 validation,
                 checkedAt,
+                revision,
                 evidence,
                 decidedBy,
                 slot,
@@ -1065,7 +1073,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   } else if (command === 'manual') {
     print({ now, ...manualStart(ledger, now, arg) });
   } else if (command === 'pending') {
-    print(pendingProposals(ledger));
+    print(pendingProposals(ledger).map((p) => ({ ...p, revision: p.revisions?.length ?? 0 })));
   } else if (command === 'summary') {
     console.log(summary(ledger, arg));
   } else if (command === 'record') {

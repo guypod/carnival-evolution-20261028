@@ -110,11 +110,14 @@ From a clone of `main`:
 2. Validate each one against current code on `main`: does the miss, friction
    or redundancy still hold? Classify it as `current`, `stale`,
    `already-fixed` or `unsupported`, keeping the evidence.
-3. Write a decision file outside the clone:
+3. Write a decision file outside the clone. `revision` is the `revision`
+   that `pending` printed for the content you validated; `decide` refuses it
+   once a later sighting has revised the proposal, so validate again:
 
    ```json
    {
      "fingerprint": "<16 hex>",
+     "revision": 0,
      "decision": "apply | defer | reject",
      "rationale": "why",
      "validation": "current | stale | already-fixed | unsupported",
@@ -132,7 +135,7 @@ From a clone of `main`:
    ```
 
 4. `node scripts/lenses/ledger.mjs decide <file>` validates and saves it. It
-   refuses a malformed file, a missing rationale, validation, commit or
+   refuses a malformed file, a `revision` that is not the current one, a missing rationale, validation, commit or
    evidence, evidence that is not a canonical `https://github.com` URL in
    this repository, a `pr` item whose `ref` is not `#<n>` of its URL, a
    proposal already decided, `decidedBy: "review-lens-improvement"` (the
