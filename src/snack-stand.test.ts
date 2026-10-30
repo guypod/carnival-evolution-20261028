@@ -53,4 +53,11 @@ describe('snack stand', () => {
     const headwear = VISITORS.map((visitor) => portraitFor(visitor).headwear);
     expect(new Set(headwear).size).toBe(VISITORS.length);
   });
+
+  it('gives a plain portrait to a name that is not listed', () => {
+    const plain = { face: { rx: 36, ry: 36 }, headwear: 'none' };
+    for (const name of ['Nobody Yet', 'toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      expect(portraitFor({ ...pip, name })).toEqual(plain);
+    }
+  });
 });

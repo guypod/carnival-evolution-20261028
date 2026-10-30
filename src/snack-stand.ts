@@ -188,7 +188,7 @@ export function drawSnackScene(
   }
 }
 
-export type Headwear = 'captain-hat' | 'moon-pin' | 'twin-buns';
+export type Headwear = 'captain-hat' | 'moon-pin' | 'twin-buns' | 'none';
 
 /** How each visitor's portrait is drawn: a face shape and one headwear accessory. */
 export interface Portrait {
@@ -203,9 +203,12 @@ const PORTRAITS: Record<string, Portrait> = {
   'Twirly Tess': { face: { rx: 34, ry: 36 }, headwear: 'twin-buns' },
 };
 
+/** The portrait for anyone not listed: a plain round face with no accessory. */
+const PLAIN_PORTRAIT: Portrait = { face: { rx: 36, ry: 36 }, headwear: 'none' };
+
 /** The portrait for a visitor, with a plain round face for anyone not listed. */
 export function portraitFor(visitor: Visitor): Portrait {
-  return PORTRAITS[visitor.name] ?? { face: { rx: 36, ry: 36 }, headwear: 'twin-buns' };
+  return Object.hasOwn(PORTRAITS, visitor.name) ? PORTRAITS[visitor.name] : PLAIN_PORTRAIT;
 }
 
 /** Draws a visitor's head, accessory and expression, centred on (vx, vy). */
@@ -279,7 +282,7 @@ function drawPortrait(
     ctx.beginPath();
     ctx.arc(mx + 5, my - 3, 8, 0, Math.PI * 2);
     ctx.fill();
-  } else {
+  } else if (headwear === 'twin-buns') {
     ctx.strokeStyle = c.stripeA;
     ctx.lineWidth = 4;
     ctx.beginPath();
