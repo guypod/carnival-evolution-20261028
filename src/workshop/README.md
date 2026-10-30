@@ -51,13 +51,29 @@ toy's mechanism, so what moves follows from where the parts are.
 
 ## Inspecting a toy
 
-Inspect step (I) is a slow, untimed crank. Each press steps one part further
-along the drive, from the crank or lever to the bear, hammer or frog, and the
-words under the bench say whether that part moves and where the motion stops
-("Motion stops here." on the first part that stays still). It reads the same
-run the Test button uses, so it never disagrees with a test, and it changes
-nothing: press it as often as you like, and it wraps back to the start. Moving
-a part or a pin starts it over. It never records a repair; only Test does.
+Inspect step (I) is a slow, untimed crank. The first press stops any test that
+is animating and holds the toy still at the start of the same run the Test
+button uses. Each press after that turns the crank (or pulls the lever) one step
+further, in 8 even steps that wrap round, so gears, lever, rod, cam and frog
+stand where a test would carry them, Quiet or not. Clicks and the keyboard ring
+follow the parts to where they are drawn at that step.
+
+On the bench, every part along the drive gets a numbered arrow with words:
+"turns with crank", "turns against crank", "swings", "stops here" (with a cross
+on the part where the motion stops) or "still" for the parts past it. Turning
+gears also get a curved arrow showing which way they turn. Nothing rests on
+colour alone. The words under the bench sum it up, for example "Inspect step 1
+of 8: motion passes the crank gear, medium gear and stops at the bear gear."
+The bench's accessible name adds what the rig says about the ringed part.
+
+A loose bell shows the lever and the rod's end in its hole moving, while the
+hammer stays still: the rod slides on the loose pivot pin, so its push never
+reaches the hammer.
+
+Press Test to leave the inspection and run the toy normally. Any move, tool use,
+Undo, Reset or toy switch clears the inspection, even one that puts the toy back
+as it was, so the next press starts at step 1. Inspecting changes nothing and
+never records a repair; only Test does.
 
 ## Repairs and the midway
 

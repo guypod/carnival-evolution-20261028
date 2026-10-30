@@ -7,7 +7,18 @@ import {
   TOYS,
   benchPoint,
   bellPull,
+  BELL_AT,
+  benchLabel,
+  benchPhase,
   benchStops,
+  HAMMER_PIVOT,
+  hammerAngle,
+  inspectionMarks,
+  LEVER_REST,
+  startTest,
+  stepInspection,
+  type BenchRun,
+  type InspectionMark,
   commit,
   createRepairsStore,
   drawOrder,
@@ -26,7 +37,6 @@ import {
   SHAFT,
   recordRepair,
   resetBench,
-  runToy,
   inspectToy,
   inspectionLine,
   targets,
@@ -35,12 +45,11 @@ import {
   useTool,
   type Bench,
   type Repairs,
-  type Run,
   type Target,
   type Tool,
   type ToyId,
 } from './workshop';
-import { camOutline, frogPose, frogRig, PEBBLE, stillPhase, type CamShape } from './cams';
+import { camOutline, frogPose, frogRig, PEBBLE, type CamShape } from './cams';
 
 const { width: WIDTH, height: HEIGHT } = BENCH;
 /** How long a test run animates, in milliseconds. */
@@ -98,7 +107,8 @@ export function startWorkshop(
   let drag: { x: number; y: number } | undefined;
   /** Where the pointer pressed to pick up the held part, so a release can tell a click from a drag. */
   let downAt: { x: number; y: number } | undefined;
-  let run: { result: Run; startedAt: number } | undefined;
+  /** A test animating, or an inspection held at a step: one run of the toy's model either way. */
+  let run: BenchRun | undefined;
   let frame = 0;
 
   const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
@@ -147,13 +157,9 @@ export function startWorkshop(
     draw();
   }
 
-  /** The inspection rig's step, and the set-up it was stepping through; any bench edit, undo, reset or toy switch starts it over. */
-  let inspecting: { toy: string; step: number } | undefined;
-
   function apply(result: { toy: Bench['toy']; changed: boolean; message: string }) {
     bench = commit(bench, result);
     run = undefined;
-    inspecting = undefined;
     say(result.message);
     refresh();
   }
@@ -186,19 +192,27 @@ export function startWorkshop(
     refresh();
   }
 
+  /**
+   * One press of Inspect step: the toy's run held still at the next step, so the
+   * parts stand where a test would carry them. It stops any test animating, and
+   * any edit, undo, reset or toy switch clears it, so it starts over.
+   */
   function inspect() {
     held = drag = undefined;
-    const key = JSON.stringify(bench.toy);
-    inspecting =
-      inspecting?.toy === key ? { toy: key, step: inspecting.step + 1 } : { toy: key, step: 0 };
-    say(inspectionLine(inspectToy(bench.toy), inspecting.step));
+    cancelAnimationFrame(frame);
+    run = stepInspection(run, bench.toy);
+    if (run.mode === 'inspect') say(inspectionLine(inspectToy(bench.toy, run.result), run.step));
     refresh();
   }
 
+  /** The rig's labelled arrows, while an inspection is held. */
+  const marks = (): InspectionMark[] | undefined =>
+    run?.mode === 'inspect' ? inspectionMarks(bench.toy, run.result, runPhase()) : undefined;
+
   function test() {
     held = drag = undefined;
-    const result = runToy(bench.toy);
-    run = { result, startedAt: performance.now() };
+    run = startTest(bench.toy, performance.now());
+    const { result } = run;
     quiet = quietNow();
     let message = result.message;
     if (result.working && !repairs.toys[bench.toy.id]) {
@@ -221,15 +235,16 @@ export function startWorkshop(
     cancelAnimationFrame(frame);
     const step = () => {
       draw();
-      if (run && performance.now() - run.startedAt < RUN_MS) frame = requestAnimationFrame(step);
+      if (run?.mode === 'test' && performance.now() - run.startedAt < RUN_MS)
+        frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
   }
 
   function selectToy(id: ToyId) {
     held = drag = undefined;
+    cancelAnimationFrame(frame);
     run = undefined;
-    inspecting = undefined;
     focusKey = undefined;
     benches[bench.toy.id] = bench;
     bench = benches[id] ?? openBench(repairs.toys[id] ?? faultyToy(id));
@@ -240,15 +255,11 @@ export function startWorkshop(
   // Drawing.
 
   /**
-   * How far through the test run, 0 to 1. In quiet mode a run shows one still
-   * frame at once: for the frog, the frame that shows why it did what it did.
+   * How far through the run, 0 to 1. In quiet mode a test shows one still frame
+   * at once: for the frog, the frame that shows why it did what it did. An
+   * inspection shows its step's frame, quiet or not.
    */
-  function runPhase(): number {
-    if (!run) return 0;
-    if (quiet)
-      return run.result.kind === 'cam' ? stillPhase(run.result.cam, run.result.stalled) : 0.25;
-    return Math.min(1, (performance.now() - run.startedAt) / RUN_MS);
-  }
+  const runPhase = () => benchPhase(run, performance.now(), quiet, RUN_MS);
 
   function draw() {
     ctx.fillStyle = colors.surface;
@@ -262,7 +273,11 @@ export function startWorkshop(
     if (bench.toy.id === 'music-box') drawGears(phase);
     else if (bench.toy.id === 'rooster-bell') drawBell(phase);
     else drawFrog(phase);
+    const shownMarks = marks();
+    if (shownMarks) drawMarks(shownMarks);
     const focus = focusedTarget();
+    const label = benchLabel(focus, tool, shownMarks);
+    if (canvas.getAttribute('aria-label') !== label) canvas.setAttribute('aria-label', label);
     if (focus && document.activeElement === canvas) {
       ctx.strokeStyle = colors.accent;
       ctx.lineWidth = 3;
@@ -278,6 +293,70 @@ export function startWorkshop(
       const at = drag ?? focus;
       if (at) drawPart(held, at.x, at.y, 0, true);
     }
+  }
+
+  /**
+   * The rig's arrows: a labelled arrow onto each part the motion reaches, turning
+   * the way the part turns, and a bar across the part where it stops. The words
+   * say moves, stops or still, so nothing rests on colour alone.
+   */
+  function drawMarks(list: InspectionMark[]) {
+    ctx.save();
+    ctx.font = canvasFont('small', 'bold');
+    ctx.lineWidth = 3;
+    list.forEach((m, i) => {
+      const color = m.state === 'moves' ? colors.text : colors.danger;
+      ctx.strokeStyle = ctx.fillStyle = color;
+      // Labels alternate above and below their parts, a row further out each pair, so neighbours do not overlap.
+      const up = i % 2 === 0;
+      const reach = 44 + Math.floor(i / 2) * 22;
+      const tip = { x: m.x, y: m.y + (up ? -22 : 22) };
+      const tail = { x: m.x, y: m.y + (up ? -reach : reach) };
+      if (m.state === 'stops') {
+        ctx.beginPath();
+        ctx.moveTo(m.x - 14, m.y - 14);
+        ctx.lineTo(m.x + 14, m.y + 14);
+        ctx.moveTo(m.x + 14, m.y - 14);
+        ctx.lineTo(m.x - 14, m.y + 14);
+        ctx.stroke();
+      }
+      if (m.state !== 'still') {
+        ctx.beginPath();
+        ctx.moveTo(tail.x, tail.y);
+        ctx.lineTo(tip.x, tip.y);
+        ctx.stroke();
+        const dir = up ? 1 : -1;
+        ctx.beginPath();
+        ctx.moveTo(tip.x, tip.y);
+        ctx.lineTo(tip.x - 6, tip.y - 8 * dir);
+        ctx.lineTo(tip.x + 6, tip.y - 8 * dir);
+        ctx.fill();
+      }
+      if (m.turn) {
+        // A curved arrow round the gear, clockwise with the crank or back against it.
+        const r = 20;
+        const from = -Math.PI / 2;
+        const to = from + (Math.PI / 1.5) * m.turn;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, r, from, to, m.turn < 0);
+        ctx.stroke();
+        const end = { x: m.x + Math.cos(to) * r, y: m.y + Math.sin(to) * r };
+        const along = to + (Math.PI / 2) * m.turn;
+        ctx.beginPath();
+        ctx.moveTo(end.x + Math.cos(along) * 6, end.y + Math.sin(along) * 6);
+        ctx.lineTo(end.x + Math.cos(to) * 5, end.y + Math.sin(to) * 5);
+        ctx.lineTo(end.x - Math.cos(to) * 5, end.y - Math.sin(to) * 5);
+        ctx.fill();
+      }
+      const ty = tail.y + (up ? -10 : 10);
+      const width = ctx.measureText(m.label).width;
+      const x = Math.min(WIDTH - width / 2 - 4, Math.max(width / 2 + 4, m.x));
+      ctx.fillStyle = colors.background;
+      ctx.fillRect(x - width / 2 - 3, ty - 9, width + 6, 18);
+      ctx.fillStyle = color;
+      ctx.fillText(m.label, x, ty);
+    });
+    ctx.restore();
   }
 
   function drawPart(part: string, x: number, y: number, angle: number, lifted = false) {
@@ -347,7 +426,7 @@ export function startWorkshop(
     const pull = bellPull(phase);
     // Lever: pivots at the pin, rises from left to right, and turns as it is pulled.
     const pin = LEVER_PIN;
-    const leverA = -0.46 + leverTurn(phase);
+    const leverA = LEVER_REST + leverTurn(phase);
     ctx.strokeStyle = colors.wood;
     ctx.lineWidth = 12;
     ctx.lineCap = 'round';
@@ -370,10 +449,9 @@ export function startWorkshop(
     ctx.fillStyle = colors.text;
     ctx.fillText(bench.toy.pinTight ? 'tight' : 'loose', pin.x, pin.y + 24);
     // Hammer on its own pivot, swung by the rod.
-    const hammerPivot = { x: 520, y: 220 };
-    const swing = travel * pull;
+    const hammerPivot = HAMMER_PIVOT;
     // A full swing (middle hole) meets the bell; half again lands on the rubber stop.
-    const ha = -Math.PI / 2 - 0.8 + swing * 1.69;
+    const ha = hammerAngle(travel, phase);
     const head = {
       x: hammerPivot.x + Math.cos(ha) * 130,
       y: hammerPivot.y + Math.sin(ha) * 130,
@@ -401,7 +479,7 @@ export function startWorkshop(
     // The bell sits where a full swing lands; the rubber stop just past it.
     ctx.fillStyle = colors.accent;
     ctx.beginPath();
-    ctx.arc(650, 120, 26, Math.PI, 0);
+    ctx.arc(BELL_AT.x, BELL_AT.y, 26, Math.PI, 0);
     ctx.lineTo(680, 150);
     ctx.lineTo(620, 150);
     ctx.fill();
@@ -530,12 +608,6 @@ export function startWorkshop(
       } else onExit();
     } else return;
     event.preventDefault();
-    const focus = focusedTarget();
-    if (focus && event.target === canvas)
-      canvas.setAttribute(
-        'aria-label',
-        `Repair bench, ${focus.label} picked. Enter or Space acts on it with the ${tool}.`,
-      );
     draw();
   };
 
@@ -547,7 +619,6 @@ export function startWorkshop(
     }
     bench = undo(bench);
     run = undefined;
-    inspecting = undefined;
     say('Undid the last change.');
     refresh();
   }
@@ -555,7 +626,6 @@ export function startWorkshop(
   function reset() {
     held = drag = undefined;
     run = undefined;
-    inspecting = undefined;
     bench = resetBench(bench);
     say('The toy is back as it came in, faults and all. Undo brings your work back.');
     refresh();
