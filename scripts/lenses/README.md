@@ -34,7 +34,8 @@ later sync would then reset it.
 
 `node scripts/lenses/ledger.mjs due <learner>` is a second gate. It derives
 the London slot id (`YYYY-MM-DDTHH:MM Europe/London`) from the real clock and
-refuses a slot already covered completely.
+refuses a slot already covered completely by a run that counts towards the
+unbroken covered interval below.
 
 - **Writer-queue delay.** All learners share the `carnival-app-writer` key, so
   a run can wait in the queue. A run that really starts up to
@@ -49,9 +50,12 @@ refuses a slot already covered completely.
   scheduled run less one hour of overlap (never before that run's own
   `since`), or a partial run's `coverage.through`, whichever is later or,
   before any, the window of the first scheduled attempt. `record` refuses a scheduled run whose `since` is
-  missing or later than that, so a run cannot cover less than it owes. Only
-  runs whose `since` reaches back to where coverage so far ends count, oldest
-  first, so the checkpoint is the end of one unbroken covered interval.
+  missing or later than that, so a run cannot cover less than it owes. Each
+  run covers from its `since` to its start (complete) or its
+  `coverage.through` (partial); the hour of overlap only sets where the next
+  run reads, not what was covered. Only runs whose covered intervals join into
+  one unbroken interval from the earliest window attempted count, whatever
+  order they started in, so the checkpoint is the end of that interval.
 - **Retry.** A partial or failed slot stays due: a run for the same slot may
   try again while the slot is still owed (within the 180 minutes). After
   that, the next slot's `since` still reaches back to the last complete run,
@@ -95,7 +99,10 @@ they were. `due`, `since`, `checkpoint` and `summary` use the latest
 correction's coverage, so the owed interval comes back. A later run that
 started reading after the reopened start does not close it, even though it
 counted before the correction: the gap stays owed until a recorded run whose
-`since` reaches back to it covers it. `correct` refuses an
+`since` reaches back to it covers it. Once one does, every run whose interval
+it joins counts again, so nothing already covered is owed twice. A complete
+run cut off this way no longer covers its slot, so the slot may be retried
+while it is still owed. `correct` refuses an
 unknown run, a stale revision or claim, anything but a downgrade, a
 `through`, a ref the run never recorded and the loop correcting itself. The
 same file again changes nothing; another file under the same id is refused.

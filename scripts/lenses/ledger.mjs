@@ -350,28 +350,47 @@ const sinceOf = (r) =>
     ? Date.parse(r.since)
     : Date.parse(r.startedAt) - MANUAL_LOOKBACK_HOURS * 3600_000;
 
-// The scheduled runs whose progress counts: oldest start first, a run counts
-// only when its since reaches back to where coverage so far ends (before any,
-// to the earliest window attempted), so coverage stays one unbroken interval.
-// A correction that lowers a run reopens its interval, and a later run that
-// started reading after the reopened start does not close it: only recorded
-// coverage that spans the gap does.
+// Where a run's recorded coverage ends, or NaN: a complete run read up to its
+// start, a partial run up to its through. Unlike resumeAt this has no retry
+// overlap, so it says which intervals connect, not where the next run reads.
+const coveredTo = (r) => {
+  if (r.coverage.status === 'complete') return Date.parse(r.startedAt);
+  if (r.coverage.status === 'partial' && isTime(r.coverage.through)) {
+    return Date.parse(r.coverage.through);
+  }
+  return NaN;
+};
+
+// The scheduled runs whose progress counts: those whose recorded intervals,
+// from since to coveredTo, join into one unbroken interval from the earliest
+// window attempted. A run starts that interval when its since reaches back to
+// the earliest window attempted by the time it started; any run whose since
+// falls inside the interval so far extends it, whatever order the runs
+// started in, so a later batch that bridges a gap reconnects the runs after
+// it. A correction that lowers a run reopens its interval, and a later run
+// that started reading after the reopened start does not close it: only
+// recorded coverage that spans the gap does.
 const countedRuns = (ledger, learner) => {
   const runs = scheduledRuns(ledger, learner).sort(
     (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
   );
-  const counted = [];
+  const counted = new Set();
   let earliest = Infinity;
-  let frontier = null;
   for (const r of runs) {
     earliest = Math.min(earliest, sinceOf(r));
-    const resume = resumeAt(r);
-    if (Number.isNaN(resume)) continue;
-    if (sinceOf(r) > (frontier ?? earliest)) continue;
-    counted.push(r);
-    frontier = Math.max(frontier ?? -Infinity, resume);
+    if (!Number.isNaN(coveredTo(r)) && sinceOf(r) <= earliest) counted.add(r);
   }
-  return counted;
+  let frontier = Math.max(-Infinity, ...[...counted].map(coveredTo));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const r of runs) {
+      if (counted.has(r) || Number.isNaN(coveredTo(r)) || sinceOf(r) > frontier) continue;
+      counted.add(r);
+      frontier = Math.max(frontier, coveredTo(r));
+      grew = true;
+    }
+  }
+  return runs.filter((r) => counted.has(r));
 };
 
 /**
@@ -382,15 +401,7 @@ const countedRuns = (ledger, learner) => {
  * inspection, whose bounded window may skip an older interval.
  */
 export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
-  const done = countedRuns(ledger, learner)
-    .map((r) => {
-      if (r.coverage.status === 'complete') return Date.parse(r.startedAt);
-      if (r.coverage.status === 'partial' && isTime(r.coverage.through)) {
-        return Date.parse(r.coverage.through);
-      }
-      return NaN;
-    })
-    .filter((t) => !Number.isNaN(t));
+  const done = countedRuns(ledger, learner).map(coveredTo);
   return done.length ? new Date(Math.max(...done)).toISOString() : null;
 }
 
@@ -412,7 +423,8 @@ export function retrySince(ledger, scheduledFor, learner = DEFAULT_LEARNER) {
 
 /**
  * Whether a scheduled run should inspect now. A slot already covered
- * completely is not inspected again; a partial or failed one may be retried
+ * completely, by a run that counts towards unbroken coverage, is not
+ * inspected again; a partial or failed one may be retried
  * while it is still owed. A run delayed in the writer queue still serves its
  * slot, up to MAX_QUEUE_DELAY_MINUTES; after that the slot is missed and is
  * never back-filled. Manual runs never count here.
@@ -429,12 +441,10 @@ export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
     };
   }
   const { slot, scheduledFor, delayMinutes } = owed;
-  const covered = effectiveRuns(ledger).some(
-    (r) =>
-      r.trigger !== 'manual' &&
-      learnerOf(r) === learner &&
-      r.slot === slot &&
-      r.coverage.status === 'complete',
+  // Only a complete run that joins the unbroken coverage covers its slot: one
+  // cut off by a correction leaves the slot open for a retry.
+  const covered = countedRuns(ledger, learner).some(
+    (r) => r.slot === slot && r.coverage.status === 'complete',
   );
   if (covered) return { due: false, slot, reason: `slot ${slot} is already covered` };
   const since = retrySince(ledger, scheduledFor, learner);

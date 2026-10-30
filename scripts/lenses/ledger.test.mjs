@@ -1709,3 +1709,125 @@ test('replay validates what the corrections mean, not that they match what was s
   const reworded = { ...fixed, corrections: [{ ...recovery, rationale: 'Another reason.' }] };
   assert.deepEqual(ledgerErrors(reworded), []);
 });
+
+// A coordinator's correction that lowers a test run's coverage.
+const lower = (ledger, runId, status, learner = 'lens-tuning') => {
+  const target = effectiveRuns(ledger).find((r) => r.runId === runId);
+  const c = {
+    correctionId: `correction-${runId}`,
+    target: { runId, revision: 0, claimed: target.coverage.status },
+    coverage: {
+      status,
+      inspected: [],
+      gaps: 'nothing was read in full',
+      sources: fullSources(learner).map((s) => ({ ...s, read: 'truncated', gaps: 'truncated' })),
+    },
+    rationale: 'The run did not read what it claimed.',
+    evidence: [{ kind: 'issue', ref: '#417', url: `${REPOSITORY_URL}/issues/417` }],
+    correctedBy: 'external block coordinator',
+    correctedAt: '2026-11-03T00:00:00.000Z',
+  };
+  assert.deepEqual(validateCorrection(ledger, c), []);
+  return recordCorrection(ledger, c);
+};
+// Record a scheduled run that starts at startedAt and reads from the owed since.
+const scheduled = (ledger, runId, startedAt, coverage, learner = 'lens-tuning') => {
+  const due = dueSlot(ledger, startedAt, learner);
+  assert.equal(due.due, true, `${runId}: ${due.reason}`);
+  const r = run({
+    runId,
+    learner,
+    slot: due.slot,
+    startedAt,
+    finishedAt: startedAt,
+    since: due.since,
+    coverage: { inspected: [], sources: fullSources(learner), ...coverage },
+    proposals: [],
+  });
+  assert.deepEqual(validateRun(r, opts({ now: startedAt, ledger })), [], runId);
+  return recordRun(ledger, r);
+};
+
+test('a run that starts inside the covered interval connects, not only inside the retry overlap', () => {
+  // A covers to 11:41; B reads 10:41 to 11:20; C reads from 11:20 and completes.
+  let ledger = scheduled(emptyLedger(), 'run-a', '2026-10-30T11:41:00Z', { status: 'complete' });
+  const through = '2026-10-30T11:20:00.000Z';
+  ledger = scheduled(ledger, 'run-b', '2026-10-30T17:41:00Z', {
+    status: 'partial',
+    gaps: 'cap',
+    through,
+    sources: fullSources().map((s, i) =>
+      i ? s : { ...s, enumeration: 'capped', read: 'truncated', gaps: 'cap', through },
+    ),
+  });
+  assert.equal(dueSlot(ledger, '2026-10-30T23:41:00Z').since, through);
+  ledger = scheduled(ledger, 'run-c', '2026-10-30T23:41:00Z', { status: 'complete' });
+  // B was false. C still starts inside what A covered, so coverage stays unbroken.
+  const fixed = lower(ledger, 'run-b', 'failed');
+  assert.equal(checkpoint(fixed), '2026-10-30T23:41:00.000Z');
+  assert.equal(dueSlot(fixed, '2026-10-31T05:41:00Z').since, '2026-10-30T22:41:00.000Z');
+});
+
+test('a later batch that bridges a reopened gap reconnects the runs it bridges', () => {
+  const later = run({
+    runId: 'later-2340',
+    slot: '2026-10-30T23:40 Europe/London',
+    startedAt: '2026-10-30T23:41:00Z',
+    finishedAt: '2026-10-30T23:55:00Z',
+    since: dueSlot(production, '2026-10-30T23:41:00Z').since,
+    coverage: { status: 'complete', inspected: [] },
+    proposals: [],
+  });
+  assert.equal(later.since, '2026-10-30T16:40:39.000Z');
+  const fixed = recordCorrection(recordRun(production, later), recovery);
+  assert.equal(checkpoint(fixed), null);
+  // A partial recovery from the reopened start reads through 17:00, past 16:40:39.
+  const through = '2026-10-30T17:00:00.000Z';
+  const bridged = scheduled(fixed, 'bridge-0540', '2026-10-31T05:41:00Z', {
+    status: 'partial',
+    gaps: 'cap',
+    through,
+    sources: fullSources().map((s, i) =>
+      i ? s : { ...s, enumeration: 'capped', read: 'truncated', gaps: 'cap', through },
+    ),
+  });
+  // The 23:41 run counts again, so nothing it covered is owed twice.
+  assert.equal(checkpoint(bridged), '2026-10-30T23:41:00.000Z');
+  assert.equal(dueSlot(bridged, '2026-10-31T11:41:00Z').since, '2026-10-30T22:41:00.000Z');
+  // The history is only appended to.
+  assert.deepEqual(bridged.runs.slice(0, production.runs.length), production.runs);
+  assert.deepEqual(bridged.corrections, [recovery]);
+});
+
+test('a complete run cut off by a correction leaves its weekly slot open for a retry', () => {
+  const learner = 'instruction-tidy';
+  // Monday 26 October, then Monday 2 November, both 05:30 London (GMT).
+  let ledger = scheduled(
+    emptyLedger(),
+    'tidy-1026',
+    '2026-10-26T05:31:00Z',
+    { status: 'complete' },
+    learner,
+  );
+  const owed = dueSlot(ledger, '2026-11-02T05:31:00Z', learner).since;
+  ledger = scheduled(ledger, 'tidy-1102', '2026-11-02T05:31:00Z', { status: 'complete' }, learner);
+  assert.equal(dueSlot(ledger, '2026-11-02T06:00:00Z', learner).due, false);
+  // The 26 October claim was false: the 2 November run read from its overlap.
+  const fixed = lower(ledger, 'tidy-1026', 'partial', learner);
+  assert.equal(checkpoint(fixed, learner), null);
+  const retry = dueSlot(fixed, '2026-11-02T06:00:00Z', learner);
+  assert.equal(retry.due, true, retry.reason);
+  assert.equal(retry.slot, '2026-11-02T05:30 Europe/London');
+  assert.ok(Date.parse(retry.since) < Date.parse(owed));
+  const recovered = scheduled(
+    fixed,
+    'tidy-1102-retry',
+    '2026-11-02T06:00:00Z',
+    { status: 'complete' },
+    learner,
+  );
+  assert.equal(checkpoint(recovered, learner), '2026-11-02T06:00:00.000Z');
+  // Once it is covered again the slot is closed, and after 180 minutes it is missed.
+  assert.equal(dueSlot(recovered, '2026-11-02T06:30:00Z', learner).due, false);
+  assert.equal(dueSlot(fixed, '2026-11-02T08:31:00Z', learner).due, false);
+});
