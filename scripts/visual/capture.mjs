@@ -31,6 +31,13 @@ const INTERACTIONS = {
     await page.getByRole('button', { name: 'Release the balloon' }).click();
     await page.waitForTimeout(1500);
   },
+  // Starter decor only, so the image needs no earned prizes.
+  '#/room': async (page) => {
+    await page.getByRole('button', { name: 'Paper Lantern' }).click();
+    await page.locator('.room-slots button').nth(1).click();
+    await page.getByRole('button', { name: 'Striped Rug' }).click();
+    await page.locator('.room-slots button').nth(9).click();
+  },
 };
 
 // Counts colours on a coarse grid and how much of the image is one flat colour.
