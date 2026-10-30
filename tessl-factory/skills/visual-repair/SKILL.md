@@ -49,8 +49,14 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
      another. Look after that one only: if its checks failed or it has
      unanswered review, fix it on its branch, push, and answer; otherwise
      leave it. Then stop.
-   - `nothing`: no route is owed a look and no finding is open. Stop.
+   - `nothing`: no route is owed a look and no finding is repairable. Stop.
    - `review`: the `batch` of routes to capture now, open findings first.
+   - `repair`: nothing to capture, but `repairable` findings remain (an earlier
+     repair failed, or a decline is older than 30 days). Go to Repair.
+     It fails, and the run stops, if a GitHub list reaches its limit, because a
+     cut-off list could hide work in flight.
+     Only same-repository pull requests count as the loop's own; a fork with the
+     same branch name is ignored.
      Merged repairs become `merged` and their route is reviewed again on
      `main`: merged is not deployed until the route looks right there.
      Declined repairs (closed without merging) stay declined for 30 days.
@@ -68,9 +74,13 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
 file it draws with. Shared files (`index.html`, `src/main.ts`,
 `src/style.css`, `src/carnival/`) and files it cannot place owe every route.
 The first run, with no ledger, owes every route, so screens changed before
-this loop existed are reviewed too. Routes are reviewed four at a time;
+this loop existed are reviewed too. A game registry change (`src/games/index.ts`) owes every route too,
+since the midway lays out from it. Routes are reviewed four at a time.
 `reviewedThrough` moves only when none is left owed, so a shared change is
-spread over several runs and no route is skipped.
+spread over several runs and no route is skipped. A new interval, from
+`reviewedThrough` to the newest `main`, opens only once the last one is done,
+so commits landing between runs wait for the next interval instead of
+refilling the current one.
 
 ## Look
 

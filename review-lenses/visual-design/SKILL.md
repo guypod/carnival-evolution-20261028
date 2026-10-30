@@ -15,7 +15,11 @@ must look like they belong to it. Judge the change against the rubric in
 A visual verdict needs rendered evidence: screenshots of the changed screen
 taken from this pull request's head, at desktop (1280x800) and narrow (390px)
 widths, with keyboard focus on a control, after the main interaction, and with
-reduced motion. `scripts/visual/capture.mjs` takes them.
+reduced motion. `scripts/visual/run-capture.sh` takes them. It captures the
+interaction state only for routes with an entry in `INTERACTIONS` in
+`scripts/visual/capture.mjs` (today only `#/balloon`). For any other route,
+the interaction screenshot is still required: a route with no entry and no
+interaction screenshot is **rendering unverified** for that state.
 
 - If the pull request changes how a screen looks and carries no such
   screenshots, report one finding: **rendering unverified**, naming the screens

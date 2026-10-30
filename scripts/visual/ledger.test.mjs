@@ -26,7 +26,7 @@ const mainSource = readFileSync(new URL('../../src/main.ts', import.meta.url), '
 const games = ['water-cannon', 'ring-toss'];
 const routes = allRoutes(mainSource, games);
 const NOW = '2026-10-30T00:00:00Z';
-const base = { mainSource, routes, others: [], openPr: null, changedFiles: [] };
+const base = { mainSource, routes, others: [], openPr: null, changedFiles: [], now: NOW };
 const finding = (route, criterion, extra = {}) => ({
   route,
   state: 'desktop-clean',
@@ -152,6 +152,7 @@ const ownPr = (state, extra = {}) => ({
   number: 41,
   state,
   headRefName: 'tessl/visual-repair-snack-20261030',
+  isCrossRepository: false,
   body: 'fixes\n<!-- tessl-visual-finding: #/snack:desktop-clean:controls -->',
   closedAt: state === 'OPEN' ? null : '2026-10-29T00:00:00Z',
   ...extra,
@@ -292,4 +293,72 @@ test('the independent pixel check reads committed screenshots without a browser'
   };
   const flat = Buffer.concat([Buffer.from([0]), Buffer.alloc(8 * 3, 40)]);
   assert.equal(isBlank(summarise(decodePng(png(8, 8, Array(8).fill(flat))))), true);
+});
+
+test('main moving between batches cannot keep refilling the backlog', () => {
+  let ledger = emptyLedger();
+  let runs = 0;
+  for (let i = 1; ledger.reviewedThrough === null; i++) {
+    // A new, unrelated commit on main before every run.
+    const plan = planRun(ledger, { ...base, head: `h${i}`, changedFiles: ['README.md'] });
+    assert.equal(plan.action, 'review');
+    ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+    assert.ok(++runs <= Math.ceil(routes.length / BATCH_SIZE), 'backlog shrinks every run');
+  }
+  assert.equal(ledger.reviewedThrough, 'h1', 'coverage holds through the interval it opened at');
+  // The later commits are owed in the next interval, from h1.
+  const next = planRun(ledger, { ...base, head: 'h9', changedFiles: ['src/wish-balloon.ts'] });
+  assert.deepEqual(next.batch, ['#/balloon']);
+});
+
+test('repairable findings left at the same head are repaired, not dropped', () => {
+  let { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    r === '#/snack' ? [finding(r, 'controls')] : [],
+  );
+  // Two failed repair attempts later the finding is still open at the same head.
+  const plan = planRun(ledger, { ...base, head: 'h1' });
+  assert.equal(plan.action, 'repair');
+  // A decline that has aged past 30 days comes back the same way.
+  ledger = reconcileOwnPrs(ledger, [ownPr('CLOSED')], NOW).ledger;
+  assert.equal(planRun(ledger, { ...base, head: 'h1' }).action, 'nothing');
+  const later = { ...base, head: 'h1', now: '2026-12-15T00:00:00Z' };
+  assert.notEqual(planRun(ledger, later).action, 'nothing');
+});
+
+test('an old pull request never overwrites a newer outcome, and each applies once', () => {
+  const old = ownPr('CLOSED', { number: 30 });
+  const merged = ownPr('MERGED', { number: 41 });
+  for (const order of [
+    [old, merged],
+    [merged, old],
+  ]) {
+    const { ledger } = reconcileOwnPrs(withSnackFinding(), order, NOW);
+    assert.deepEqual([ledger.findings[0].status, ledger.findings[0].pr], ['merged', 41]);
+  }
+  // Main shows the finding again: it reopens and stays open on the next run.
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [old, merged], NOW);
+  const plan = planRun(ledger, { ...base, head: 'h2' });
+  ledger = recordReview(plan.ledger, {
+    reviewed: plan.batch,
+    findings: [finding('#/snack', 'controls')],
+    now: NOW,
+  });
+  ledger = reconcileOwnPrs(ledger, [old, merged], NOW).ledger;
+  assert.equal(ledger.findings[0].status, 'open');
+});
+
+test('a fork pull request with the loop’s branch name is not the loop’s own', () => {
+  const fork = ownPr('OPEN', { isCrossRepository: true });
+  const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [fork], NOW);
+  assert.equal(openPr, null);
+  assert.equal(ledger.findings[0].status, 'open');
+  const closed = ownPr('CLOSED', { isCrossRepository: true });
+  assert.equal(
+    reconcileOwnPrs(withSnackFinding(), [closed], NOW).ledger.findings[0].status,
+    'open',
+  );
+});
+
+test('a game registry change owes every route, because the midway lays out from it', () => {
+  assert.deepEqual(affectedRoutes(['src/games/index.ts'], mainSource, routes), routes);
 });

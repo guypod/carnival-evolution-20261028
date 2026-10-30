@@ -29,11 +29,15 @@ fi
 (cd "$ROOT/pw" && npx playwright install chromium >/dev/null)
 
 if command -v apt-get >/dev/null && command -v dpkg-deb >/dev/null; then
-  if [ -z "$(ls -A "$LIBS/debs")" ]; then
+  # The marker is written only after every package downloaded, so an
+  # interrupted download is retried instead of reused.
+  if [ ! -f "$LIBS/debs/.complete" ]; then
+    rm -f "$LIBS"/debs/*.deb
     # shellcheck disable=SC2086
     apt-get $APT update >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
     (cd "$LIBS/debs" && apt-get $APT download $PACKAGES >/dev/null)
+    touch "$LIBS/debs/.complete"
   fi
   for deb in "$LIBS"/debs/*.deb; do dpkg-deb -x "$deb" "$LIBS/root"; done
 fi

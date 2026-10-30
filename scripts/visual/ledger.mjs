@@ -18,13 +18,14 @@ export const LEDGER_BRANCH = 'factory-state/visual-repair';
 export const LEDGER_FILE = 'ledger.json';
 export const OWN_BRANCH = /^tessl\/visual-repair-/;
 export const BATCH_SIZE = 4;
+export const LIST_LIMIT = 1000;
 export const DECLINE_DAYS = 30;
 const MARKER = /<!-- tessl-visual-finding: (\S+) -->/g;
 
 // Files that every screen draws with: a change to one affects every route.
 const SHARED = [/^index\.html$/, /^src\/main\.ts$/, /^src\/style\.css$/, /^src\/carnival\//];
 // Files no screen draws with.
-const IGNORED = [/\.test\.ts$/, /\.md$/, /^src\/games\/index\.ts$/];
+const IGNORED = [/\.test\.ts$/, /\.md$/];
 
 /** Every route the router serves: the midway, each standalone screen and each game. */
 export function allRoutes(mainSource, gameIds) {
@@ -83,27 +84,43 @@ export function affectedRoutes(files, mainSource, routes) {
 
 /** A ledger with nothing reviewed yet: the first run owes every route a look. */
 export function emptyLedger() {
-  return { version: 1, reviewedThrough: null, pending: [], pendingThrough: null, findings: [] };
+  return {
+    version: 1,
+    head: null,
+    reviewedThrough: null,
+    pending: [],
+    pendingThrough: null,
+    findings: [],
+  };
 }
+
+/** A pull request the loop opened: its branch prefix, from this repository. */
+export const isOwnPr = (pr) => OWN_BRANCH.test(pr.headRefName) && pr.isCrossRepository === false;
 
 /**
  * Bring the loop's own pull requests into the ledger before anything else.
  * An open one is the only work this run may do; merged and declined ones are
- * recorded. A leftover branch never blocks a run: branches are named per run,
- * and the shared writer key means no other writer is holding one.
+ * recorded. Pull requests apply oldest first and a finding only follows its
+ * newest one, so an old outcome never overwrites a newer one, and a closed
+ * pull request's outcome applies once. A leftover branch never blocks a run:
+ * branches are named per run, and the shared writer key means no other writer
+ * is holding one. Fork pull requests are never the loop's own.
  */
 export function reconcileOwnPrs(ledger, prs, now) {
   const next = structuredClone(ledger);
   let openPr = null;
-  for (const pr of prs.filter((p) => OWN_BRANCH.test(p.headRefName))) {
+  const own = prs.filter(isOwnPr).sort((a, b) => a.number - b.number);
+  for (const pr of own) {
     const prints = [...(pr.body ?? '').matchAll(MARKER)].map((m) => m[1]);
     const status = pr.state === 'OPEN' ? 'pr-open' : pr.state === 'MERGED' ? 'merged' : 'declined';
     if (status === 'pr-open') openPr ??= pr.number;
     for (const finding of next.findings.filter((f) => prints.includes(f.fingerprint))) {
-      if (finding.pr === pr.number && finding.status === status) continue;
-      if (finding.status === 'resolved') continue;
+      finding.applied ??= [];
+      if (finding.applied.includes(pr.number)) continue;
       finding.pr = pr.number;
       finding.status = status;
+      if (status === 'pr-open') continue;
+      finding.applied.push(pr.number);
       if (status === 'declined') finding.declinedAt = pr.closedAt ?? now;
       // Merged is not deployed: look at the route again on main to confirm it.
       if (status === 'merged' && !next.pending.includes(finding.route)) {
@@ -118,27 +135,32 @@ export function reconcileOwnPrs(ledger, prs, now) {
  * What this run does. Other Tessl work in flight means defer. The loop's own
  * open pull request means look after that pull request and nothing else.
  * Otherwise review a bounded batch: routes with open findings first, then
- * routes still owed a look.
+ * routes still owed a look. With nothing to capture but findings still
+ * repairable, repair. Only with neither is there nothing to do.
  */
-export function planRun(ledger, { head, changedFiles, mainSource, routes, others, openPr }) {
+export function planRun(ledger, { head, changedFiles, mainSource, routes, others, openPr, now }) {
   if (others.length) return { action: 'defer', reason: others.join('; '), ledger };
   if (openPr) return { action: 'monitor', pr: openPr, ledger };
   const next = structuredClone(ledger);
-  // Owed routes are added once per new head; the diff runs from the last
-  // fully reviewed commit, so a head that moves mid-backlog loses nothing.
-  if (next.pendingThrough !== head) {
+  next.head = head;
+  // A coverage interval runs from reviewedThrough to pendingThrough. A new one
+  // opens only when the last is fully reviewed, so the backlog always shrinks
+  // and a main that moves between runs cannot keep refilling it. Commits after
+  // pendingThrough are owed in the next interval.
+  if (!next.pending.length && next.pendingThrough !== head) {
     const owed =
       next.reviewedThrough === null ? routes : affectedRoutes(changedFiles, mainSource, routes);
-    for (const route of owed) if (!next.pending.includes(route)) next.pending.push(route);
+    next.pending = [...owed];
     next.pendingThrough = head;
   }
   // Open findings are looked at again once per head, so a fix on main clears them.
-  const revisit = next.findings
-    .filter((f) => f.status === 'open' && f.seenAt !== head)
+  const revisit = repairable(next, now)
+    .filter((f) => f.seenAt !== head)
     .map((f) => f.route);
   const batch = [...new Set([...revisit, ...next.pending])].slice(0, BATCH_SIZE);
-  if (!batch.length) return { action: 'nothing', ledger: next };
-  return { action: 'review', batch, ledger: next };
+  if (batch.length) return { action: 'review', batch, ledger: next };
+  if (repairable(next, now).length) return { action: 'repair', ledger: next };
+  return { action: 'nothing', ledger: next };
 }
 
 /**
@@ -155,7 +177,6 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
     const fixed = pr && f.fixedBy === pr;
     if (old) {
       old.note = f.note;
-      old.seenAt = next.pendingThrough;
       if (old.status !== 'declined' || isStale(old, now)) {
         old.status = fixed ? 'pr-open' : 'open';
         if (fixed) old.pr = pr;
@@ -168,7 +189,7 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
         criterion: f.criterion,
         note: f.note,
         firstSeen: now,
-        seenAt: next.pendingThrough,
+        seenAt: next.head,
         status: fixed ? 'pr-open' : 'open',
         ...(fixed ? { pr } : {}),
       });
@@ -180,8 +201,7 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
       old.status = 'resolved';
     }
   }
-  for (const old of next.findings)
-    if (reviewed.includes(old.route)) old.seenAt = next.pendingThrough;
+  for (const old of next.findings) if (reviewed.includes(old.route)) old.seenAt = next.head;
   if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
   return next;
 }
@@ -261,25 +281,25 @@ function plan(repo, now) {
         .split('\n')
         .filter(Boolean)
     : [];
-  const prs = gh(
+  // Lists that hit their limit may be missing work, so treat that as a stop.
+  const list = (...args) => {
+    const items = gh(...args, '--limit', String(LIST_LIMIT));
+    if (items.length >= LIST_LIMIT) throw new Error(`gh ${args.join(' ')} hit ${LIST_LIMIT} items`);
+    return items;
+  };
+  const fields = 'number,state,headRefName,isCrossRepository,body,closedAt,files';
+  const prs = list(
     'pr',
     'list',
     '--state',
     'all',
-    '--limit',
-    '200',
+    '--search',
+    'head:tessl/visual-repair-',
     '--json',
-    'number,state,headRefName,body,closedAt',
+    fields,
   );
-  const issues = gh('issue', 'list', '--state', 'open', '--label', 'tessl', '--json', 'number');
-  const open = gh(
-    'pr',
-    'list',
-    '--state',
-    'open',
-    '--json',
-    'number,headRefName,body,files',
-  ).filter((p) => !OWN_BRANCH.test(p.headRefName));
+  const issues = list('issue', 'list', '--state', 'open', '--label', 'tessl', '--json', 'number');
+  const open = list('pr', 'list', '--state', 'open', '--json', fields).filter((p) => !isOwnPr(p));
   const others = [
     ...open
       .filter((p) => p.headRefName.startsWith('tessl/'))
@@ -292,7 +312,23 @@ function plan(repo, now) {
       .filter((i) => !open.some((p) => (p.body ?? '').includes(`Closes #${i.number}`)))
       .map((i) => `labelled issue #${i.number} has no pull request yet`),
   ];
-  const reconciled = reconcileOwnPrs(ledger, prs, now);
+  // The open list is complete, so an own open PR is never missed even when
+  // the search is slow to index it.
+  const ownOpen = gh(
+    'pr',
+    'list',
+    '--state',
+    'open',
+    '--limit',
+    String(LIST_LIMIT),
+    '--json',
+    fields,
+  ).filter(isOwnPr);
+  const reconciled = reconcileOwnPrs(
+    ledger,
+    [...prs.filter((p) => !ownOpen.some((o) => o.number === p.number)), ...ownOpen],
+    now,
+  );
   const result = planRun(reconciled.ledger, {
     head,
     changedFiles,
@@ -300,6 +336,7 @@ function plan(repo, now) {
     routes,
     others,
     openPr: reconciled.openPr,
+    now,
   });
   return { ...result, base, head, repairable: repairable(result.ledger, now) };
 }

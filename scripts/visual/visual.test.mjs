@@ -55,3 +55,14 @@ test('every assessment and baseline entry points at a screenshot that exists', (
     }
   }
 });
+
+test('every repository-local action skill is exported by its plugin', () => {
+  const { actions } = read('tessl.json');
+  const { skills } = read('tessl-factory/.tessl-plugin/plugin.json');
+  for (const [name, { skill }] of Object.entries(actions)) {
+    const local = skill.match(/^file:tessl-factory#(.+)$/);
+    if (!local) continue;
+    assert.ok(skills.includes(`skills/${local[1]}`), `${name} needs skills/${local[1]}`);
+    assert.ok(exists(`tessl-factory/skills/${local[1]}/SKILL.md`), `${name} has a SKILL.md`);
+  }
+});
