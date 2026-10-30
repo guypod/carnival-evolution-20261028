@@ -54,10 +54,11 @@ export const EXPECTED_ACTIONS = {
     timeout: '30m',
     concurrency: writer,
   },
-  // The review-lens improvement loop (issue #371). It proposes lens changes to
-  // the factory-state/review-lenses ledger and never edits a lens itself; the
-  // external block coordinator decides each proposal. It holds the writer key
-  // because it pushes that ledger.
+  // The factory learning loops (issue #371): lens tuning, review feedback,
+  // run learning and instruction tidy, one skill chosen by its LEARNER input.
+  // They save proposals to the factory-state/review-lenses ledger and never
+  // edit anything else; the external block coordinator decides each one. It
+  // holds the writer key because it pushes that ledger.
   'review-lens-improvement': {
     skill: 'file:tessl-factory#review-lens-improvement',
     environment: ENVIRONMENT,
@@ -69,10 +70,15 @@ export const EXPECTED_ACTIONS = {
 };
 
 // Test health weekly, per WORKSHOP module 04, visual repair every six hours
-// (issue #303) and review-lens improvement twenty minutes before each London
-// block ends (issue #371), in the scheduler's own timezone so DST needs no
-// change. No other schedules: gameplay batching is owned outside this
-// repository.
+// (issue #303), and the four proposal-only factory learners (issue #371) in
+// the scheduler's own Europe/London timezone so DST needs no change: lens
+// tuning twenty minutes before each six-hour London block ends, review
+// feedback and run learning daily, and the instruction tidy on Mondays. No
+// other schedules: gameplay batching is owned outside this repository.
+const learner = (name) => ({
+  use: 'review-lens-improvement',
+  inputs: { LEARNER: name },
+});
 export const EXPECTED_SCHEDULES = {
   'test-health-weekly': {
     cron: '0 9 * * 1',
@@ -90,7 +96,28 @@ export const EXPECTED_SCHEDULES = {
     timezone: 'Europe/London',
     description:
       'Twenty minutes before each six-hour London block ends: propose evidence-based review lens improvements to the fallback ledger',
-    action: 'review-lens-improvement',
+    action: learner('lens-tuning'),
+  },
+  'review-feedback-learning-daily': {
+    cron: '10 5 * * *',
+    timezone: 'Europe/London',
+    description:
+      'Daily at 05:10 London: propose improvements from review feedback that was accepted or declined',
+    action: learner('review-feedback'),
+  },
+  'run-learning-daily': {
+    cron: '20 5 * * *',
+    timezone: 'Europe/London',
+    description:
+      'Daily at 05:20 London: propose improvements from factory run friction, failures and no-op causes',
+    action: learner('run-learning'),
+  },
+  'instruction-tidy-weekly': {
+    cron: '30 5 * * 1',
+    timezone: 'Europe/London',
+    description:
+      'Mondays at 05:30 London: propose replacing AGENTS.md guidance with tests, lint or area-scoped instructions',
+    action: learner('instruction-tidy'),
   },
 };
 

@@ -377,7 +377,25 @@
       "cron": "40 5,11,17,23 * * *",
       "timezone": "Europe/London",
       "description": "Twenty minutes before each six-hour London block ends: propose evidence-based review lens improvements to the fallback ledger",
-      "action": "review-lens-improvement"
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "lens-tuning" } }
+    },
+    "review-feedback-learning-daily": {
+      "cron": "10 5 * * *",
+      "timezone": "Europe/London",
+      "description": "Daily at 05:10 London: propose improvements from review feedback that was accepted or declined",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "review-feedback" } }
+    },
+    "run-learning-daily": {
+      "cron": "20 5 * * *",
+      "timezone": "Europe/London",
+      "description": "Daily at 05:20 London: propose improvements from factory run friction, failures and no-op causes",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "run-learning" } }
+    },
+    "instruction-tidy-weekly": {
+      "cron": "30 5 * * 1",
+      "timezone": "Europe/London",
+      "description": "Mondays at 05:30 London: propose replacing AGENTS.md guidance with tests, lint or area-scoped instructions",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "instruction-tidy" } }
     }
   }
 }
