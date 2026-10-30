@@ -31,6 +31,12 @@ const INTERACTIONS = {
     await page.getByRole('button', { name: 'Release the balloon' }).click();
     await page.waitForTimeout(1500);
   },
+  // Fills the setup form without starting, so no party is saved.
+  '#/party': async (page) => {
+    await page.getByLabel(/Together/).check();
+    await page.getByLabel(/Player 1 nickname/).fill('Ada');
+    await page.getByLabel(/Player 2 nickname/).focus();
+  },
   // Starter decor only, so the image needs no earned prizes.
   '#/room': async (page) => {
     await page.getByRole('button', { name: 'Paper Lantern' }).click();
