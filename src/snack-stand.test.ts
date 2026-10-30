@@ -6,6 +6,7 @@ import {
   VISITORS,
   nextVisitor,
   pickChoice,
+  portraitFor,
   react,
 } from './snack-stand';
 
@@ -46,5 +47,17 @@ describe('snack stand', () => {
   it('wraps round to the first visitor after the third', () => {
     expect(nextVisitor(0)).toBe(1);
     expect(nextVisitor(2)).toBe(0);
+  });
+
+  it('gives every visitor their own portrait accessory', () => {
+    const headwear = VISITORS.map((visitor) => portraitFor(visitor).headwear);
+    expect(new Set(headwear).size).toBe(VISITORS.length);
+  });
+
+  it('gives a plain portrait to a name that is not listed', () => {
+    const plain = { face: { rx: 36, ry: 36 }, headwear: 'none' };
+    for (const name of ['Nobody Yet', 'toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      expect(portraitFor({ ...pip, name })).toEqual(plain);
+    }
   });
 });
