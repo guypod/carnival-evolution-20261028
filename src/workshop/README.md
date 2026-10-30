@@ -27,6 +27,9 @@ toy's mechanism, so what moves follows from where the parts are.
 
 ## Controls
 
+- Toys: the three buttons above the bench pick the toy. Each one says in words
+  whether that toy is repaired ("✓ Repaired" or "Not repaired yet"), and the toy
+  on the bench also shows "▶ On the bench" and a heavier double outline.
 - Pointer: drag a part onto a spot, or click a part then click a spot. A press
   released without moving is a click, so the part stays in hand. A part
   dropped on a taken spot swaps with the part there. Click a pin or pebble with
