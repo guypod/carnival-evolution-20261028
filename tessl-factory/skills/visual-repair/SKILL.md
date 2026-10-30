@@ -169,6 +169,9 @@ routes' findings stay open in the ledger for later runs.
   `docs/visual-baseline/repairs/<route>/before/` and `.../after/`, so both sides
   of the comparison are reachable from the pull request. The next run's `plan` marks those
   findings `pr-open` from the markers.
+- Before you create or edit the pull request description, read
+  `docs/pr-writing.md` and apply its cold-reader pass. It changes presentation
+  only: every finding, screenshot path and marker above stays.
 - Never merge, approve or enable auto-merge.
 
 ## Run output

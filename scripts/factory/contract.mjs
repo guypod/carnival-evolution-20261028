@@ -20,19 +20,27 @@ const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
 export const WRITER_KEY = 'carnival-app-writer';
 const writer = { keys: [{ key: WRITER_KEY, limit: 1 }], mode: 'queue' };
 
-const action = (name, timeout, concurrency = writer) => ({
+// The actions that write pull request descriptions point their agent at
+// docs/pr-writing.md. It changes how a description reads, never what it keeps.
+// A manual `tessl action trigger --instructions` replaces this text, so a
+// manual run must repeat it.
+export const PR_WRITING_INSTRUCTIONS =
+  'Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.';
+
+const action = (name, timeout, concurrency = writer, instructions = PR_WRITING_INSTRUCTIONS) => ({
   skill: `${SKILL_PREFIX}${name}`,
   environment: ENVIRONMENT,
   agent: 'claude-code',
   model: 'claude-opus-5-5',
   timeout,
+  ...(instructions ? { instructions } : {}),
   ...(concurrency ? { concurrency } : {}),
 });
 
 export const EXPECTED_ACTIONS = {
   'implement-github-issue': action('implement-github-issue', '15m'),
   shepherd: action('shepherd', '10m'),
-  'follow-ticket-changes': action('follow-ticket-changes', '5m', null),
+  'follow-ticket-changes': action('follow-ticket-changes', '5m', null, null),
   // The test health maintenance loop, from the repository's own skill. It files
   // issues only; a person labels them before the factory ships a fix.
   'test-health': {
@@ -52,6 +60,7 @@ export const EXPECTED_ACTIONS = {
     agent: 'claude-code',
     model: 'claude-opus-5-5',
     timeout: '30m',
+    instructions: PR_WRITING_INSTRUCTIONS,
     concurrency: writer,
   },
   // The factory learning loops (issue #371): lens tuning, review feedback,

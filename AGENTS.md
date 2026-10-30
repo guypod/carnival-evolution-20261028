@@ -109,6 +109,9 @@ You often work on an issue with nobody around to answer questions.
   sure every README you touched still matches the code.
 - **In the pull request,** say what changed and how to try it, and end with
   `Closes #<issue number>`.
+- **Before you create or edit a pull request description,** read
+  `docs/pr-writing.md` and apply its cold-reader pass. It changes how the
+  description reads, never which checks, evidence or markers it keeps.
 
 ## Skills
 
