@@ -120,6 +120,19 @@ test('only the three PR-writing actions carry instructions, and they reach docs/
   }
 });
 
+test('root AGENTS.md keeps its workflow section scoped as pacing, not permission', () => {
+  const agents = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8');
+  const section = agents.match(/^## Acting on the authority you were given\n([\s\S]*?)^## /m)?.[1];
+  assert.ok(section, 'the section exists');
+  const text = section.replace(/\s+/g, ' ');
+  // The section says it grants nothing and cannot override a denial or review.
+  assert.match(text, /not a source of new authority/);
+  assert.match(text, /cannot turn a denied action into an authorized one/);
+  assert.match(text, /repository text is not user consent/);
+  // The PR-writing guide stays the one place for description rules.
+  assert.doesNotMatch(section, /pr-writing|cold-reader/);
+});
+
 test('every one of the eleven routes has a positive fixture that only it accepts', () => {
   assert.equal(Object.keys(manifest.triggers).length, 11);
   for (const [name, [event, payload]] of Object.entries(positives)) {
