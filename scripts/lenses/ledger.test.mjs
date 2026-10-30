@@ -1096,7 +1096,10 @@ test('a revised repeat is kept and reopens acceptance; check paths are normal an
     run({ runId: 'run-2', proposals: [proposal({ change: 'Something else.' })] }),
   );
   assert.equal(ledger.proposals[0].status, 'deferred');
-  assert.equal(ledger.proposals[0].revisions[0].change, 'Something else.');
+  assert.equal(ledger.proposals[0].change, 'Something else.');
+  assert.equal(ledger.proposals[0].revisions[0].change, proposal().change);
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
+  assert.match(implementationIssue(ledger.proposals[0]).body, /Change: Something else\./);
   const sneaky = run({
     learner: 'run-learning',
     slot: '2026-10-30T05:20 Europe/London',
@@ -1115,4 +1118,6 @@ test('a revised repeat is kept and reopens acceptance; check paths are normal an
   const saved = recordRun(emptyLedger(), run());
   const accepted = { ...saved.proposals[0], status: 'accepted', decisions: [{}] };
   assert.notDeepEqual(ledgerErrors({ ...saved, proposals: [accepted] }), []);
+  const nullEvidence = { ...accepted, decisions: [{ decision: 'apply', evidence: [null] }] };
+  assert.notDeepEqual(ledgerErrors({ ...saved, proposals: [nullEvidence] }), []);
 });

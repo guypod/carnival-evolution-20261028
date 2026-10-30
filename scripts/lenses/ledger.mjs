@@ -576,14 +576,25 @@ export function recordRun(ledger, run) {
       known.seenIn = [...known.seenIn, run.runId];
       // A later sighting can only make it more cautious, never less.
       const before = JSON.stringify([known.weakens, known.standards ?? []]);
-      // A sighting with different content is kept as a revision, never lost,
-      // and an accepted proposal goes back to the coordinator to decide it.
+      // A sighting with different content becomes the proposal the
+      // coordinator decides and the issue carries. The content it replaces is
+      // kept under revisions, and an accepted proposal goes back to the
+      // coordinator.
       const revised = ['change', 'check', 'netLines'].some((f) => p[f] !== known[f]);
       if (revised) {
         known.revisions = [
           ...(known.revisions ?? []),
-          { runId: run.runId, change: p.change, check: p.check, netLines: p.netLines },
+          {
+            replacedBy: run.runId,
+            change: known.change,
+            check: known.check,
+            netLines: known.netLines,
+          },
         ];
+        known.change = p.change;
+        known.netLines = p.netLines;
+        if (p.check === undefined) delete known.check;
+        else known.check = p.check;
       }
       known.weakens = known.weakens || p.weakens;
       known.standards = [...new Set([...(known.standards ?? []), ...p.standards])];
@@ -855,7 +866,11 @@ export function ledgerErrors(ledger) {
     if (
       Array.isArray(p.decisions) &&
       !p.decisions.every(
-        (d) => isObject(d) && DECISIONS.includes(d.decision) && Array.isArray(d.evidence),
+        (d) =>
+          isObject(d) &&
+          DECISIONS.includes(d.decision) &&
+          Array.isArray(d.evidence) &&
+          d.evidence.every(isObject),
       )
     ) {
       errors.push(`${at}: each decision needs its decision and evidence`);

@@ -158,8 +158,9 @@ weakens something, or names more standards), the ledger moves it back to
 the coordinator, whose next decision checks the safety and two-PR rules
 again. `issue` and `issued` refuse a proposal that weakens a safety
 standard. A sighting with the same fingerprint but a different `change`,
-`check` or `netLines` is kept under `revisions` and also reopens an accepted
-proposal.
+`check` or `netLines` replaces that content, keeps the old content under
+`revisions`, and reopens an accepted proposal, so the coordinator decides,
+and the issue carries, the latest content.
 
 `defer` keeps the proposal pending for the next block. `reject` closes it;
 the same proposal seen again keeps its rejection and only gains evidence.
@@ -174,7 +175,8 @@ protected paths are the files that carry those standards:
 
 - CI and factory config: `.github/`, `.tessl/`, `tessl.json`,
   `scripts/factory/`, `scripts/lenses/`, `scripts/visual/`;
-- agent and skill instructions: `AGENTS.md`, `CLAUDE.md`, `skills/`,
+- agent and skill instructions: every `AGENTS.md`, `CLAUDE.md` and
+  `SKILL.md` at any depth, including area-scoped ones, plus `skills/` and
   `tessl-factory/`;
 - review: `.tessl-code-review.yml`, the repository lenses in
   `review-lenses/` and the `tessl/code-review` security lens;
