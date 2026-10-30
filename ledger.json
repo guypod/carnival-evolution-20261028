@@ -3,10 +3,6 @@
   "head": "6b03265cd61be971ca3453ff3f79e59114633829",
   "reviewedThrough": null,
   "pending": [
-    "#/booths",
-    "#/postcard",
-    "#/plush",
-    "#/tune",
     "#/balloon",
     "#/snack",
     "#/coaster",
@@ -224,6 +220,94 @@
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
       "status": "open",
       "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/booths:desktop-clean:materials",
+      "route": "#/booths",
+      "state": "desktop-clean",
+      "criterion": "materials",
+      "note": "Ten booth tiles are identical flat purple cards with lavender outlines in a grid on a flat dark page: generic dashboard cards, no wood, striped canvas, paper tags or lantern glow; same at 390px.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/booths:desktop-clean:depth",
+      "route": "#/booths",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "Booth cards, the search field and filter chips have no shadow, frame or counter edge; everything sits flat on the full-bleed dark background below the awning.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/postcard:desktop-clean:composition",
+      "route": "#/postcard",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "The 600px postcard sits at the left of the 930px column with the right third empty at 1280x800, followed by long unframed bullet lists running down the page.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/postcard:desktop-clean:spacing",
+      "route": "#/postcard",
+      "state": "desktop-clean",
+      "criterion": "spacing",
+      "note": "The 'On the card' and 'Stamps and emblems' sections are plain default bullet lists loose on the background, not grouped in a framed panel with the postcard and its name/download controls.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/plush:desktop-clean:controls",
+      "route": "#/plush",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Body/Face/Colour use browser-default blue radio dots, the Attach/Undo/Start over/Save my plush buttons are raw grey default buttons, and the Name field is a small white default text box; same at 390px.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/plush:desktop-clean:typography",
+      "route": "#/plush",
+      "state": "desktop-clean",
+      "criterion": "typography",
+      "note": "Parts tray and action buttons use the browser's small default control font size, much smaller than the body text and fieldset legends beside them.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/tune:desktop-clean:controls",
+      "route": "#/tune",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Play, Tune sound, Starter tune, Clear and Save my tune are raw grey default buttons and Steps/Tempo are default white select boxes, unlike the themed step grid; same at 390px.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
+    },
+    {
+      "fingerprint": "#/tune:desktop-clean:composition",
+      "route": "#/tune",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "The 8x4 step grid is a small block at the left under a row of controls; the right half and the lower ~30% of the 1280x800 screen are empty dark background with no carousel scene or stall as focal point.",
+      "firstSeen": "2026-10-30T12:19:41.313Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T12:19:41.313Z"
     }
   ],
   "reviewedAt": {
@@ -234,7 +318,11 @@
     "#/trail": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/circuit": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/party": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/records": "6b03265cd61be971ca3453ff3f79e59114633829"
+    "#/records": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/booths": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/postcard": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/plush": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829"
   },
-  "reconciledAt": "2026-10-30T06:17:46.648Z"
+  "reconciledAt": "2026-10-30T12:17:49.505Z"
 }
