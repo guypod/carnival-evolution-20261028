@@ -75,7 +75,7 @@ Partial, failed and manual runs never move it, and `record` refuses a
 scheduled run whose `since` is later than it.
 
 - **lens-tuning:** merged and open pull requests, their diffs and files
-  (`gh pr list --state all --search "updated:>=<time>" --limit 100`); review
+  (`gh pr list --state all --search "updated:>=<time> sort:updated-asc" --limit 100`); review
   findings on them (`gh api repos/{owner}/{repo}/pulls/<n>/comments`);
   repairs that fixed something a review let through, including
   `factory-state/visual-repair`; tests and CI results; live-play notes.
@@ -94,7 +94,13 @@ scheduled run whose `since` is later than it.
 
 If a list reaches its limit, or a source cannot be read, the coverage is
 `partial` (or `failed` if nothing could be read) and `gaps` says what was
-missed. Never describe evidence you did not read.
+missed. Never describe evidence you did not read. Read oldest first
+(`sort:updated-asc` in the search), so that when a list hits its limit
+everything up to some time was read. A partial scheduled run then records
+`coverage.through`: the `updated` time of the last item read in full, between
+`since` and the real start. The next run resumes from there, less the
+overlap, instead of meeting the same limit again. Leave `through` out when
+you cannot name such a time.
 
 Read the current target before proposing to change it. Propose only when the
 evidence shows a concrete miss, false alarm, friction or redundancy. Each
@@ -143,7 +149,7 @@ Write the run to a file outside the clone. Scheduled:
 ```
 
 Manual: `"trigger": "manual"`, `"manualId": "manual-<id>"`, `"since"` from
-`manual`, and no `slot`.
+`manual`, and neither `slot` nor `scheduledFor`.
 
 Save it with `node scripts/lenses/ledger.mjs record <file>` within 30 minutes
 of the real start. It refuses a malformed run, a slot that is not the one the
@@ -159,8 +165,11 @@ Recording the same `runId` twice changes nothing. A failed run is still
 recorded, with its real times, so the gap is visible.
 
 If the push is refused because the branch moved, the run is not saved: report
-it and stop. Do not retry the push in this run. The slot stays due, so a later
-run for it, or the next slot, reads the same interval again. If `record`
+it and stop. Do not retry the push in this run. The slot stays due. Once any
+scheduled run of this learner has been saved, a later run for the slot, or
+the next slot, reads the same interval again. Before that, nothing records
+the lost window: the next slot reads only its own 24 hours, so say in the
+report that the window from `since` was not saved. If `record`
 refuses the ledger as too large or malformed, report that as `failed` and
 stop. Never force-push or hand-edit the branch.
 

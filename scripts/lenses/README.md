@@ -53,7 +53,10 @@ refuses a slot already covered completely.
   try again while the slot is still owed (within the 180 minutes). After
   that, the next slot's `since` still reaches back to the last complete run,
   so the uncovered interval is read then. Partial, failed and manual runs
-  never move that checkpoint.
+  never move that checkpoint, except that a partial scheduled run may
+  record `coverage.through`, the time up to which it read everything
+  (oldest first), so a backlog over a list limit is worked through instead
+  of hitting the same limit every run.
 - `record` also refuses a slot its real start did not follow, and a run
   recorded more than 30 minutes after its real start.
 
@@ -149,6 +152,11 @@ From a clone of `main`:
    body and marker again; search for the marker and repeat step 5. Recording
    the same issue twice changes nothing, and a different one is refused.
 
+If a later sighting of an accepted proposal declares that it weakens a safety
+standard or a protected path, the ledger moves it back to `deferred` with a
+`reopened` note, so it leaves `unissued` and comes back to the coordinator.
+`issue` and `issued` refuse such a proposal.
+
 `defer` keeps the proposal pending for the next block. `reject` closes it;
 the same proposal seen again keeps its rejection and only gains evidence.
 
@@ -185,8 +193,12 @@ and an instruction tidy may not add any.
 
 - A push refused because the branch moved: nothing was saved.
   - `record` (a learner run): the learner reports it and stops, as its skill
-    says. The slot stays due, so a retry while it is still owed, or the next
-    slot, reads the same interval again from `since`.
+    says. The slot stays due. Once any scheduled run of that learner has
+    been saved, a retry while the slot is still owed, or the next slot, reads
+    the same interval again from `since`. Before the first saved run there
+    is no record of the lost window, so the next slot reads only its own 24
+    hours: the run report names the unsaved window, and a manual inspection
+    can cover at most its last 24 hours.
   - `decide` and `issued` (the coordinator): read again and redo the step.
     For `decide`, read `pending` first: if the proposal is already decided,
     the earlier attempt was saved.

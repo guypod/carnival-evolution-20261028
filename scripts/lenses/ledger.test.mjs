@@ -935,10 +935,12 @@ test('the ledger size is checked explicitly on read and write', () => {
     sh(work, 'config', 'user.name', 'test');
     sh(work, 'remote', 'add', 'origin', remote);
     // Over the old implicit 1 MiB buffer, under the explicit limit: read whole.
-    const big = { ...emptyLedger(), runs: [{ note: 'x'.repeat(1_500_000) }] };
+    const padded = (n) =>
+      recordRun(emptyLedger(), run({ proposals: [proposal({ change: 'x'.repeat(n) })] }));
+    const big = padded(1_500_000);
     writeLedger(work, big, null, 'big');
     assert.deepEqual(readLedger(work).ledger, big);
-    const huge = { ...emptyLedger(), runs: [{ note: 'x'.repeat(MAX_LEDGER_BYTES) }] };
+    const huge = padded(MAX_LEDGER_BYTES);
     assert.throws(() => writeLedger(work, huge, null, 'huge'), /over/);
     // A ledger pushed by other means that is too big or malformed is refused.
     const file = join(dir, 'ledger.json');
@@ -953,7 +955,7 @@ test('the ledger size is checked explicitly on read and write', () => {
       const commit = sh(work, 'commit-tree', tree, '-m', 'x');
       sh(work, 'push', '--quiet', '--force', 'origin', `${commit}:refs/heads/${LEDGER_BRANCH}`);
     };
-    push(JSON.stringify({ ...emptyLedger(), runs: [{ note: 'x'.repeat(MAX_LEDGER_BYTES) }] }));
+    push(JSON.stringify(huge));
     assert.throws(() => readLedger(work), /byte limit/);
     push('{"schemaVersion":2,"proposals":{}}');
     assert.throws(() => readLedger(work), /must be a list/);
@@ -961,5 +963,107 @@ test('the ledger size is checked explicitly on read and write', () => {
     assert.throws(() => readLedger(work), /not JSON/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a later safety declaration sends an accepted proposal back to the coordinator', () => {
+  const target = 'tessl/code-review@0.5.0#review-maintainability-and-code-quality';
+  let ledger = recordRun(emptyLedger(), run({ proposals: [proposal({ target })] }));
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
+  const id = ledger.proposals[0].fingerprint;
+  ledger = recordRun(
+    ledger,
+    run({
+      runId: 'run-2',
+      proposals: [proposal({ target, weakens: true, standards: ['evidence-standards'] })],
+    }),
+  );
+  assert.equal(ledger.proposals[0].status, 'deferred');
+  assert.equal(ledger.proposals[0].reopened.runId, 'run-2');
+  assert.deepEqual(unissuedProposals(ledger), []);
+  assert.notDeepEqual(validateIssued(ledger, id, `${REPOSITORY_URL}/issues/400`), []);
+  // The coordinator can decide it again, and still never apply it.
+  assert.deepEqual(validateDecision(ledger, decision(ledger, { decision: 'reject' })), []);
+  assert.notDeepEqual(validateDecision(ledger, decision(ledger)), []);
+});
+
+test('area-scoped instruction and skill files are protected too', () => {
+  for (const target of ['src/games/AGENTS.md', 'src/CLAUDE.md', 'docs/x/SKILL.md']) {
+    assert.ok(isProtected(target), target);
+  }
+});
+
+test('evidence with distinct refs is kept even at the same url and commit', () => {
+  const t = (ref) => ({
+    kind: 'test',
+    ref,
+    url: `${REPOSITORY_URL}/blob/main/a.test.ts`,
+    commit: 'abc1234',
+  });
+  const ledger = recordRun(
+    emptyLedger(),
+    run({ proposals: [proposal({ evidence: [t('one'), t('two'), t('one')] })] }),
+  );
+  assert.deepEqual(ledger.proposals[0].evidence, [t('one'), t('two')]);
+});
+
+test('a partial run that read oldest first moves the checkpoint to how far it got', () => {
+  const partial = (runId, startedAt, through) => ({
+    runId,
+    learner: 'lens-tuning',
+    trigger: 'schedule',
+    startedAt,
+    finishedAt: startedAt,
+    since: '2026-10-28T00:00:00.000Z',
+    coverage: {
+      status: 'partial',
+      inspected: [],
+      gaps: 'list limit',
+      ...(through ? { through } : {}),
+    },
+  });
+  const ledger = {
+    ...emptyLedger(),
+    runs: [partial('a', '2026-10-30T05:41:00.000Z', '2026-10-29T03:00:00.000Z')],
+  };
+  assert.equal(checkpoint(ledger, 'lens-tuning'), '2026-10-29T03:00:00.000Z');
+  assert.equal(dueSlot(ledger, '2026-10-30T11:41:00Z').since, '2026-10-29T02:00:00.000Z');
+  // Without through, a partial run does not move it.
+  const none = { ...emptyLedger(), runs: [partial('a', '2026-10-30T05:41:00.000Z')] };
+  assert.equal(checkpoint(none, 'lens-tuning'), null);
+  // through must lie inside the run's window, and only on a partial scheduled run.
+  const cov = (c) => ({ status: 'partial', inspected: [], gaps: 'list limit', ...c });
+  assert.notDeepEqual(
+    validateRun(run({ coverage: cov({ through: '2026-10-30T12:00:00Z' }) }), opts()),
+    [],
+  );
+  assert.notDeepEqual(
+    validateRun(run({ coverage: cov({ through: '2026-09-01T00:00:00Z' }) }), opts()),
+    [],
+  );
+  assert.deepEqual(
+    validateRun(run({ coverage: cov({ through: '2026-10-29T00:00:00Z' }) }), opts()),
+    [],
+  );
+  assert.notDeepEqual(
+    validateRun(
+      run({ coverage: { status: 'complete', inspected: [], through: '2026-10-29T00:00:00Z' } }),
+      opts(),
+    ),
+    [],
+  );
+});
+
+test('a persisted ledger is checked for the fields the commands read', () => {
+  const saved = recordRun(emptyLedger(), run());
+  assert.deepEqual(ledgerErrors(saved), []);
+  for (const bad of [
+    { ...emptyLedger(), runs: [{}] },
+    { ...saved, runs: [{ ...saved.runs[0], coverage: null }] },
+    { ...saved, proposals: [{ ...saved.proposals[0], evidence: 'x' }] },
+    { ...saved, proposals: [{ ...saved.proposals[0], status: 'accepted' }] },
+    { ...saved, proposals: [{ ...saved.proposals[0], decisions: undefined }] },
+  ]) {
+    assert.notDeepEqual(ledgerErrors(bad), []);
   }
 });

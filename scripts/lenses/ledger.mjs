@@ -92,8 +92,9 @@ export const PROTECTED_PATHS = [
   /^\.github\//,
   /^\.tessl\//,
   /^tessl\.json$/,
-  /^AGENTS\.md$/,
-  /^CLAUDE\.md$/,
+  /(^|\/)AGENTS\.md$/,
+  /(^|\/)CLAUDE\.md$/,
+  /(^|\/)SKILL\.md$/,
   /^skills\//,
   /^tessl-factory\//,
   /^review-lenses\//,
@@ -138,6 +139,11 @@ const VALIDATION = ['current', 'stale', 'already-fixed', 'unsupported'];
 const PENDING = ['open', 'deferred'];
 const COMMIT = /^[0-9a-f]{7,40}$/;
 const MANUAL_ID = /^manual-[A-Za-z0-9._-]{1,64}$/;
+const STATUSES = ['open', 'deferred', 'accepted', 'rejected'];
+
+const isText = (value) => typeof value === 'string' && value.trim() !== '';
+const isTime = (value) => isText(value) && !Number.isNaN(Date.parse(value));
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const REPOSITORY_PATH = new URL(REPOSITORY_URL).pathname;
 
 const LONDON = new Intl.DateTimeFormat('en-GB', {
@@ -218,15 +224,22 @@ export const RETRY_OVERLAP_MINUTES = 60;
 
 /**
  * A learner's last successful coverage checkpoint: the start of its latest
- * complete scheduled run. Partial and failed runs never advance it, and nor
- * does a manual inspection, whose bounded window may skip an older interval.
+ * complete scheduled run, or the `coverage.through` of a partial scheduled run
+ * that read its window oldest first and names how far it got. Failed runs and
+ * partial runs without `through` never advance it, and nor does a manual
+ * inspection, whose bounded window may skip an older interval.
  */
 export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
   const done = ledger.runs
-    .filter(
-      (r) => r.trigger !== 'manual' && learnerOf(r) === learner && r.coverage.status === 'complete',
-    )
-    .map((r) => Date.parse(r.startedAt));
+    .filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner)
+    .map((r) => {
+      if (r.coverage.status === 'complete') return Date.parse(r.startedAt);
+      if (r.coverage.status === 'partial' && isTime(r.coverage.through)) {
+        return Date.parse(r.coverage.through);
+      }
+      return NaN;
+    })
+    .filter((t) => !Number.isNaN(t));
   return done.length ? new Date(Math.max(...done)).toISOString() : null;
 }
 
@@ -316,8 +329,6 @@ export function fingerprint({ kind, target, title }) {
   return createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
-const isText = (value) => typeof value === 'string' && value.trim() !== '';
-const isTime = (value) => isText(value) && !Number.isNaN(Date.parse(value));
 // A repository-relative file path, never outside the clone.
 // It must be spelled in normal form, so ./tessl.json or a//b cannot slip past
 // PROTECTED_PATHS.
@@ -509,6 +520,18 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
   if (run?.coverage?.status !== 'complete' && !isText(run?.coverage?.gaps)) {
     errors.push('partial or failed coverage must say what was missed in coverage.gaps');
   }
+  // A partial run that read its window oldest first may say how far it got,
+  // so the next run resumes there instead of hitting the same limit again.
+  if (run?.coverage?.through !== undefined) {
+    const through = Date.parse(run.coverage.through);
+    if (run.coverage.status !== 'partial' || run.trigger !== 'schedule') {
+      errors.push('only a partial scheduled run records coverage.through');
+    } else if (!isTime(run.coverage.through) || !isTime(run.since) || !isTime(run.startedAt)) {
+      errors.push('coverage.through must be a time');
+    } else if (through < Date.parse(run.since) || through > Date.parse(run.startedAt)) {
+      errors.push('coverage.through must fall between since and startedAt');
+    }
+  }
   const proposals = run.proposals ?? [];
   if (!Array.isArray(proposals)) return [...errors, 'proposals must be a list'];
   if (run.coverage?.status === 'failed' && proposals.length) {
@@ -520,9 +543,9 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
   return errors;
 }
 
-// Evidence is the same item only when kind, url and commit all match, so
+// Evidence is the same item only when kind, ref, url and commit all match, so
 // distinct findings that share a ref are all kept.
-const evidenceKey = (e) => JSON.stringify([e.kind, e.url, e.commit ?? null]);
+const evidenceKey = (e) => JSON.stringify([e.kind, e.ref, e.url, e.commit ?? null]);
 const mergeEvidence = (old, extra) => {
   const seen = new Set(old.map(evidenceKey));
   const added = [];
@@ -552,6 +575,16 @@ export function recordRun(ledger, run) {
       // A later sighting can only make it more cautious, never less.
       known.weakens = known.weakens || p.weakens;
       known.standards = [...new Set([...(known.standards ?? []), ...p.standards])];
+      // An acceptance that the new caution forbids goes back to the
+      // coordinator instead of staying eligible for an issue.
+      if (known.status === 'accepted' && touchesSafety(known)) {
+        known.status = 'deferred';
+        known.reopened = {
+          at: run.finishedAt,
+          runId: run.runId,
+          reason: 'a later sighting declared it weakens a safety standard or protected path',
+        };
+      }
       continue;
     }
     proposals.push({
@@ -727,7 +760,7 @@ export function issueMarker(fingerprintId) {
 
 /** Accepted proposals whose implementation issue is not yet recorded. */
 export function unissuedProposals(ledger) {
-  return ledger.proposals.filter((p) => p.status === 'accepted' && !p.issue);
+  return ledger.proposals.filter((p) => p.status === 'accepted' && !p.issue && !touchesSafety(p));
 }
 
 /** Every reason the issue for an accepted proposal cannot be recorded. */
@@ -736,6 +769,8 @@ export function validateIssued(ledger, fingerprintId, url) {
   if (!proposal) return [`no proposal ${fingerprintId}`];
   const errors = [];
   if (proposal.status !== 'accepted') errors.push(`proposal ${fingerprintId} is not accepted`);
+  else if (touchesSafety(proposal))
+    errors.push(`proposal ${fingerprintId} now weakens a safety standard`);
   const parsed = repositoryUrl(url);
   if (!parsed || !/^\/issues\/[1-9]\d*$/.test(parsed.pathname.slice(REPOSITORY_PATH.length))) {
     errors.push(`the issue url must be ${REPOSITORY_URL}/issues/<n>`);
@@ -768,9 +803,45 @@ export function ledgerErrors(ledger) {
     errors.push(`the ledger schemaVersion must be ${emptyLedger().schemaVersion}`);
   }
   for (const field of ['runs', 'proposals']) {
-    const list = ledger[field];
-    if (!Array.isArray(list) || !list.every((x) => x !== null && typeof x === 'object')) {
+    if (!Array.isArray(ledger[field]) || !ledger[field].every(isObject)) {
       errors.push(`the ledger ${field} must be a list of objects`);
+    }
+  }
+  if (errors.length) return errors;
+  // The fields the commands read, so a bad record is named here instead of
+  // failing later.
+  for (const [i, r] of ledger.runs.entries()) {
+    const at = `runs[${i}]`;
+    if (!isText(r.runId)) errors.push(`${at}: needs runId`);
+    if (r.learner !== undefined && !LEARNERS[r.learner]) errors.push(`${at}: unknown learner`);
+    if (r.trigger !== undefined && !['schedule', 'manual'].includes(r.trigger)) {
+      errors.push(`${at}: unknown trigger`);
+    }
+    if (!isTime(r.startedAt) || !isTime(r.finishedAt)) errors.push(`${at}: needs real times`);
+    if (r.since !== undefined && !isTime(r.since)) errors.push(`${at}: since must be a time`);
+    if (!isObject(r.coverage) || !COVERAGE.includes(r.coverage.status)) {
+      errors.push(`${at}: needs coverage.status`);
+    }
+    if (!Array.isArray(r.fingerprints)) errors.push(`${at}: needs fingerprints`);
+  }
+  for (const [i, p] of ledger.proposals.entries()) {
+    const at = `proposals[${i}]`;
+    for (const field of ['fingerprint', 'kind', 'target', 'title', 'change', 'rationale']) {
+      if (!isText(p[field])) errors.push(`${at}: needs ${field}`);
+    }
+    if (!STATUSES.includes(p.status)) errors.push(`${at}: unknown status`);
+    if (typeof p.weakens !== 'boolean') errors.push(`${at}: needs weakens`);
+    for (const field of ['standards', 'evidence', 'seenIn', 'decisions']) {
+      if (!Array.isArray(p[field])) errors.push(`${at}: ${field} must be a list`);
+    }
+    if (Array.isArray(p.evidence) && !p.evidence.every(isObject)) {
+      errors.push(`${at}: evidence must be objects`);
+    }
+    if (Array.isArray(p.decisions) && !p.decisions.every(isObject)) {
+      errors.push(`${at}: decisions must be objects`);
+    }
+    if (p.status === 'accepted' && !(p.decisions?.length > 0)) {
+      errors.push(`${at}: an accepted proposal has its decision`);
     }
   }
   return errors;
@@ -904,12 +975,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const run = readInput(arg);
     const lenses = configuredLenses(readFileSync(join(repo, '.tessl-code-review.yml'), 'utf8'));
     const exists = (path) => existsSync(join(repo, path));
-    const errors = validateRun(run, { lenses, now, ledger, exists });
+    // A run already saved is a harmless repeat, however late it is replayed.
+    const saved = isObject(run) && ledger.runs.some((r) => r.runId === run.runId);
+    const errors = saved ? [] : validateRun(run, { lenses, now, ledger, exists });
     if (errors.length) fail(errors);
-    const next = recordRun(ledger, run);
-    if (next === ledger) {
+    if (saved) {
       print({ unchanged: `run ${run.runId} is already recorded` });
     } else {
+      const next = recordRun(ledger, run);
       const message = `${run.learner}: ${run.runId} for ${runLabel(run)}`;
       const commit = writeLedger(repo, next, base, message);
       print({ commit, pending: pendingProposals(next).length });
@@ -930,6 +1003,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   } else if (command === 'issue') {
     const proposal = ledger.proposals.find((p) => p.fingerprint === arg);
     if (proposal?.status !== 'accepted') fail([`proposal ${arg} is not accepted`]);
+    if (touchesSafety(proposal)) fail([`proposal ${arg} now weakens a safety standard`]);
     print({
       marker: issueMarker(arg),
       ...(proposal.issue ? { recorded: proposal.issue } : {}),
