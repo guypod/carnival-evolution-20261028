@@ -218,6 +218,24 @@ describe('the rig on the bench', () => {
   });
 });
 
+describe('the tall cam after the catch', () => {
+  it('marks the frog held still by the guard on every caught step, and moving before', () => {
+    const toy = frogWith('tall');
+    const run = runToy(toy);
+    let caughtSteps = 0;
+    for (let i = 0; i < INSPECT_STEPS; i++) {
+      const phase = inspectPhase(i);
+      const caught = run.kind === 'cam' && frogPose(run.cam, phase, run.stalled).caught;
+      const frog = inspectionMarks(toy, run, phase).find((m) => m.id === 'frog')!;
+      if (caught) caughtSteps++;
+      expect(frog.state).toBe(caught ? 'stops' : 'moves');
+      expect(frog.label).toContain(caught ? 'held still by the guard' : 'rises and falls');
+    }
+    expect(caughtSteps).toBeGreaterThan(0);
+    expect(caughtSteps).toBeLessThan(INSPECT_STEPS);
+  });
+});
+
 describe('the status line', () => {
   it('says where motion passes and where it stops, and wraps safely', () => {
     const insp = inspectToy(gearsBroken);

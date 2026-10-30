@@ -71,7 +71,7 @@ hammer stays still: the rod slides on the loose pivot pin, so its push never
 reaches the hammer.
 
 Press Test to leave the inspection and run the toy normally. Any move, tool use,
-Undo, Reset or toy switch clears the inspection, even one that puts the toy back
+Undo (even one with nothing to undo), Reset or toy switch clears the inspection, even one that puts the toy back
 as it was, so the next press starts at step 1. Inspecting changes nothing and
 never records a repair; only Test does.
 

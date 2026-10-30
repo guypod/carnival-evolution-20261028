@@ -613,12 +613,12 @@ export function startWorkshop(
 
   function undoStep() {
     held = drag = undefined;
+    run = undefined;
     if (bench.history.length === 0) {
       say('Nothing to undo.');
       return refresh();
     }
     bench = undo(bench);
-    run = undefined;
     say('Undid the last change.');
     refresh();
   }

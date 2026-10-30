@@ -863,16 +863,29 @@ export function inspectionMarks(toy: ToyState, run: Run, phase: number): Inspect
     cam: SHAFT,
     frog: { x: SHAFT.x, y: SHAFT.y + frogRig(frogPose(undefined, 0, false)).frog },
   };
+  const caught = run.kind === 'cam' && frogPose(run.cam, phase, run.stalled).caught;
   if (run.kind === 'cam') {
     const pose = frogPose(run.cam, phase, run.stalled);
     fixed.frog = { x: SHAFT.x, y: SHAFT.y + frogRig(pose).frog };
   }
   return stages.map((s, i) => {
     const where = at.get(s.id) ?? fixed[s.id];
-    const state =
-      stopsAt === undefined || i < stopsAt ? 'moves' : i === stopsAt ? 'stops' : 'still';
-    const word =
-      state === 'stops' ? 'stops here' : state === 'still' ? 'still' : motionWord(run, s.id);
+    // Past the catch, the guard holds the frog still while the follower drops.
+    const held = caught && s.id === 'frog';
+    const state = held
+      ? 'stops'
+      : stopsAt === undefined || i < stopsAt
+        ? 'moves'
+        : i === stopsAt
+          ? 'stops'
+          : 'still';
+    const word = held
+      ? 'held still by the guard'
+      : state === 'stops'
+        ? 'stops here'
+        : state === 'still'
+          ? 'still'
+          : motionWord(run, s.id);
     const turn = run.kind === 'gears' && state === 'moves' ? Math.sign(run.spin[s.id]) : undefined;
     return { id: s.id, label: `${i + 1} ${s.part}: ${word}`, x: where.x, y: where.y, state, turn };
   });
