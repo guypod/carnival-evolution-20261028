@@ -80,10 +80,13 @@ it was read (`full`, `truncated`, `none`), its scope and gaps. Every run,
 partial and failed ones included, lists a receipt for every source, so a
 source reported unread is never confused with one left out. `record`
 accepts `complete` only when every required source is listed and read in
-full, and `coverage.through` only when every other source names its own
-`through` at or after it. Only a `complete` or `capped` list whose content
-was read names a `through`; a `count-only` or `none` list, or a `read` of
-`none`, never does, whatever time it gives. A receipt is the run's own account and cannot
+full. A partial `coverage.through` needs no time from a source listed
+`complete` and read `full`: that source covers the whole window and must
+omit `through`, which `record` refuses on it. Every other source must be a
+`complete` or `capped` list whose content was read and must name its own
+`through` at or after `coverage.through`. A `count-only` or `none` list, or
+a `read` of `none`, never names a `through`, whatever time it gives, so it
+blocks a partial `coverage.through`. A receipt is the run's own account and cannot
 prove what was understood; the rule is that anything less than a full
 receipt never moves the checkpoint.
 

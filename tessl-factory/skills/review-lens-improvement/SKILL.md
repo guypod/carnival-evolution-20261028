@@ -113,12 +113,15 @@ are `REQUIRED_SOURCES` in `ledger.mjs`; for lens-tuning: `pull-requests`,
 "through" }`. A list that hit its limit is `capped`; a count of items whose
 content you did not read is `count-only`; a read cut short (`--jq` slices,
 `head`, selected items) is `truncated`. `record` refuses `complete` unless
-every source has a receipt with `complete` and `full`, and refuses
-`coverage.through` unless every other source names its own `through` at or
-after it. Every run, partial and failed ones too, records all of them; a
-source you could not read gets `none`/`none`, never no receipt. Only a
-`complete` or `capped` source whose content you read names a `through`; a
-`count-only` or unread source never does. A receipt is your account, not
+every source has a receipt with `complete` and `full`. It accepts a partial
+`coverage.through` only when every source not read in full is a `complete`
+or `capped` source whose content you read and names its own `through` at or
+after it. A `complete`/`full` source already covers the whole window: it
+supports `coverage.through` without a time of its own and must omit
+`through`, which `record` refuses on it. Every run, partial and failed ones
+too, records all of them; a source you could not read gets `none`/`none`,
+never no receipt. A `count-only` or unread source never names a `through`,
+so it blocks a partial `coverage.through`. A receipt is your account, not
 proof: when unsure, classify down.
 
 Read the current target before proposing to change it. Propose only when the
