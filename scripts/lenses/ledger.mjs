@@ -436,6 +436,8 @@ function proposalErrors(p, at, learner, { lenses, exists }) {
   }
   if (p.kind === 'replace-with-check' && !isRepoPath(p.check)) {
     errors.push(`${at}: replace-with-check names the test or lint file in check`);
+  } else if (p.check !== undefined && !isRepoPath(p.check)) {
+    errors.push(`${at}: check must be a path in this repository, in normal form`);
   }
   errors.push(...evidenceErrors(p.evidence, at));
   return errors;
@@ -574,19 +576,28 @@ export function recordRun(ledger, run) {
       known.seenIn = [...known.seenIn, run.runId];
       // A later sighting can only make it more cautious, never less.
       const before = JSON.stringify([known.weakens, known.standards ?? []]);
+      // A sighting with different content is kept as a revision, never lost,
+      // and an accepted proposal goes back to the coordinator to decide it.
+      const revised = ['change', 'check', 'netLines'].some((f) => p[f] !== known[f]);
+      if (revised) {
+        known.revisions = [
+          ...(known.revisions ?? []),
+          { runId: run.runId, change: p.change, check: p.check, netLines: p.netLines },
+        ];
+      }
       known.weakens = known.weakens || p.weakens;
       known.standards = [...new Set([...(known.standards ?? []), ...p.standards])];
       // An acceptance decided under less caution goes back to the coordinator,
       // so the safety and two-PR rules are checked again before any issue.
-      if (
-        known.status === 'accepted' &&
-        JSON.stringify([known.weakens, known.standards]) !== before
-      ) {
+      const cautious = JSON.stringify([known.weakens, known.standards]) !== before;
+      if (known.status === 'accepted' && (cautious || revised)) {
         known.status = 'deferred';
         known.reopened = {
           at: run.finishedAt,
           runId: run.runId,
-          reason: 'a later sighting declared more caution than the accepted decision saw',
+          reason: revised
+            ? 'a later sighting proposed a different change than the one accepted'
+            : 'a later sighting declared more caution than the accepted decision saw',
         };
       }
       continue;
@@ -841,8 +852,13 @@ export function ledgerErrors(ledger) {
     if (Array.isArray(p.evidence) && !p.evidence.every(isObject)) {
       errors.push(`${at}: evidence must be objects`);
     }
-    if (Array.isArray(p.decisions) && !p.decisions.every(isObject)) {
-      errors.push(`${at}: decisions must be objects`);
+    if (
+      Array.isArray(p.decisions) &&
+      !p.decisions.every(
+        (d) => isObject(d) && DECISIONS.includes(d.decision) && Array.isArray(d.evidence),
+      )
+    ) {
+      errors.push(`${at}: each decision needs its decision and evidence`);
     }
     if (p.status === 'accepted' && !(p.decisions?.length > 0)) {
       errors.push(`${at}: an accepted proposal has its decision`);

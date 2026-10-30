@@ -1087,3 +1087,32 @@ test('any added caution reopens an accepted proposal, and malformed targets neve
   assert.notDeepEqual(validateRun(bad, opts()), []);
   assert.throws(() => writeLedger('.', { ...emptyLedger(), runs: [{}] }, null, 'x'), /malformed/);
 });
+
+test('a revised repeat is kept and reopens acceptance; check paths are normal and protected', () => {
+  let ledger = recordRun(emptyLedger(), run());
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
+  ledger = recordRun(
+    ledger,
+    run({ runId: 'run-2', proposals: [proposal({ change: 'Something else.' })] }),
+  );
+  assert.equal(ledger.proposals[0].status, 'deferred');
+  assert.equal(ledger.proposals[0].revisions[0].change, 'Something else.');
+  const sneaky = run({
+    learner: 'run-learning',
+    slot: '2026-10-30T05:20 Europe/London',
+    startedAt: '2026-10-30T05:21:00Z',
+    finishedAt: '2026-10-30T05:25:00Z',
+    proposals: [
+      proposal({
+        kind: 'add-check',
+        target: 'src/x.ts',
+        check: 'src/../scripts/factory/contract.mjs',
+        weakens: true,
+      }),
+    ],
+  });
+  assert.notDeepEqual(validateRun(sneaky, opts({ now: '2026-10-30T05:26:00Z' })), []);
+  const saved = recordRun(emptyLedger(), run());
+  const accepted = { ...saved.proposals[0], status: 'accepted', decisions: [{}] };
+  assert.notDeepEqual(ledgerErrors({ ...saved, proposals: [accepted] }), []);
+});

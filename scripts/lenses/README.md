@@ -157,7 +157,9 @@ weakens something, or names more standards), the ledger moves it back to
 `deferred` with a `reopened` note, so it leaves `unissued` and comes back to
 the coordinator, whose next decision checks the safety and two-PR rules
 again. `issue` and `issued` refuse a proposal that weakens a safety
-standard.
+standard. A sighting with the same fingerprint but a different `change`,
+`check` or `netLines` is kept under `revisions` and also reopens an accepted
+proposal.
 
 `defer` keeps the proposal pending for the next block. `reject` closes it;
 the same proposal seen again keeps its rejection and only gains evidence.
