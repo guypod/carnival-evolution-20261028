@@ -27,8 +27,8 @@ export default tseslint.config(
     },
   },
   {
-    // The factory scripts run in Node, not the browser.
-    files: ['scripts/factory/**/*.mjs'],
+    // The factory and visual capture scripts run in Node, not the browser.
+    files: ['scripts/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
 );

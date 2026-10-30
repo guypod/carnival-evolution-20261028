@@ -3150,21 +3150,27 @@ function renderBalloon() {
         <a href="#/">← Back to the midway</a>
         <h1 id="balloon-title" tabindex="-1">Wish Balloon</h1>
       </div>
-      <p>Pick a colour, write a short wish and let the balloon go.</p>
-      <form class="balloon-form">
-        <fieldset><legend>Colour</legend>${BALLOON_COLORS.map(
-          (color, i) =>
-            `<label><input type="radio" name="balloon-color" value="${color}" ${i === 0 ? 'checked' : ''} /> ${BALLOON_COLOR_NAMES[color]}</label>`,
-        ).join('')}</fieldset>
-        <label for="balloon-wish">Your wish (up to ${WISH_MAX} characters)</label>
-        <input id="balloon-wish" type="text" autocomplete="off" />
-        <button type="submit">Release the balloon</button>
-      </form>
-      <canvas class="balloon-scene" aria-hidden="true"></canvas>
-      <p class="balloon-status" role="status" aria-live="polite"></p>
-      <h2>Keepsakes</h2>
-      <ul class="balloon-keepsakes"></ul>
-      <p class="note">Your wishes stay in this browser only. Nothing is uploaded, shared or counted. Escape leaves without releasing.</p>
+      <div class="balloon-stall">
+        <canvas class="balloon-scene" aria-hidden="true"></canvas>
+        <div class="balloon-counter">
+          <p class="balloon-intro">Pick a colour, write a short wish and let the balloon go.</p>
+          <form class="balloon-form">
+            <fieldset class="balloon-colors"><legend>Colour</legend>${BALLOON_COLORS.map(
+              (color, i) =>
+                `<label class="balloon-swatch balloon-swatch-${color}"><input type="radio" name="balloon-color" value="${color}" ${i === 0 ? 'checked' : ''} /> ${BALLOON_COLOR_NAMES[color]}</label>`,
+            ).join('')}</fieldset>
+            <label for="balloon-wish">Your wish (up to ${WISH_MAX} characters)</label>
+            <input id="balloon-wish" type="text" autocomplete="off" />
+            <button type="submit">Release the balloon</button>
+          </form>
+          <p class="balloon-status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="balloon-shelf">
+        <h2>Keepsakes</h2>
+        <ul class="balloon-keepsakes"></ul>
+        <p class="note">Your wishes stay in this browser only. Nothing is uploaded, shared or counted. Escape leaves without releasing.</p>
+      </div>
     </section>
   `;
 
@@ -3185,12 +3191,14 @@ function renderBalloon() {
     keepsakesList.replaceChildren(
       ...keepsakes.map((balloon) => {
         const item = document.createElement('li');
+        item.className = `balloon-tag balloon-tag-${balloon.color}`;
         item.textContent = `${BALLOON_COLOR_NAMES[balloon.color]}: ${balloon.wish}`;
         return item;
       }),
     );
     if (keepsakes.length === 0) {
       const item = document.createElement('li');
+      item.className = 'balloon-tag';
       item.textContent = 'No balloons yet.';
       keepsakesList.append(item);
     }
