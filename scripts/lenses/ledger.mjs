@@ -145,7 +145,11 @@ const COVERAGE = ['complete', 'partial', 'failed'];
 // conservative: complete coverage needs every source listed in full
 // (enumeration "complete") and read in full (read "full"). A capped list, a
 // count without content, a truncated read or a missing receipt is partial at
-// best, and gives no through unless that source names its own through.
+// best, and gives no through unless that source names its own through. Only a
+// source whose content was read names a through: a count or an unread source
+// never does, whatever time it gives. Every run, failed ones included, has a
+// receipt for every source, so an omitted source is never mistaken for one
+// reported unread.
 export const REQUIRED_SOURCES = Object.freeze({
   'lens-tuning': [
     'pull-requests',
@@ -165,6 +169,8 @@ const ENUMERATION = ['complete', 'capped', 'count-only', 'none'];
 const READ = ['full', 'truncated', 'none'];
 
 const sourceDone = (s) => s.enumeration === 'complete' && s.read === 'full';
+// A source whose items were listed and whose content was read, at least in part.
+const sourceRead = (s) => ['complete', 'capped'].includes(s.enumeration) && s.read !== 'none';
 
 /** The errors in a run's per-source receipts, given its coverage status. */
 export function sourceErrors(run) {
@@ -191,12 +197,14 @@ export function sourceErrors(run) {
     if (s.through !== undefined && (!isTime(s.through) || sourceDone(s))) {
       errors.push(`${at}: through is a time, and only for a source not read in full`);
     }
+    if (s.through !== undefined && !sourceRead(s)) {
+      errors.push(`${at}: a source that was only counted or not read names no through`);
+    }
   }
   const missing = required.filter((name) => !names.includes(name));
+  if (missing.length) errors.push(`coverage.sources is missing receipts for ${missing.join(', ')}`);
   const status = run.coverage.status;
   if (status === 'complete') {
-    if (missing.length)
-      errors.push(`complete coverage is missing receipts for ${missing.join(', ')}`);
     const short = sources.filter((s) => !sourceDone(s)).map((s) => s.source);
     if (short.length) {
       errors.push(
@@ -206,9 +214,12 @@ export function sourceErrors(run) {
   }
   if (status === 'partial' && run.coverage.through !== undefined) {
     // Every source must have been read in full up to through.
-    if (missing.length) errors.push(`coverage.through needs receipts for ${missing.join(', ')}`);
     for (const s of sources.filter((x) => !sourceDone(x))) {
-      if (!isTime(s.through) || Date.parse(s.through) < Date.parse(run.coverage.through)) {
+      if (
+        !sourceRead(s) ||
+        !isTime(s.through) ||
+        Date.parse(s.through) < Date.parse(run.coverage.through)
+      ) {
         errors.push(`coverage.through is later than ${s.source} was read in full`);
       }
     }
@@ -334,6 +345,35 @@ export function effectiveRuns(ledger) {
 const scheduledRuns = (ledger, learner) =>
   effectiveRuns(ledger).filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner);
 
+const sinceOf = (r) =>
+  isTime(r.since)
+    ? Date.parse(r.since)
+    : Date.parse(r.startedAt) - MANUAL_LOOKBACK_HOURS * 3600_000;
+
+// The scheduled runs whose progress counts: oldest start first, a run counts
+// only when its since reaches back to where coverage so far ends (before any,
+// to the earliest window attempted), so coverage stays one unbroken interval.
+// A correction that lowers a run reopens its interval, and a later run that
+// started reading after the reopened start does not close it: only recorded
+// coverage that spans the gap does.
+const countedRuns = (ledger, learner) => {
+  const runs = scheduledRuns(ledger, learner).sort(
+    (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
+  );
+  const counted = [];
+  let earliest = Infinity;
+  let frontier = null;
+  for (const r of runs) {
+    earliest = Math.min(earliest, sinceOf(r));
+    const resume = resumeAt(r);
+    if (Number.isNaN(resume)) continue;
+    if (sinceOf(r) > (frontier ?? earliest)) continue;
+    counted.push(r);
+    frontier = Math.max(frontier ?? -Infinity, resume);
+  }
+  return counted;
+};
+
 /**
  * A learner's last successful coverage checkpoint: the start of its latest
  * complete scheduled run, or the `coverage.through` of a partial scheduled run
@@ -342,7 +382,7 @@ const scheduledRuns = (ledger, learner) =>
  * inspection, whose bounded window may skip an older interval.
  */
 export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
-  const done = scheduledRuns(ledger, learner)
+  const done = countedRuns(ledger, learner)
     .map((r) => {
       if (r.coverage.status === 'complete') return Date.parse(r.startedAt);
       if (r.coverage.status === 'partial' && isTime(r.coverage.through)) {
@@ -363,13 +403,10 @@ export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
  * agree on the owed interval.
  */
 export function retrySince(ledger, scheduledFor, learner = DEFAULT_LEARNER) {
-  const runs = scheduledRuns(ledger, learner);
-  const resumes = runs.map(resumeAt).filter((t) => !Number.isNaN(t));
+  const resumes = countedRuns(ledger, learner).map(resumeAt);
   if (resumes.length) return new Date(Math.max(...resumes)).toISOString();
   const lookback = MANUAL_LOOKBACK_HOURS * 3600_000;
-  const starts = runs.map((r) =>
-    r.since ? Date.parse(r.since) : Date.parse(r.startedAt) - lookback,
-  );
+  const starts = scheduledRuns(ledger, learner).map(sinceOf);
   return new Date(Math.min(Date.parse(scheduledFor) - lookback, ...starts)).toISOString();
 }
 
@@ -817,6 +854,9 @@ export function validateCorrection(ledger, correction) {
     );
   }
   const current = prior.at(-1)?.coverage ?? run.coverage;
+  if (!isObject(current) || !COVERAGE.includes(current.status)) {
+    return [...errors, `run ${run.runId} has no valid coverage.status to correct`];
+  }
   if (c.target.claimed !== current.status) {
     errors.push(`run ${run.runId} currently claims ${current.status}, not ${c.target.claimed}`);
   }
@@ -834,14 +874,12 @@ export function validateCorrection(ledger, correction) {
   if (!Array.isArray(coverage.inspected) || !coverage.inspected.every(isText)) {
     errors.push('coverage.inspected must list refs');
   } else {
-    const extra = coverage.inspected.filter((ref) => !run.coverage.inspected?.includes(ref));
+    const recorded = Array.isArray(run.coverage?.inspected) ? run.coverage.inspected : [];
+    const extra = coverage.inspected.filter((ref) => !recorded.includes(ref));
     if (extra.length) errors.push(`the run never recorded inspecting ${extra.join(', ')}`);
   }
-  errors.push(...sourceErrors({ learner: learnerOf(run), coverage }));
   // A correction names what was and was not read for every required source.
-  const named = Array.isArray(coverage.sources) ? coverage.sources.map((s) => s?.source) : [];
-  const unnamed = (REQUIRED_SOURCES[learnerOf(run)] ?? []).filter((n) => !named.includes(n));
-  if (unnamed.length) errors.push(`a correction needs receipts for ${unnamed.join(', ')}`);
+  errors.push(...sourceErrors({ learner: learnerOf(run), coverage }));
   if (!isText(c.rationale)) errors.push('a correction needs its rationale');
   errors.push(...evidenceErrors(c.evidence, 'correction', CORRECTION_EVIDENCE_KINDS));
   if (!isText(c.correctedBy)) errors.push('a correction needs correctedBy');
@@ -1056,18 +1094,6 @@ export function ledgerErrors(ledger) {
     errors.push('the ledger corrections must be a list of objects');
   }
   if (errors.length) return errors;
-  // Each correction must still be one the correct command would accept,
-  // replayed in order, so a reordered or edited history is refused.
-  let replay = { ...ledger, corrections: [] };
-  for (const [i, c] of (ledger.corrections ?? []).entries()) {
-    if ((ledger.corrections ?? []).findIndex((x) => x.correctionId === c.correctionId) !== i) {
-      errors.push(`corrections[${i}]: ${c.correctionId} is listed twice`);
-      continue;
-    }
-    const found = validateCorrection(replay, c);
-    for (const e of found) errors.push(`corrections[${i}]: ${e}`);
-    replay = recordCorrection(replay, c);
-  }
   // The fields the commands read, so a bad record is named here instead of
   // failing later.
   for (const [i, r] of ledger.runs.entries()) {
@@ -1095,6 +1121,22 @@ export function ledgerErrors(ledger) {
       errors.push(`${at}: needs coverage.status`);
     }
     if (!Array.isArray(r.fingerprints)) errors.push(`${at}: needs fingerprints`);
+  }
+  // Each correction must still be one the correct command would accept,
+  // replayed in order. This checks what the history means now, not that it
+  // matches what was stored before: an edit that stays valid, such as another
+  // rationale, or valid corrections of different runs swapped, passes here.
+  // The ledger branch's Git history is the audit of what changed and when.
+  // Runs were checked above, so a correction of a malformed run names it.
+  let replay = { ...ledger, corrections: [] };
+  for (const [i, c] of (ledger.corrections ?? []).entries()) {
+    if ((ledger.corrections ?? []).findIndex((x) => x.correctionId === c.correctionId) !== i) {
+      errors.push(`corrections[${i}]: ${c.correctionId} is listed twice`);
+      continue;
+    }
+    const found = validateCorrection(replay, c);
+    for (const e of found) errors.push(`corrections[${i}]: ${e}`);
+    replay = recordCorrection(replay, c);
   }
   for (const [i, p] of ledger.proposals.entries()) {
     const at = `proposals[${i}]`;

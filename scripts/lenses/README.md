@@ -49,7 +49,9 @@ refuses a slot already covered completely.
   scheduled run less one hour of overlap (never before that run's own
   `since`), or a partial run's `coverage.through`, whichever is later or,
   before any, the window of the first scheduled attempt. `record` refuses a scheduled run whose `since` is
-  missing or later than that, so a run cannot cover less than it owes.
+  missing or later than that, so a run cannot cover less than it owes. Only
+  runs whose `since` reaches back to where coverage so far ends count, oldest
+  first, so the checkpoint is the end of one unbroken covered interval.
 - **Retry.** A partial or failed slot stays due: a run for the same slot may
   try again while the slot is still owed (within the 180 minutes). After
   that, the next slot's `since` still reaches back to the last complete run,
@@ -67,10 +69,14 @@ refuses a slot already covered completely.
 
 A run's `coverage.sources` holds one receipt per source in `REQUIRED_SOURCES`:
 how far it was listed (`complete`, `capped`, `count-only`, `none`), how far
-it was read (`full`, `truncated`, `none`), its scope and gaps. `record`
+it was read (`full`, `truncated`, `none`), its scope and gaps. Every run,
+partial and failed ones included, lists a receipt for every source, so a
+source reported unread is never confused with one left out. `record`
 accepts `complete` only when every required source is listed and read in
 full, and `coverage.through` only when every other source names its own
-`through` at or after it. A receipt is the run's own account and cannot
+`through` at or after it. Only a `complete` or `capped` list whose content
+was read names a `through`; a `count-only` or `none` list, or a `read` of
+`none`, never does, whatever time it gives. A receipt is the run's own account and cannot
 prove what was understood; the rule is that anything less than a full
 receipt never moves the checkpoint.
 
@@ -86,12 +92,20 @@ its current status), the lower `coverage` with a receipt for every source,
 `rationale`, `evidence`, `correctedBy` and `correctedAt`. It is appended to
 the ledger's `corrections`; the run, its proposals and every decision stay as
 they were. `due`, `since`, `checkpoint` and `summary` use the latest
-correction's coverage, so the owed interval comes back. `correct` refuses an
+correction's coverage, so the owed interval comes back. A later run that
+started reading after the reopened start does not close it, even though it
+counted before the correction: the gap stays owed until a recorded run whose
+`since` reaches back to it covers it. `correct` refuses an
 unknown run, a stale revision or claim, anything but a downgrade, a
 `through`, a ref the run never recorded and the loop correcting itself. The
 same file again changes nothing; another file under the same id is refused.
-Every read replays the corrections in order, so a reordered, duplicated or
-edited history is refused.
+Every read replays the corrections in order and refuses one the command
+would not accept now: a duplicate, a revision out of order for its run, an
+upgrade or a `through`. That is a check of what the history means, not tamper
+detection: an edit that stays valid (another rationale, attribution or time)
+or valid corrections of different runs swapped still pass. Append only through
+`correct`; the `factory-state/review-lenses` branch's Git history is the audit
+of what was written and when.
 
 The staged recovery for run `01a18de5-aa80-720a-8fb2-54b58fc34259` (the
 17:40 run of 2026-10-30, #417) is

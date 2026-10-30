@@ -1569,3 +1569,143 @@ test('after a correction a retry reads the owed interval and cannot replace the 
   };
   assert.notDeepEqual(validateRun(backdated, at), []);
 });
+
+test('a correction reopens its interval even after a later run read from the false checkpoint', () => {
+  // A later 23:40 run, complete or partial, reads from the false checkpoint's overlap.
+  const later = (coverage) => ({
+    runId: 'later-2340',
+    learner: 'lens-tuning',
+    trigger: 'schedule',
+    slot: '2026-10-30T23:40 Europe/London',
+    scheduledFor: '2026-10-30T23:40:00.000Z',
+    since: dueSlot(production, '2026-10-30T23:41:00Z').since,
+    startedAt: '2026-10-30T23:41:00Z',
+    finishedAt: '2026-10-30T23:55:00Z',
+    coverage,
+    proposals: [],
+  });
+  const capped = (through) =>
+    fullSources().map((s, i) =>
+      i ? s : { ...s, enumeration: 'capped', read: 'truncated', gaps: 'cap', through },
+    );
+  const complete = { status: 'complete', inspected: [], sources: fullSources() };
+  const through = '2026-10-30T20:00:00.000Z';
+  const partial = {
+    status: 'partial',
+    inspected: [],
+    gaps: 'cap',
+    through,
+    sources: capped(through),
+  };
+  for (const coverage of [complete, partial]) {
+    const r = later(coverage);
+    assert.equal(r.since, '2026-10-30T16:40:39.000Z');
+    const at = opts({ now: '2026-10-30T23:56:00Z', ledger: production });
+    assert.deepEqual(validateRun(r, at), [], coverage.status);
+    const before = recordRun(production, r);
+    assert.notEqual(checkpoint(before), null);
+    assert.deepEqual(validateCorrection(before, recovery), []);
+    const fixed = recordCorrection(before, recovery);
+    // Later progress alone does not close the reopened gap from October 29 at 17:40.
+    assert.equal(checkpoint(fixed), null, coverage.status);
+    const next = dueSlot(fixed, '2026-10-31T05:41:00Z');
+    assert.equal(next.due, true);
+    assert.equal(next.since, '2026-10-29T17:40:00.000Z', coverage.status);
+    // A run that reads from the reopened start and spans it closes the gap.
+    const spanning = {
+      ...later(complete),
+      runId: 'span-0540',
+      slot: '2026-10-31T05:40 Europe/London',
+      scheduledFor: '2026-10-31T05:40:00.000Z',
+      since: next.since,
+      startedAt: '2026-10-31T05:41:00Z',
+      finishedAt: '2026-10-31T05:55:00Z',
+    };
+    const at2 = opts({ now: '2026-10-31T05:56:00Z', ledger: fixed });
+    assert.match(
+      validateRun({ ...spanning, since: '2026-10-30T16:40:39.000Z' }, at2).join('\n'),
+      /since must reach back to 2026-10-29T17:40/,
+    );
+    assert.deepEqual(validateRun(spanning, at2), []);
+    assert.equal(checkpoint(recordRun(fixed, spanning)), '2026-10-31T05:41:00.000Z');
+    // A partial run from the reopened start moves forward only as far as it read.
+    const batch = {
+      ...spanning,
+      runId: 'batch-0540',
+      coverage: {
+        ...partial,
+        through: '2026-10-30T12:00:00.000Z',
+        sources: capped('2026-10-30T12:00:00.000Z'),
+      },
+    };
+    assert.deepEqual(validateRun(batch, at2), []);
+    const moved = recordRun(fixed, batch);
+    assert.equal(checkpoint(moved), '2026-10-30T12:00:00.000Z');
+    assert.equal(dueSlot(moved, '2026-10-31T11:41:00Z').since, '2026-10-30T12:00:00.000Z');
+  }
+});
+
+test('an unread or counted source never names a through, and a read capped prefix still does', () => {
+  const through = '2026-10-20T00:00:00.000Z';
+  const partial = (change) =>
+    run({
+      coverage: {
+        status: 'partial',
+        inspected: [],
+        gaps: 'cap',
+        through,
+        sources: fullSources().map((s, i) =>
+          i ? s : { ...s, scope: 'some', gaps: 'not read', through, ...change },
+        ),
+      },
+    });
+  for (const change of [
+    { enumeration: 'count-only', read: 'none' },
+    { enumeration: 'count-only', read: 'truncated' },
+    { enumeration: 'none', read: 'none' },
+    { enumeration: 'capped', read: 'none' },
+    { enumeration: 'complete', read: 'none' },
+  ]) {
+    const r = partial(change);
+    assert.match(validateRun(r, opts()).join('\n'), /names no through/, JSON.stringify(change));
+  }
+  // A capped list read oldest first, truncated or in full, still names how far it got.
+  for (const read of ['full', 'truncated']) {
+    const r = partial({ enumeration: 'capped', read });
+    assert.deepEqual(validateRun(r, opts()), [], read);
+    assert.equal(checkpoint(recordRun(emptyLedger(), r)), through);
+  }
+});
+
+test('every run has a receipt for every source, even one that moves no checkpoint', () => {
+  const failed = run({
+    coverage: { status: 'failed', inspected: [], gaps: 'API down', sources: [] },
+    proposals: [],
+  });
+  assert.match(validateRun(failed, opts()).join('\n'), /missing receipts for pull-requests/);
+  const partial = run({ coverage: { status: 'partial', inspected: [], gaps: 'x', sources: [] } });
+  assert.match(validateRun(partial, opts()).join('\n'), /missing receipts/);
+  const unread = fullSources().map((s) => ({ ...s, enumeration: 'none', read: 'none', gaps: 'x' }));
+  const reported = { ...failed, coverage: { ...failed.coverage, sources: unread } };
+  assert.deepEqual(validateRun(reported, opts()), []);
+});
+
+test('a correction of a run with malformed coverage is named, not a TypeError', () => {
+  for (const coverage of [undefined, null, {}]) {
+    const runs = production.runs.map((r) => (r.runId === FALSE_RUN ? { ...r, coverage } : r));
+    const broken = { ...production, runs, corrections: [recovery] };
+    let errors;
+    assert.doesNotThrow(() => {
+      errors = ledgerErrors(broken);
+    });
+    assert.ok(errors.includes('runs[1]: needs coverage.status'), JSON.stringify(coverage));
+    assert.ok(errors.some((e) => e.startsWith('corrections[0]: run ')));
+  }
+});
+
+test('replay validates what the corrections mean, not that they match what was stored', () => {
+  // A valid edit passes on read: the ledger branch's Git history is the audit for that.
+  const fixed = recordCorrection(production, recovery);
+  const reworded = { ...fixed, corrections: [{ ...recovery, rationale: 'Another reason.' }] };
+  assert.deepEqual(ledgerErrors(reworded), []);
+});

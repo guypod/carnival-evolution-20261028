@@ -115,7 +115,11 @@ content you did not read is `count-only`; a read cut short (`--jq` slices,
 `head`, selected items) is `truncated`. `record` refuses `complete` unless
 every source has a receipt with `complete` and `full`, and refuses
 `coverage.through` unless every other source names its own `through` at or
-after it. A receipt is your account, not proof: when unsure, classify down.
+after it. Every run, partial and failed ones too, records all of them; a
+source you could not read gets `none`/`none`, never no receipt. Only a
+`complete` or `capped` source whose content you read names a `through`; a
+`count-only` or unread source never does. A receipt is your account, not
+proof: when unsure, classify down.
 
 Read the current target before proposing to change it. Propose only when the
 evidence shows a concrete miss, false alarm, friction or redundancy. Each
