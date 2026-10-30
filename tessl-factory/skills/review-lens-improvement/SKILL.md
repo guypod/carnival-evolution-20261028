@@ -137,10 +137,13 @@ Manual: `"trigger": "manual"`, `"manualId": "manual-<id>"`, `"since"` from
 
 Save it with `node scripts/lenses/ledger.mjs record <file>` within 30 minutes
 of the real start. It refuses a malformed run, a slot that is not the one the
-real start fell in, a manual run with a slot or a window over 24 hours,
-times in the future, a target outside the schema, evidence outside this
+real start fell in or is already covered, a manual run with a slot, a window
+over 24 hours or over the daily limit, times in the future, a target outside
+the schema or not in normal form, a missing `netLines`, evidence outside this
 repository, and a partial or failed run without `gaps`. A proposal already in
-the ledger keeps its status and decisions and gains the new evidence.
+the ledger keeps its status and decisions and gains the new evidence; if the
+new sighting says it weakens something, or names more standards, that
+caution is kept.
 Recording the same `runId` twice changes nothing. A failed run is still
 recorded, with its real times, so the gap is visible.
 

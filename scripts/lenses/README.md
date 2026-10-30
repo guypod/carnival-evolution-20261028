@@ -122,7 +122,12 @@ exact-head tests and review, and evidence standards. A proposal that weakens
 one, or weakens a protected path (`.github/`, `tessl.json`,
 `scripts/factory/`, `scripts/lenses/`, `scripts/visual/`,
 `.tessl-code-review.yml`, the security lens), can be deferred or rejected but
-never applied, however many pull requests support it. Two-source evidence
+never applied, however many pull requests support it. Targets must be
+repository paths in normal form, so `./tessl.json` cannot dodge the list.
+Lens files under `review-lenses/` and the other `tessl/code-review` lenses are
+not protected paths: weakening them needs two pull requests of evidence and
+an honest `weakens: true`. A repeat sighting can only add caution to a
+proposal, never remove it. Two-source evidence
 only unlocks weakening something outside those. The standards are constants
 in code, so changing them is an ordinary reviewed change, not a decision.
 

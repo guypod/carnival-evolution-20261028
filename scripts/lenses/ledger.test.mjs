@@ -555,3 +555,46 @@ test('every learner has one London schedule whose cron matches its slots', () =>
     assert.equal(schedule.cron, `${minute} ${hours.join(',')} * * ${weekday ?? '*'}`, name);
   }
 });
+
+test('protected paths cannot be dodged by spelling, nor caution dropped by a repeat', () => {
+  const runLearning = (p) =>
+    run({
+      learner: 'run-learning',
+      slot: '2026-10-30T05:20 Europe/London',
+      startedAt: '2026-10-30T05:21:00Z',
+      finishedAt: '2026-10-30T05:25:00Z',
+      proposals: [proposal({ kind: 'add-check', weakens: true, ...p })],
+    });
+  const at = opts({ now: '2026-10-30T05:26:00Z' });
+  for (const target of ['./tessl.json', 'scripts//factory/contract.mjs', '/tessl.json', 'a/./b']) {
+    assert.notDeepEqual(validateRun(runLearning({ target }), at), [], target);
+  }
+  // The same proposal seen later as weakening a standard stays weakening.
+  let ledger = recordRun(emptyLedger(), run());
+  ledger = recordRun(
+    ledger,
+    run({
+      runId: 'run-2',
+      slot: '2026-10-30T17:40 Europe/London',
+      proposals: [proposal({ weakens: true, standards: ['mandatory-safety'] })],
+    }),
+  );
+  assert.equal(ledger.proposals[0].weakens, true);
+  assert.deepEqual(ledger.proposals[0].standards, ['mandatory-safety']);
+  const many = [evidence('pr', '#304'), evidence('pr', '#375')];
+  assert.notDeepEqual(validateDecision(ledger, decision(ledger, { evidence: many })), []);
+});
+
+test('a second scheduled run cannot claim a slot already covered', () => {
+  const ledger = recordRun(emptyLedger(), run());
+  const again = run({ runId: 'run-2', startedAt: '2026-10-30T11:50:00Z' });
+  assert.notDeepEqual(validateRun(again, opts({ ledger })), []);
+  // Saving the same run again is still allowed, and changes nothing.
+  assert.deepEqual(validateRun(run(), opts({ ledger })), []);
+  // A partial run leaves the slot open for a retry.
+  const partial = recordRun(
+    emptyLedger(),
+    run({ coverage: { status: 'partial', inspected: [], gaps: 'gh list hit its limit' } }),
+  );
+  assert.deepEqual(validateRun(again, opts({ ledger: partial })), []);
+});

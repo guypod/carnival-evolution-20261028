@@ -214,8 +214,10 @@ export function fingerprint({ kind, target, title }) {
 const isText = (value) => typeof value === 'string' && value.trim() !== '';
 const isTime = (value) => isText(value) && !Number.isNaN(Date.parse(value));
 // A repository-relative file path, never outside the clone.
+// It must be spelled in normal form, so ./tessl.json or a//b cannot slip past
+// PROTECTED_PATHS.
 const isRepoPath = (value) =>
-  isText(value) && !value.startsWith('/') && !value.split('/').includes('..');
+  isText(value) && value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 
 /** Evidence must point at something public in this repository. */
 export function evidenceErrors(evidence, where) {
@@ -327,6 +329,11 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
       const real = slotAt(run.startedAt, learner);
       if (!real || real !== run.slot) {
         errors.push(`slot must be the ${learner} slot its real start fell in, not ${run.slot}`);
+      } else {
+        // Saving the same run again is harmless; a second run for a covered slot is not.
+        const others = { ...ledger, runs: ledger.runs.filter((r) => r.runId !== run.runId) };
+        const due = dueSlot(others, run.startedAt, learner);
+        if (!due.due) errors.push(due.reason);
       }
     }
   } else {
@@ -366,6 +373,9 @@ export function recordRun(ledger, run) {
     if (known) {
       known.evidence = mergeEvidence(known.evidence, p.evidence);
       known.seenIn = [...known.seenIn, run.runId];
+      // A later sighting can only make it more cautious, never less.
+      known.weakens = known.weakens || p.weakens;
+      known.standards = [...new Set([...(known.standards ?? []), ...p.standards])];
       continue;
     }
     proposals.push({
