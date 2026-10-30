@@ -1918,6 +1918,63 @@ kbd {
   border-radius: var(--radius);
 }
 
+/* Backstage Repair: the toy picker. Each toy says its repair state in words;
+   the toy on the bench adds a tag and a heavier double outline, so selection
+   never relies on colour or on the repaired checkmark. */
+.workshop-toys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.workshop-toys button {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1 1 12rem;
+  min-height: 44px;
+  padding: 0.5rem 0.9rem;
+  border: 2px solid var(--color-muted);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workshop-toy-name {
+  font-weight: bold;
+}
+
+.workshop-toy-repair {
+  font-size: 0.9em;
+}
+
+.workshop-toy-bench {
+  display: none;
+  font-size: 0.9em;
+  font-weight: bold;
+}
+
+.workshop-toys button[aria-pressed='true'] {
+  border: 4px double var(--color-accent);
+  padding: calc(0.5rem - 2px) calc(0.9rem - 2px);
+}
+
+.workshop-toys button[aria-pressed='true'] .workshop-toy-bench {
+  display: block;
+}
+
+.workshop-toys button:hover {
+  border-color: var(--color-accent);
+}
+
+.workshop-toys button:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
 .workshop-bench {
   display: block;
   max-width: 100%;

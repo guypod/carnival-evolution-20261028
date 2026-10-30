@@ -73,7 +73,13 @@ export function startWorkshop(
 ): () => void {
   root.innerHTML = `
     <div class="workshop-toys" role="group" aria-label="Toy on the bench">
-      ${TOYS.map((t) => `<button type="button" data-toy="${t.id}" aria-pressed="false">${t.name}</button>`).join('')}
+      ${TOYS.map(
+        (t) => `<button type="button" data-toy="${t.id}" aria-pressed="false">
+          <span class="workshop-toy-name">${t.name}</span>
+          <span class="workshop-toy-repair"></span>
+          <span class="workshop-toy-bench" aria-hidden="true">▶ On the bench</span>
+        </button>`,
+      ).join('')}
     </div>
     <p class="workshop-fault"></p>
     <div class="workshop-tools" role="group" aria-label="Tool">
@@ -143,7 +149,10 @@ export function startWorkshop(
       : `${info.name}: ${info.fault}`;
     root.querySelectorAll<HTMLButtonElement>('[data-toy]').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.toy === bench.toy.id));
-      b.textContent = `${repairs.toys[b.dataset.toy as ToyId] ? '✓ ' : ''}${toyInfo(b.dataset.toy as ToyId).name}`;
+      // Repair state is its own line of words, so it never reads as the selection.
+      b.querySelector('.workshop-toy-repair')!.textContent = repairs.toys[b.dataset.toy as ToyId]
+        ? '✓ Repaired'
+        : 'Not repaired yet';
     });
     root.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.tool === tool));
