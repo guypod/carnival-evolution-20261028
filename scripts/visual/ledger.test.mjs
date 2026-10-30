@@ -323,6 +323,14 @@ test('a marker edited out of an open repair does not strand its finding', () => 
     const after = reconcileOwnPrs(ledger, [ownPr(state, { body: 'fixes' })], NOW).ledger;
     assert.equal(after.findings[0].status, status, state);
   }
+  // Closed, reopened and closed again without its marker: the newer decline holds.
+  const closed = reconcileOwnPrs(ledger, [ownPr('CLOSED', { body: 'fixes' })], NOW).ledger;
+  const again = reconcileOwnPrs(
+    closed,
+    [ownPr('CLOSED', { body: 'fixes', closedAt: '2026-10-30T00:00:00Z' })],
+    NOW,
+  ).ledger;
+  assert.equal(again.findings[0].declinedAt, '2026-10-30T00:00:00Z');
 });
 
 test('a retained branch from a merged or declined pull request never blocks a run', () => {
