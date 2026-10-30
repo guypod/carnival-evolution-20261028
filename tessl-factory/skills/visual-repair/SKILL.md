@@ -42,9 +42,12 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
 2. **Plan.** Run `node scripts/visual/ledger.mjs plan`. It reads the ledger
    and `gh pr list --state all` and `gh issue list --label tessl`, reconciles
    the loop's own pull requests first, and prints one of:
-   - `defer`: an open `tessl/` pull request other than the loop's own, or a
-     labelled issue without one. Name them and stop. Nothing is lost: owed
-     routes and findings stay in the ledger.
+   - `defer`: nothing to capture, findings are repairable, but there is an
+     open `tessl/` pull request other than the loop's own, or a labelled
+     issue without one. Name them and stop. Nothing is lost: owed routes and
+     unresolved findings stay in the ledger. Other open work never stops an
+     inspection: a `review` plan still captures, and when it carries
+     `deferRepair`, record the review and skip Repair, naming the reason.
    - `monitor`: the loop's own repair pull request is still open. Do not open
      another. Look after that one only: if its checks failed or it has
      unanswered review, fix it on its branch, push, and answer; otherwise

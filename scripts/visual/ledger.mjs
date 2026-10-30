@@ -168,7 +168,7 @@ export function reconcileOwnPrs(ledger, prs, now) {
 }
 
 /**
- * What this run does. Other Tessl work in flight means defer. The loop's own
+ * What this run does. Other Tessl work in flight defers only the repair. The loop's own
  * open pull request means look after that pull request and nothing else.
  * Otherwise review a bounded batch: routes with open findings first, then
  * routes still owed a look. With nothing to capture but findings still
@@ -178,7 +178,6 @@ export function planRun(
   ledger,
   { head, changedFiles, mainSource, routes, others, openPr, now, importers },
 ) {
-  if (others.length) return { action: 'defer', reason: others.join('; '), ledger };
   if (openPr) return { action: 'monitor', pr: openPr, ledger };
   const next = structuredClone(ledger);
   next.head = head;
@@ -202,8 +201,14 @@ export function planRun(
   const revisits = [...new Set(revisit)].filter((r) => !next.pending.includes(r));
   const owedNow = next.pending.slice(0, BATCH_SIZE - Math.min(revisits.length, BATCH_SIZE / 2));
   const batch = [...owedNow, ...revisits].slice(0, BATCH_SIZE);
-  if (batch.length) return { action: 'review', batch, ledger: next };
-  if (repairable(next, now).length) return { action: 'repair', ledger: next };
+  // Inspection runs even while other Tessl work is open. Only the repair, which
+  // writes app code, waits for it; unresolved findings stay in the ledger.
+  const deferRepair = others.length ? others.join('; ') : null;
+  if (batch.length) return { action: 'review', batch, deferRepair, ledger: next };
+  if (repairable(next, now).length) {
+    if (deferRepair) return { action: 'defer', reason: deferRepair, ledger: next };
+    return { action: 'repair', ledger: next };
+  }
   return { action: 'nothing', ledger: next };
 }
 

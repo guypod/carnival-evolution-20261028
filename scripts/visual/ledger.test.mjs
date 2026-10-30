@@ -108,11 +108,23 @@ test('an interrupted run leaves the ledger as it was, and the next run starts ag
   assert.deepEqual(again.batch, first.batch);
 });
 
-test('a deferred run changes nothing and keeps everything owed', () => {
-  const ledger = planRun(emptyLedger(), { ...base, head: 'h1' }).ledger;
-  const plan = planRun(ledger, { ...base, head: 'h2', others: ['open Tessl pull request #9'] });
+test('other open Tessl work still gets a visual inspection, and only the repair waits', () => {
+  const others = ['open Tessl pull request #9'];
+  const plan = planRun(emptyLedger(), { ...base, head: 'h1', others });
+  assert.equal(plan.action, 'review');
+  assert.ok(plan.batch.length > 0);
+  assert.equal(plan.deferRepair, others[0]);
+});
+
+test('a deferred repair keeps every unresolved finding', () => {
+  const findings = (r) => (r === '#/balloon' ? [finding(r, 'controls')] : []);
+  const { ledger } = reviewAll(emptyLedger(), 'h1', [], findings);
+  const held = repairable(ledger, NOW).length;
+  assert.ok(held > 0);
+  const plan = planRun(ledger, { ...base, head: 'h1', others: ['open Tessl pull request #9'] });
   assert.equal(plan.action, 'defer');
-  assert.deepEqual(plan.ledger, ledger);
+  assert.equal(repairable(plan.ledger, NOW).length, held);
+  assert.equal(planRun(ledger, { ...base, head: 'h1' }).action, 'repair');
 });
 
 test('findings on routes the repair did not touch survive later commits', () => {
