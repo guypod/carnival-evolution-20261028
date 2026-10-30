@@ -176,33 +176,147 @@ export function drawSnackScene(
     ctx.strokeRect(x - 40, top - 22, 80, height - 60 - top);
   }
 
-  // The visitor, right, with a face that shows the reaction.
-  const vx = 270;
-  const vy = 110;
-  ctx.fillStyle = c.surface;
-  ctx.beginPath();
-  ctx.arc(vx, vy, 40, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = c.text;
-  ctx.fillRect(vx - 16, vy - 12, 6, 6);
-  ctx.fillRect(vx + 10, vy - 12, 6, 6);
-  ctx.strokeStyle = mood === 'delighted' ? c.accent : c.text;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  if (mood === 'delighted') ctx.arc(vx, vy + 6, 16, 0.1 * Math.PI, 0.9 * Math.PI);
-  else if (mood === 'pleased') ctx.arc(vx, vy + 4, 12, 0.25 * Math.PI, 0.75 * Math.PI);
-  else if (mood === 'curious') ctx.arc(vx, vy + 18, 6, 0, Math.PI * 2);
-  else {
-    ctx.moveTo(vx - 10, vy + 14);
-    ctx.lineTo(vx + 10, vy + 14);
-  }
-  ctx.stroke();
+  // The visitor, right, with a portrait that shows the reaction.
+  drawPortrait(ctx, visitor, mood, 270, 110);
   ctx.fillStyle = c.text;
   ctx.font = canvasFont('small', 'bold');
   ctx.textAlign = 'center';
-  ctx.fillText(visitor.name, vx, vy + 64, 160);
+  ctx.fillText(visitor.name, 270, 174, 160);
   if (mood) {
     ctx.font = canvasFont('small');
-    ctx.fillText(mood, vx, vy + 84, 160);
+    ctx.fillText(mood, 270, 194, 160);
   }
+}
+
+export type Headwear = 'captain-hat' | 'moon-pin' | 'twin-buns';
+
+/** How each visitor's portrait is drawn: a face shape and one headwear accessory. */
+export interface Portrait {
+  /** Horizontal and vertical radius of the face. */
+  face: { rx: number; ry: number };
+  headwear: Headwear;
+}
+
+const PORTRAITS: Record<string, Portrait> = {
+  'Captain Pip': { face: { rx: 38, ry: 34 }, headwear: 'captain-hat' },
+  'Madame Luna': { face: { rx: 30, ry: 40 }, headwear: 'moon-pin' },
+  'Twirly Tess': { face: { rx: 34, ry: 36 }, headwear: 'twin-buns' },
+};
+
+/** The portrait for a visitor, with a plain round face for anyone not listed. */
+export function portraitFor(visitor: Visitor): Portrait {
+  return PORTRAITS[visitor.name] ?? { face: { rx: 36, ry: 36 }, headwear: 'twin-buns' };
+}
+
+/** Draws a visitor's head, accessory and expression, centred on (vx, vy). */
+function drawPortrait(
+  ctx: CanvasRenderingContext2D,
+  visitor: Visitor,
+  mood: Mood | undefined,
+  vx: number,
+  vy: number,
+) {
+  const c = theme.colors;
+  const { face, headwear } = portraitFor(visitor);
+  const top = vy - face.ry;
+
+  // Shoulders, so every visitor reads as a figure behind the counter.
+  ctx.fillStyle = c.muted;
+  ctx.beginPath();
+  ctx.ellipse(vx, vy + face.ry + 10, face.rx + 14, 12, 0, Math.PI, 0);
+  ctx.fill();
+
+  // Behind the face: Luna's long hair, Tess's two buns.
+  if (headwear === 'moon-pin') {
+    ctx.fillStyle = c.water;
+    ctx.beginPath();
+    ctx.ellipse(vx, vy + 6, face.rx + 10, face.ry + 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (headwear === 'twin-buns') {
+    ctx.fillStyle = c.stripeA;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(vx + side * (face.rx - 4), top + 4, 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.fillStyle = c.surface;
+  ctx.beginPath();
+  ctx.ellipse(vx, vy, face.rx, face.ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = c.muted;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // In front of the face: Pip's hat, Luna's crescent pin, Tess's fringe curl.
+  if (headwear === 'captain-hat') {
+    ctx.fillStyle = c.text;
+    ctx.fillRect(vx - face.rx - 6, top + 2, (face.rx + 6) * 2, 6);
+    ctx.beginPath();
+    ctx.moveTo(vx - face.rx + 6, top + 2);
+    ctx.lineTo(vx - face.rx + 14, top - 20);
+    ctx.lineTo(vx + face.rx - 14, top - 20);
+    ctx.lineTo(vx + face.rx - 6, top + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = c.accent;
+    ctx.beginPath();
+    ctx.arc(vx, top - 8, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (headwear === 'moon-pin') {
+    ctx.fillStyle = c.water;
+    ctx.beginPath();
+    ctx.ellipse(vx, top + 6, face.rx, 12, 0, Math.PI, 0);
+    ctx.fill();
+    const mx = vx + face.rx - 2;
+    const my = top + 6;
+    ctx.fillStyle = c.accent;
+    ctx.beginPath();
+    ctx.arc(mx, my, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = c.water;
+    ctx.beginPath();
+    ctx.arc(mx + 5, my - 3, 8, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = c.stripeA;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(vx - 6, top + 8, 8, Math.PI, Math.PI * 2.6);
+    ctx.stroke();
+  }
+
+  // The expression: eyes, brows and mouth change with the reaction.
+  const eyeY = vy - 6;
+  const eyeX = face.rx * 0.4;
+  ctx.strokeStyle = c.text;
+  ctx.fillStyle = c.text;
+  ctx.lineWidth = 3;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    if (mood === 'delighted') {
+      ctx.arc(vx + side * eyeX, eyeY + 2, 5, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.stroke();
+    } else {
+      ctx.arc(vx + side * eyeX, eyeY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (mood === 'curious') {
+    ctx.beginPath();
+    ctx.moveTo(vx + eyeX - 6, eyeY - 12);
+    ctx.lineTo(vx + eyeX + 6, eyeY - 15);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = mood === 'delighted' ? c.accent : c.text;
+  ctx.beginPath();
+  if (mood === 'delighted') ctx.arc(vx, vy + 6, 13, 0.1 * Math.PI, 0.9 * Math.PI);
+  else if (mood === 'pleased') ctx.arc(vx, vy + 6, 9, 0.25 * Math.PI, 0.75 * Math.PI);
+  else if (mood === 'curious') ctx.arc(vx + 4, vy + 16, 5, 0, Math.PI * 2);
+  else {
+    ctx.moveTo(vx - 8, vy + 14);
+    ctx.lineTo(vx + 8, vy + 14);
+  }
+  ctx.stroke();
 }
