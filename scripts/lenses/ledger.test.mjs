@@ -1,7 +1,7 @@
 // Tests for the factory learning ledger and decision interface.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -13,18 +13,26 @@ import {
   emptyLedger,
   fingerprint,
   implementationIssue,
+  isProtected,
+  issueMarker,
+  ledgerErrors,
+  MAX_LEDGER_BYTES,
   LEARNERS,
   LEDGER_BRANCH,
   manualStart,
+  owedSlot,
   pendingProposals,
   readLedger,
+  recordIssued,
   recordDecision,
   recordRun,
   REPOSITORY_URL,
   SAFETY_STANDARDS,
   slotAt,
   summary,
+  unissuedProposals,
   validateDecision,
+  validateIssued,
   validateRun,
   writeLedger,
 } from './ledger.mjs';
@@ -50,17 +58,31 @@ const proposal = (extra = {}) => ({
   evidence: [evidence('pr', '#283')],
   ...extra,
 });
-const run = (extra = {}) => ({
-  runId: 'run-1',
-  learner: 'lens-tuning',
-  trigger: 'schedule',
-  slot: '2026-10-30T11:40 Europe/London',
-  startedAt: '2026-10-30T11:41:02Z',
-  finishedAt: '2026-10-30T11:55:40Z',
-  coverage: { status: 'complete', inspected: ['#283', '#304'] },
-  proposals: [proposal()],
-  ...extra,
-});
+// A scheduled run records when its slot was due and reads from well before
+// the owed interval, unless a test says otherwise.
+const run = (extra = {}) => {
+  const r = {
+    runId: 'run-1',
+    learner: 'lens-tuning',
+    trigger: 'schedule',
+    slot: '2026-10-30T11:40 Europe/London',
+    startedAt: '2026-10-30T11:41:02Z',
+    finishedAt: '2026-10-30T11:55:40Z',
+    since: '2026-10-01T00:00:00.000Z',
+    coverage: { status: 'complete', inspected: ['#283', '#304'] },
+    proposals: [proposal()],
+    ...extra,
+  };
+  if (
+    r.trigger === 'schedule' &&
+    !('scheduledFor' in extra) &&
+    !Number.isNaN(Date.parse(r.startedAt))
+  ) {
+    r.scheduledFor = owedSlot(r.startedAt, r.learner)?.scheduledFor;
+  }
+  if (r.trigger !== 'schedule' && !('since' in extra)) delete r.since;
+  return r;
+};
 const decision = (ledger, extra = {}) => ({
   fingerprint: ledger.proposals[0].fingerprint,
   decision: 'apply',
@@ -147,11 +169,12 @@ test('a covered slot is not run twice, a partial one may retry, a missed one nev
     run({ coverage: { status: 'partial', inspected: ['#283'], gaps: 'gh list hit its limit' } }),
   );
   assert.equal(dueSlot(partial, '2026-10-30T11:45:00Z').due, true);
-  // Twelve minutes after the window closed: not due, and nothing to record.
-  assert.deepEqual(dueSlot(emptyLedger(), '2026-10-30T12:12:00Z'), {
+  // Past the longest writer-queue delay: missed, not due, and nothing to record.
+  assert.deepEqual(dueSlot(emptyLedger(), '2026-10-30T14:41:00Z'), {
     due: false,
     slot: null,
-    reason: 'outside every lens-tuning slot window',
+    reason:
+      'no lens-tuning slot was scheduled in the 180 minutes before 2026-10-30T14:41:00Z: any earlier slot is missed',
   });
 });
 
@@ -262,7 +285,11 @@ test('an applied or rejected proposal leaves the pending list and cannot be deci
 });
 
 test('weakening a lens needs evidence from two pull requests', () => {
-  const ledger = recordRun(emptyLedger(), run({ proposals: [proposal({ weakens: true })] }));
+  const target = 'tessl/code-review@0.5.0#review-maintainability-and-code-quality';
+  const ledger = recordRun(
+    emptyLedger(),
+    run({ proposals: [proposal({ weakens: true, target })] }),
+  );
   assert.notDeepEqual(
     validateDecision(ledger, decision(ledger, { evidence: [evidence('pr', '#283')] })),
     [],
@@ -275,7 +302,10 @@ test('an accepted proposal becomes a factory issue, not an applied change', () =
   ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
   assert.equal(ledger.proposals[0].status, 'accepted');
   const issue = implementationIssue(ledger.proposals[0]);
-  assert.equal(issue.title, 'lens-tuning: Check that start removes resize listeners');
+  assert.equal(
+    issue.title,
+    `lens-tuning: Check that start removes resize listeners [${ledger.proposals[0].fingerprint}]`,
+  );
   assert.match(issue.body, /pr #304/);
   assert.match(issue.body, /external block coordinator/);
 });
@@ -343,7 +373,7 @@ test('the learners share one schema, and each makes only its own kinds', () => {
       proposal({
         kind: 'amend-instruction',
         target: 'AGENTS.md',
-        evidence: [evidence('review-finding', '#304 thread 1')],
+        evidence: [evidence('review-finding', '#304 thread 1', 'pull/304#discussion_r1')],
       }),
     ],
   });
@@ -358,6 +388,7 @@ test('the learners share one schema, and each makes only its own kinds', () => {
     ...feedback,
     learner: 'run-learning',
     slot: '2026-10-30T05:20 Europe/London',
+    scheduledFor: '2026-10-30T05:20:00.000Z',
   };
   runLearning.startedAt = '2026-10-30T05:21:00Z';
   runLearning.finishedAt = '2026-10-30T05:25:00Z';
@@ -415,10 +446,10 @@ test('an instruction tidy never grows the instructions and names its replacement
 });
 
 test('a scheduled run claims only the slot its real start fell in, recorded promptly', () => {
-  // Claiming 17:40 from an 11:41 start, or 11:40 from a 12:30 start, is refused.
+  // Claiming 17:40 from an 11:41 start, or 11:40 from a 14:50 start, is refused.
   assert.notDeepEqual(validateRun(run({ slot: '2026-10-30T17:40 Europe/London' }), opts()), []);
-  const late = run({ startedAt: '2026-10-30T12:30:00Z', finishedAt: '2026-10-30T12:40:00Z' });
-  assert.notDeepEqual(validateRun(late, opts({ now: '2026-10-30T12:41:00Z' })), []);
+  const late = run({ startedAt: '2026-10-30T14:50:00Z', finishedAt: '2026-10-30T14:55:00Z' });
+  assert.notDeepEqual(validateRun(late, opts({ now: '2026-10-30T14:56:00Z' })), []);
   // Old times recorded much later are refused, as are future or reversed ones.
   assert.notDeepEqual(validateRun(run(), opts({ now: '2026-10-30T13:30:00Z' })), []);
   assert.notDeepEqual(validateRun(run(), opts({ now: '2026-10-30T11:50:00Z' })), []);
@@ -674,4 +705,261 @@ test('a complete manual inspection does not advance scheduled coverage', () => {
     dueSlot(ledger, '2026-10-30T17:41:00.000Z', 'lens-tuning').since,
     '2026-10-28T04:40:00.000Z',
   );
+});
+
+test('a scheduled run must read from the start of the owed interval', () => {
+  const done = recordRun(emptyLedger(), run());
+  const next = {
+    runId: 'run-2',
+    slot: '2026-10-30T17:40 Europe/London',
+    startedAt: '2026-10-30T17:41:00Z',
+    finishedAt: '2026-10-30T17:50:00Z',
+  };
+  const at = opts({ ledger: done, now: '2026-10-30T17:51:00Z' });
+  const owed = dueSlot(done, '2026-10-30T17:41:00Z').since;
+  assert.equal(owed, '2026-10-30T10:41:02.000Z');
+  assert.deepEqual(validateRun(run({ ...next, since: owed }), at), []);
+  assert.deepEqual(validateRun(run({ ...next, since: '2026-10-30T09:00:00Z' }), at), []);
+  // Missing, or starting after the owed interval began, is refused.
+  assert.notDeepEqual(validateRun(run({ ...next, since: undefined }), at), []);
+  assert.notDeepEqual(validateRun(run({ ...next, since: '2026-10-30T16:41:00Z' }), at), []);
+});
+
+test('mandatory policy files, instructions and tests cannot be weakened', () => {
+  for (const target of [
+    'AGENTS.md',
+    'CLAUDE.md',
+    'package.json',
+    'eslint.config.js',
+    'tsconfig.json',
+    'skills/add-carnival-game/SKILL.md',
+    'tessl-factory/skills/review-lens-improvement/SKILL.md',
+    'review-lenses/carnival-house-rules/SKILL.md',
+    './review-lenses/visual-design/SKILL.md',
+    'src/games/water-cannon/game.test.ts',
+    'scripts/visual/ledger.mjs',
+  ]) {
+    assert.ok(isProtected(target), target);
+  }
+  assert.ok(!isProtected('src/games/water-cannon/game.ts'));
+  assert.ok(!isProtected('tessl/code-review@0.5.0#review-maintainability-and-code-quality'));
+  const many = [evidence('pr', '#283'), evidence('pr', '#304'), evidence('pr', '#375')];
+  const learn = (p) =>
+    recordRun(
+      emptyLedger(),
+      run({
+        learner: 'run-learning',
+        slot: '2026-10-30T05:20 Europe/London',
+        startedAt: '2026-10-30T05:21:00Z',
+        finishedAt: '2026-10-30T05:25:00Z',
+        proposals: [proposal({ kind: 'add-check', weakens: true, ...p })],
+      }),
+    );
+  for (const p of [{ target: 'AGENTS.md' }, { target: 'package.json' }, { target: 'src/x.ts' }]) {
+    const ledger = learn({
+      ...p,
+      ...(p.target === 'src/x.ts' ? { check: 'eslint.config.js' } : {}),
+    });
+    assert.notDeepEqual(
+      validateDecision(ledger, decision(ledger, { evidence: many })),
+      [],
+      p.target,
+    );
+  }
+  const lens = recordRun(emptyLedger(), run({ proposals: [proposal({ weakens: true })] }));
+  assert.notDeepEqual(validateDecision(lens, decision(lens, { evidence: many })), []);
+});
+
+test('evidence URLs are canonical and pull requests are counted by number', () => {
+  const bad = [
+    { kind: 'pr', ref: '#1', url: `${REPOSITORY_URL}/../other-repo/pull/1` },
+    { kind: 'pr', ref: '#1', url: `${REPOSITORY_URL}/pull/%2e%2e/1` },
+    { kind: 'pr', ref: '#1', url: `${REPOSITORY_URL}-fork/pull/1` },
+    { kind: 'pr', ref: '#1', url: `http://github.com/guypod/carnival-evolution-20261028/pull/1` },
+    {
+      kind: 'pr',
+      ref: '#1',
+      url: `https://x@github.com/guypod/carnival-evolution-20261028/pull/1`,
+    },
+    { kind: 'pr', ref: 'PR #1', url: `${REPOSITORY_URL}/pull/1` },
+    { kind: 'pr', ref: '#2', url: `${REPOSITORY_URL}/pull/1` },
+    { kind: 'pr', ref: '#1', url: `${REPOSITORY_URL}/issues/1` },
+  ];
+  for (const item of bad) {
+    assert.notDeepEqual(
+      validateRun(run({ proposals: [proposal({ evidence: [item] })] }), opts()),
+      [],
+      item.url,
+    );
+  }
+  const finding = {
+    kind: 'review-finding',
+    ref: 'thread',
+    url: `${REPOSITORY_URL}/pull/1#discussion_r9`,
+  };
+  assert.deepEqual(
+    validateRun(run({ proposals: [proposal({ evidence: [finding] })] }), opts()),
+    [],
+  );
+  // Two spellings of one PR are one PR, so they do not unlock a weakening.
+  const target = 'tessl/code-review@0.5.0#review-maintainability-and-code-quality';
+  const ledger = recordRun(
+    emptyLedger(),
+    run({ proposals: [proposal({ weakens: true, target })] }),
+  );
+  const alias = { kind: 'pr', ref: 'PR #283', url: `${REPOSITORY_URL}/pull/283` };
+  ledger.proposals[0].evidence.push(alias);
+  assert.notDeepEqual(
+    validateDecision(ledger, decision(ledger, { evidence: [evidence('pr', '#283')] })),
+    [],
+  );
+});
+
+test('a run delayed behind the writer key keeps its scheduled slot and records its real times', () => {
+  // instruction-tidy is due Monday 2 November 2026 05:30 London (UTC).
+  const tidy = {
+    runId: 'tidy-1',
+    learner: 'instruction-tidy',
+    trigger: 'schedule',
+    slot: '2026-11-02T05:30 Europe/London',
+    startedAt: '2026-11-02T06:47:00Z',
+    finishedAt: '2026-11-02T06:58:00Z',
+    since: '2026-10-26T05:30:00Z',
+    coverage: { status: 'complete', inspected: ['AGENTS.md'] },
+    proposals: [],
+  };
+  const due = dueSlot(emptyLedger(), tidy.startedAt, 'instruction-tidy');
+  assert.equal(due.due, true);
+  assert.equal(due.slot, tidy.slot);
+  assert.equal(due.scheduledFor, '2026-11-02T05:30:00.000Z');
+  assert.equal(due.delayMinutes, 77);
+  const at = opts({ now: '2026-11-02T06:59:00Z' });
+  assert.notDeepEqual(validateRun(tidy, at), [], 'scheduledFor is required');
+  // A fabricated on-time scheduledFor is refused.
+  assert.notDeepEqual(validateRun({ ...tidy, scheduledFor: '2026-11-02T06:47:00Z' }, at), []);
+  const honest = { ...tidy, scheduledFor: due.scheduledFor };
+  assert.deepEqual(validateRun(honest, at), []);
+  const ledger = recordRun(emptyLedger(), honest);
+  assert.equal(ledger.runs[0].scheduledFor, '2026-11-02T05:30:00.000Z');
+  assert.equal(ledger.runs[0].startedAt, '2026-11-02T06:47:00Z');
+  assert.equal(ledger.runs[0].delayMinutes, 77);
+  assert.match(summary(ledger, 'tidy-1'), /started 77 minutes late/);
+  // The slot is covered once, however late; past the queue limit it is missed.
+  assert.equal(dueSlot(ledger, '2026-11-02T07:00:00Z', 'instruction-tidy').due, false);
+  assert.equal(dueSlot(emptyLedger(), '2026-11-02T08:31:00Z', 'instruction-tidy').due, false);
+  // A delayed run cannot claim a later slot it did not wait for.
+  assert.notDeepEqual(validateRun({ ...honest, slot: '2026-11-09T05:30 Europe/London' }, at), []);
+});
+
+test('repeated evidence keeps distinct items and drops exact duplicates', () => {
+  const a = {
+    kind: 'review-finding',
+    ref: '#304',
+    url: `${REPOSITORY_URL}/pull/304#discussion_r1`,
+  };
+  const b = {
+    kind: 'review-finding',
+    ref: '#304',
+    url: `${REPOSITORY_URL}/pull/304#discussion_r2`,
+  };
+  let ledger = recordRun(emptyLedger(), run({ proposals: [proposal({ evidence: [a, a] })] }));
+  assert.equal(ledger.proposals[0].evidence.length, 1);
+  ledger = recordRun(
+    ledger,
+    run({
+      runId: 'run-2',
+      proposals: [proposal({ evidence: [a, b, { ...b, commit: 'abc1234' }] })],
+    }),
+  );
+  assert.deepEqual(ledger.proposals[0].evidence, [a, b, { ...b, commit: 'abc1234' }]);
+});
+
+test('an accepted proposal gets exactly one issue, recoverable after a restart', () => {
+  let ledger = recordRun(emptyLedger(), run());
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
+  const id = ledger.proposals[0].fingerprint;
+  // Accepted but interrupted before the issue was opened: it is listed to recover.
+  assert.deepEqual(
+    unissuedProposals(ledger).map((p) => p.fingerprint),
+    [id],
+  );
+  const issue = implementationIssue(ledger.proposals[0]);
+  assert.ok(issue.body.startsWith(issueMarker(id)));
+  assert.equal(implementationIssue(ledger.proposals[0]).body, issue.body, 'stable');
+  const url = `${REPOSITORY_URL}/issues/400`;
+  assert.deepEqual(validateIssued(ledger, id, url), []);
+  ledger = recordIssued(ledger, id, url);
+  assert.deepEqual(unissuedProposals(ledger), []);
+  assert.equal(recordIssued(ledger, id, url), ledger, 'recording it again changes nothing');
+  assert.notDeepEqual(validateIssued(ledger, id, `${REPOSITORY_URL}/issues/401`), []);
+  assert.notDeepEqual(validateIssued(ledger, id, `${REPOSITORY_URL}/pull/400`), []);
+  const open = recordRun(emptyLedger(), run());
+  assert.notDeepEqual(validateIssued(open, open.proposals[0].fingerprint, url), []);
+});
+
+test('malformed runs, decisions and ledgers are refused cleanly', () => {
+  for (const bad of [null, [], 'run', run({ proposals: {} }), run({ proposals: [null] })]) {
+    assert.doesNotThrow(() => validateRun(bad, opts()));
+    assert.notDeepEqual(validateRun(bad, opts()), []);
+  }
+  assert.notDeepEqual(
+    validateRun(run({ coverage: { status: 'complete', inspected: [1] } }), opts()),
+    [],
+  );
+  const ledger = recordRun(emptyLedger(), run());
+  for (const bad of [null, [], { ...decision(ledger), evidence: {} }]) {
+    assert.doesNotThrow(() => validateDecision(ledger, bad));
+    assert.notDeepEqual(validateDecision(ledger, bad), []);
+  }
+  assert.deepEqual(ledgerErrors(emptyLedger()), []);
+  for (const bad of [
+    null,
+    [],
+    {},
+    { ...emptyLedger(), proposals: {} },
+    { ...emptyLedger(), runs: [1] },
+  ]) {
+    assert.notDeepEqual(ledgerErrors(bad), []);
+  }
+});
+
+test('the ledger size is checked explicitly on read and write', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lens-ledger-size-'));
+  const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  try {
+    const remote = join(dir, 'remote.git');
+    const work = join(dir, 'work');
+    sh(dir, 'init', '--quiet', '--bare', remote);
+    sh(dir, 'init', '--quiet', work);
+    sh(work, 'config', 'user.email', 'test@example.com');
+    sh(work, 'config', 'user.name', 'test');
+    sh(work, 'remote', 'add', 'origin', remote);
+    // Over the old implicit 1 MiB buffer, under the explicit limit: read whole.
+    const big = { ...emptyLedger(), runs: [{ note: 'x'.repeat(1_500_000) }] };
+    writeLedger(work, big, null, 'big');
+    assert.deepEqual(readLedger(work).ledger, big);
+    const huge = { ...emptyLedger(), runs: [{ note: 'x'.repeat(MAX_LEDGER_BYTES) }] };
+    assert.throws(() => writeLedger(work, huge, null, 'huge'), /over/);
+    // A ledger pushed by other means that is too big or malformed is refused.
+    const file = join(dir, 'ledger.json');
+    const push = (text) => {
+      writeFileSync(file, text);
+      const blob = sh(work, 'hash-object', '-w', file);
+      const tree = execFileSync('git', ['mktree'], {
+        cwd: work,
+        input: `100644 blob ${blob}\tledger.json\n`,
+        encoding: 'utf8',
+      }).trim();
+      const commit = sh(work, 'commit-tree', tree, '-m', 'x');
+      sh(work, 'push', '--quiet', '--force', 'origin', `${commit}:refs/heads/${LEDGER_BRANCH}`);
+    };
+    push(JSON.stringify({ ...emptyLedger(), runs: [{ note: 'x'.repeat(MAX_LEDGER_BYTES) }] }));
+    assert.throws(() => readLedger(work), /byte limit/);
+    push('{"schemaVersion":2,"proposals":{}}');
+    assert.throws(() => readLedger(work), /must be a list/);
+    push('not json');
+    assert.throws(() => readLedger(work), /not JSON/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

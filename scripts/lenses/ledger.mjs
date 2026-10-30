@@ -29,6 +29,9 @@
 //   node scripts/lenses/ledger.mjs record <file>     save a finished run
 //   node scripts/lenses/ledger.mjs pending           proposals awaiting a decision
 //   node scripts/lenses/ledger.mjs decide <file>     record apply/defer/reject
+//   node scripts/lenses/ledger.mjs issue <fp>        the issue for an accepted proposal
+//   node scripts/lenses/ledger.mjs issued <fp> <url> record the issue opened for it
+//   node scripts/lenses/ledger.mjs unissued          accepted proposals with no issue yet
 //   node scripts/lenses/ledger.mjs summary [runId]   markdown for the run report
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -39,9 +42,15 @@ import { join } from 'node:path';
 export const LEDGER_BRANCH = 'factory-state/review-lenses';
 export const LEDGER_FILE = 'ledger.json';
 export const TIMEZONE = 'Europe/London';
-// A run may start this long after its slot and still count for it. Nothing
-// later may claim the slot.
+// A run that starts this long after its slot is on time.
 export const SLOT_WINDOW_MINUTES = 20;
+// A scheduled run may wait behind the shared writer key. It still serves its
+// slot if it really starts within this long of the slot's scheduled time, and
+// records both times. Later than this, the slot is missed and stays missed.
+export const MAX_QUEUE_DELAY_MINUTES = 180;
+// The ledger is read and written whole. Past this size it is refused, never
+// truncated, so a run fails closed instead of losing records.
+export const MAX_LEDGER_BYTES = 4 * 1024 * 1024;
 export const REPOSITORY_URL = 'https://github.com/guypod/carnival-evolution-20261028';
 // The loop's own name. It may propose, but never decide its own proposals.
 export const LOOP_NAME = 'review-lens-improvement';
@@ -74,16 +83,32 @@ export const SAFETY_STANDARDS = [
   'exact-head-tests-and-review',
   'evidence-standards',
 ];
-// Files that carry those standards. A proposal that weakens anything here is
-// treated as weakening them, whatever it declares.
+// Files that carry those standards: CI, the factory contract and guards, the
+// agent and skill instructions, the repository's own review lenses and review
+// config, the security lens, and the test, lint and type-check setup. A
+// proposal that weakens anything here is treated as weakening them, whatever
+// it declares.
 export const PROTECTED_PATHS = [
   /^\.github\//,
+  /^\.tessl\//,
   /^tessl\.json$/,
+  /^AGENTS\.md$/,
+  /^CLAUDE\.md$/,
+  /^skills\//,
+  /^tessl-factory\//,
+  /^review-lenses\//,
+  /^\.tessl-code-review\.yml$/,
+  /^tessl\/code-review@[^#]+#review-security-and-privacy$/,
   /^scripts\/factory\//,
   /^scripts\/lenses\//,
   /^scripts\/visual\//,
-  /^\.tessl-code-review\.yml$/,
-  /^tessl\/code-review@[^#]+#review-security-and-privacy$/,
+  /^package\.json$/,
+  /^package-lock\.json$/,
+  /^eslint\.config\.js$/,
+  /^tsconfig\.json$/,
+  /^vite\.config\.ts$/,
+  /^\.prettier(rc[^/]*|ignore)$/,
+  /(^|\/)[^/]+\.test\.[cm]?[jt]s$/,
 ];
 
 // A manual run inspects a bounded, real window: at most this far back, at most
@@ -113,22 +138,23 @@ const VALIDATION = ['current', 'stale', 'already-fixed', 'unsupported'];
 const PENDING = ['open', 'deferred'];
 const COMMIT = /^[0-9a-f]{7,40}$/;
 const MANUAL_ID = /^manual-[A-Za-z0-9._-]{1,64}$/;
+const REPOSITORY_PATH = new URL(REPOSITORY_URL).pathname;
+
+const LONDON = new Intl.DateTimeFormat('en-GB', {
+  timeZone: TIMEZONE,
+  hourCycle: 'h23',
+  weekday: 'short',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 /** The London wall-clock date, weekday and time of an instant. */
 export function londonTime(instant) {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone: TIMEZONE,
-      hourCycle: 'h23',
-      weekday: 'short',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-      .formatToParts(new Date(instant))
-      .map((p) => [p.type, p.value]),
+    LONDON.formatToParts(new Date(instant)).map((p) => [p.type, p.value]),
   );
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,
@@ -153,18 +179,41 @@ export function slotAt(instant, learner = DEFAULT_LEARNER) {
   return `${date}T${String(hour).padStart(2, '0')}:${String(config.minute).padStart(2, '0')} ${TIMEZONE}`;
 }
 
+/**
+ * The slot a scheduled run that really starts at `instant` serves: the
+ * learner's latest slot at or before it, if that is at most
+ * MAX_QUEUE_DELAY_MINUTES back. It keeps the scheduled intent (slot and
+ * scheduledFor) apart from the real start, so a run delayed behind the writer
+ * key is neither dropped nor dressed up as on time.
+ */
+export function owedSlot(instant, learner = DEFAULT_LEARNER) {
+  const config = LEARNERS[learner];
+  if (!config) return null;
+  const at = Date.parse(instant);
+  const minute = Math.floor(at / 60_000) * 60_000;
+  for (let back = 0; back <= MAX_QUEUE_DELAY_MINUTES; back += 1) {
+    const t = minute - back * 60_000;
+    const slot = slotAt(t, learner);
+    if (slot && londonTime(t).minute === config.minute) {
+      const delayMinutes = Math.floor((at - t) / 60_000);
+      return {
+        slot,
+        scheduledFor: new Date(t).toISOString(),
+        delayMinutes,
+        late: delayMinutes >= SLOT_WINDOW_MINUTES,
+      };
+    }
+  }
+  return null;
+}
+
 export function emptyLedger() {
   return { schemaVersion: 2, timezone: TIMEZONE, runs: [], proposals: [] };
 }
 
 const learnerOf = (run) => run.learner ?? DEFAULT_LEARNER;
 
-/**
- * Whether a scheduled run should inspect now. A slot already covered
- * completely is not inspected again; a partial or failed one may be retried
- * inside its window. A slot whose window has passed is never run late or
- * recorded as run. Manual runs never count here.
- */
+// How far before the last checkpoint the next scheduled run starts reading.
 export const RETRY_OVERLAP_MINUTES = 60;
 
 /**
@@ -182,24 +231,40 @@ export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
 }
 
 /**
- * Where the next scheduled run starts reading: the checkpoint less an overlap,
- * so no gap is skipped. Before any complete scheduled run, it stays anchored at
- * the first scheduled attempt's window, so failed first runs never move it on.
+ * Where a scheduled run for the slot due at `scheduledFor` starts reading: the
+ * checkpoint less an overlap, so no gap is skipped. Before any complete
+ * scheduled run, it stays anchored at the first scheduled attempt's window, so
+ * failed first runs never move it on. It depends on the slot, not on the
+ * clock, so `due` and `record` agree on the owed interval.
  */
-export function retrySince(ledger, now, learner = DEFAULT_LEARNER) {
+export function retrySince(ledger, scheduledFor, learner = DEFAULT_LEARNER) {
   const mark = checkpoint(ledger, learner);
   if (mark) return new Date(Date.parse(mark) - RETRY_OVERLAP_MINUTES * 60_000).toISOString();
   const lookback = MANUAL_LOOKBACK_HOURS * 3600_000;
   const starts = ledger.runs
     .filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner)
     .map((r) => (r.since ? Date.parse(r.since) : Date.parse(r.startedAt) - lookback));
-  return new Date(Math.min(Date.parse(now) - lookback, ...starts)).toISOString();
+  return new Date(Math.min(Date.parse(scheduledFor) - lookback, ...starts)).toISOString();
 }
 
+/**
+ * Whether a scheduled run should inspect now. A slot already covered
+ * completely is not inspected again; a partial or failed one may be retried
+ * while it is still owed. A run delayed in the writer queue still serves its
+ * slot, up to MAX_QUEUE_DELAY_MINUTES; after that the slot is missed and is
+ * never back-filled. Manual runs never count here.
+ */
 export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
   if (!LEARNERS[learner]) return { due: false, slot: null, reason: `unknown learner ${learner}` };
-  const slot = slotAt(now, learner);
-  if (!slot) return { due: false, slot: null, reason: `outside every ${learner} slot window` };
+  const owed = owedSlot(now, learner);
+  if (!owed) {
+    return {
+      due: false,
+      slot: null,
+      reason: `no ${learner} slot was scheduled in the ${MAX_QUEUE_DELAY_MINUTES} minutes before ${now}: any earlier slot is missed`,
+    };
+  }
+  const { slot, scheduledFor, delayMinutes } = owed;
   const covered = ledger.runs.some(
     (r) =>
       r.trigger !== 'manual' &&
@@ -208,8 +273,16 @@ export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
       r.coverage.status === 'complete',
   );
   if (covered) return { due: false, slot, reason: `slot ${slot} is already covered` };
-  const since = retrySince(ledger, now, learner);
-  return { due: true, slot, since, reason: `slot ${slot} is due, reading from ${since}` };
+  const since = retrySince(ledger, scheduledFor, learner);
+  const timing = owed.late ? `, started ${delayMinutes} minutes late` : '';
+  return {
+    due: true,
+    slot,
+    scheduledFor,
+    delayMinutes,
+    since,
+    reason: `slot ${slot} is due${timing}, reading from ${since}`,
+  };
 }
 
 /**
@@ -251,6 +324,34 @@ const isTime = (value) => isText(value) && !Number.isNaN(Date.parse(value));
 const isRepoPath = (value) =>
   isText(value) && value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 
+/**
+ * The parsed URL when `url` is a canonical https URL inside this repository,
+ * otherwise null. Canonical means the URL parser leaves it unchanged, so
+ * dot segments, encoded separators, other hosts or credentials cannot point a
+ * repository-looking prefix somewhere else.
+ */
+export function repositoryUrl(url) {
+  if (typeof url !== 'string') return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.href !== url || parsed.protocol !== 'https:' || parsed.origin !== 'https://github.com')
+    return null;
+  if (parsed.username || parsed.password || parsed.pathname.includes('%')) return null;
+  if (!parsed.pathname.startsWith(`${REPOSITORY_PATH}/`)) return null;
+  return parsed;
+}
+
+/** The pull request number a canonical repository URL points at, or null. */
+export function pullNumber(url) {
+  const parsed = repositoryUrl(url);
+  const match = parsed?.pathname.slice(REPOSITORY_PATH.length).match(/^\/pull\/([1-9]\d*)(\/|$)/);
+  return match ? Number(match[1]) : null;
+}
+
 /** Evidence must point at something public in this repository. */
 export function evidenceErrors(evidence, where) {
   if (!Array.isArray(evidence) || evidence.length === 0) return [`${where}: needs evidence`];
@@ -260,8 +361,14 @@ export function evidenceErrors(evidence, where) {
     if (!EVIDENCE_KINDS.includes(item?.kind)) errors.push(`${at}: unknown kind ${item?.kind}`);
     if (!isText(item?.ref)) errors.push(`${at}: needs a ref`);
     const url = item?.url;
-    if (!(typeof url === 'string' && url.startsWith(`${REPOSITORY_URL}/`))) {
-      errors.push(`${at}: url must be in ${REPOSITORY_URL}`);
+    if (!repositoryUrl(url)) {
+      errors.push(`${at}: url must be a canonical https URL in ${REPOSITORY_URL}`);
+    } else if (item.kind === 'pr') {
+      // A PR is identified by its URL, and its ref must agree, so '#283' and
+      // 'PR #283' cannot count as two pull requests.
+      const n = pullNumber(url);
+      if (n === null) errors.push(`${at}: a pr url is ${REPOSITORY_URL}/pull/<n>`);
+      else if (item.ref !== `#${n}`) errors.push(`${at}: a pr ref is #${n}, matching its url`);
     }
     if (item?.commit !== undefined && !COMMIT.test(item.commit)) {
       errors.push(`${at}: commit must be a sha`);
@@ -270,15 +377,23 @@ export function evidenceErrors(evidence, where) {
   });
 }
 
+/** Whether a target is a protected policy file or lens. */
+export function isProtected(target) {
+  // Repository lenses are configured as ./review-lenses/..., the same file.
+  const path = typeof target === 'string' ? target.replace(/^\.\//, '') : '';
+  return PROTECTED_PATHS.some((pattern) => pattern.test(path));
+}
+
 /** Whether a proposal, applied, would relax one of the SAFETY_STANDARDS. */
 export function touchesSafety(proposal) {
   if (!proposal.weakens) return false;
   if ((proposal.standards ?? []).length > 0) return true;
-  return PROTECTED_PATHS.some((path) => path.test(proposal.target ?? ''));
+  return isProtected(proposal.target) || isProtected(proposal.check);
 }
 
 /** Errors in one proposal against the shared schema. */
 function proposalErrors(p, at, learner, { lenses, exists }) {
+  if (p === null || typeof p !== 'object' || Array.isArray(p)) return [`${at}: must be an object`];
   const errors = [];
   const kinds = LEARNERS[learner]?.kinds ?? [];
   if (!kinds.includes(p?.kind)) {
@@ -322,6 +437,8 @@ function proposalErrors(p, at, learner, { lenses, exists }) {
  * neither a missed slot nor a different slot can be claimed after the fact.
  */
 export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists = () => true }) {
+  if (run === null || typeof run !== 'object' || Array.isArray(run))
+    return ['run must be an object'];
   const errors = [];
   const learner = run?.learner;
   if (!LEARNERS[learner]) errors.push(`learner must be one of ${Object.keys(LEARNERS).join(', ')}`);
@@ -340,7 +457,9 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
     }
   }
   if (run?.trigger === 'manual') {
-    if (run.slot !== undefined) errors.push('a manual run claims no slot');
+    if (run.slot !== undefined || run.scheduledFor !== undefined) {
+      errors.push('a manual run claims no slot');
+    }
     if (!MANUAL_ID.test(run.manualId ?? '')) errors.push('a manual run needs manualId manual-<id>');
     if (!isTime(run.since)) errors.push('a manual run records since, the start of its window');
     else if (isTime(run.startedAt)) {
@@ -358,36 +477,61 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
   } else if (run?.trigger === 'schedule') {
     if (run.manualId !== undefined) errors.push('a scheduled run has no manualId');
     if (LEARNERS[learner] && isTime(run.startedAt)) {
-      const real = slotAt(run.startedAt, learner);
-      if (!real || real !== run.slot) {
-        errors.push(`slot must be the ${learner} slot its real start fell in, not ${run.slot}`);
+      const owed = owedSlot(run.startedAt, learner);
+      if (!owed || owed.slot !== run.slot) {
+        errors.push(
+          `slot must be the latest ${learner} slot at most ${MAX_QUEUE_DELAY_MINUTES} minutes before its real start, not ${run.slot}`,
+        );
       } else {
+        if (run.scheduledFor !== owed.scheduledFor) {
+          errors.push(`scheduledFor must be ${owed.scheduledFor}, when slot ${owed.slot} was due`);
+        }
         // Saving the same run again is harmless; a second run for a covered slot is not.
         const others = { ...ledger, runs: ledger.runs.filter((r) => r.runId !== run.runId) };
         const due = dueSlot(others, run.startedAt, learner);
         if (!due.due) errors.push(due.reason);
+        else if (!isTime(run.since)) {
+          errors.push(
+            `a scheduled run records since, the start of the owed interval (${due.since})`,
+          );
+        } else if (Date.parse(run.since) > Date.parse(due.since)) {
+          errors.push(`since must reach back to ${due.since}, the start of the owed interval`);
+        }
       }
     }
   } else {
     errors.push('trigger must be schedule or manual');
   }
   if (!COVERAGE.includes(run?.coverage?.status)) errors.push('coverage.status is not valid');
-  if (!Array.isArray(run?.coverage?.inspected)) errors.push('coverage.inspected must list refs');
+  if (!Array.isArray(run?.coverage?.inspected) || !run.coverage.inspected.every(isText)) {
+    errors.push('coverage.inspected must list refs');
+  }
   if (run?.coverage?.status !== 'complete' && !isText(run?.coverage?.gaps)) {
     errors.push('partial or failed coverage must say what was missed in coverage.gaps');
   }
-  if (run?.coverage?.status === 'failed' && run?.proposals?.length) {
+  const proposals = run.proposals ?? [];
+  if (!Array.isArray(proposals)) return [...errors, 'proposals must be a list'];
+  if (run.coverage?.status === 'failed' && proposals.length) {
     errors.push('a failed run records no proposals');
   }
-  for (const [i, p] of (run?.proposals ?? []).entries()) {
+  for (const [i, p] of proposals.entries()) {
     errors.push(...proposalErrors(p, `proposals[${i}]`, learner, { lenses, exists }));
   }
   return errors;
 }
 
+// Evidence is the same item only when kind, url and commit all match, so
+// distinct findings that share a ref are all kept.
+const evidenceKey = (e) => JSON.stringify([e.kind, e.url, e.commit ?? null]);
 const mergeEvidence = (old, extra) => {
-  const seen = new Set(old.map((e) => `${e.kind}:${e.ref}`));
-  return [...old, ...extra.filter((e) => !seen.has(`${e.kind}:${e.ref}`))];
+  const seen = new Set(old.map(evidenceKey));
+  const added = [];
+  for (const e of extra) {
+    if (seen.has(evidenceKey(e))) continue;
+    seen.add(evidenceKey(e));
+    added.push(e);
+  }
+  return [...old, ...added];
 };
 
 /**
@@ -422,7 +566,7 @@ export function recordRun(ledger, run) {
       standards: p.standards,
       netLines: p.netLines,
       ...(p.check ? { check: p.check } : {}),
-      evidence: p.evidence,
+      evidence: mergeEvidence([], p.evidence),
       status: 'open',
       firstSeen: run.finishedAt,
       seenIn: [run.runId],
@@ -433,7 +577,12 @@ export function recordRun(ledger, run) {
   const when =
     trigger === 'manual'
       ? { manualId: run.manualId, since: run.since }
-      : { slot: run.slot, ...(run.since ? { since: run.since } : {}) };
+      : {
+          slot: run.slot,
+          scheduledFor: run.scheduledFor,
+          delayMinutes: Math.floor((Date.parse(startedAt) - Date.parse(run.scheduledFor)) / 60_000),
+          since: run.since,
+        };
   return {
     ...ledger,
     runs: [
@@ -451,6 +600,9 @@ export function pendingProposals(ledger) {
 
 /** Every reason a decision is refused; empty when it can be saved. */
 export function validateDecision(ledger, decision) {
+  if (decision === null || typeof decision !== 'object' || Array.isArray(decision)) {
+    return ['decision must be an object'];
+  }
   const errors = [];
   const proposal = ledger.proposals.find((p) => p.fingerprint === decision?.fingerprint);
   if (!proposal) return [`no proposal ${decision?.fingerprint}`];
@@ -481,10 +633,12 @@ export function validateDecision(ledger, decision) {
       errors.push('a proposal that weakens a safety standard can never be applied');
     } else if (proposal.weakens) {
       // Relaxing anything else needs evidence from more than one pull request.
+      // Pull requests are counted by the number in their canonical URL.
       const prs = new Set(
-        [...proposal.evidence, ...(decision.evidence ?? [])]
-          .filter((e) => e.kind === 'pr')
-          .map((e) => e.ref),
+        [...proposal.evidence, ...(Array.isArray(decision.evidence) ? decision.evidence : [])]
+          .filter((e) => e?.kind === 'pr')
+          .map((e) => pullNumber(e.url))
+          .filter((n) => n !== null),
       );
       if (prs.size < 2) errors.push('applying a weakening proposal needs evidence from two PRs');
     }
@@ -539,6 +693,7 @@ export function recordDecision(ledger, decision, now) {
 export function implementationIssue(proposal) {
   const last = proposal.decisions.at(-1);
   const lines = [
+    issueMarker(proposal.fingerprint),
     `Accepted ${proposal.learner} proposal \`${proposal.fingerprint}\`.`,
     '',
     `Target: \`${proposal.target}\` (${proposal.kind})`,
@@ -555,13 +710,78 @@ export function implementationIssue(proposal) {
     '',
     `Done when the change is made as proposed, a test or check covers it, instruction text grows by at most ${proposal.netLines} line(s), and none of ${SAFETY_STANDARDS.join(', ')} is weakened.`,
   ];
-  return { title: `${proposal.learner}: ${proposal.title}`, body: lines.join('\n') };
+  return {
+    title: `${proposal.learner}: ${proposal.title} [${proposal.fingerprint}]`,
+    body: lines.join('\n'),
+  };
 }
 
-const runLabel = (run) =>
-  run.trigger === 'manual'
-    ? `manual ${run.manualId} (no slot, since ${run.since})`
-    : (run.slot ?? 'unknown slot');
+/**
+ * The stable line every implementation issue carries. Before opening an issue
+ * the coordinator searches for it, so a restart after `decide` never opens a
+ * second issue for the same proposal.
+ */
+export function issueMarker(fingerprintId) {
+  return `<!-- factory-learning:proposal ${fingerprintId} -->`;
+}
+
+/** Accepted proposals whose implementation issue is not yet recorded. */
+export function unissuedProposals(ledger) {
+  return ledger.proposals.filter((p) => p.status === 'accepted' && !p.issue);
+}
+
+/** Every reason the issue for an accepted proposal cannot be recorded. */
+export function validateIssued(ledger, fingerprintId, url) {
+  const proposal = ledger.proposals.find((p) => p.fingerprint === fingerprintId);
+  if (!proposal) return [`no proposal ${fingerprintId}`];
+  const errors = [];
+  if (proposal.status !== 'accepted') errors.push(`proposal ${fingerprintId} is not accepted`);
+  const parsed = repositoryUrl(url);
+  if (!parsed || !/^\/issues\/[1-9]\d*$/.test(parsed.pathname.slice(REPOSITORY_PATH.length))) {
+    errors.push(`the issue url must be ${REPOSITORY_URL}/issues/<n>`);
+  }
+  if (proposal.issue && proposal.issue !== url) {
+    errors.push(`proposal ${fingerprintId} already has issue ${proposal.issue}`);
+  }
+  return errors;
+}
+
+/** The ledger with the issue recorded. Recording the same issue again changes nothing. */
+export function recordIssued(ledger, fingerprintId, url) {
+  const proposal = ledger.proposals.find((p) => p.fingerprint === fingerprintId);
+  if (proposal?.issue === url) return ledger;
+  return {
+    ...ledger,
+    proposals: ledger.proposals.map((p) =>
+      p.fingerprint === fingerprintId ? { ...p, issue: url } : p,
+    ),
+  };
+}
+
+/** Every way a ledger read from the branch is malformed. */
+export function ledgerErrors(ledger) {
+  if (ledger === null || typeof ledger !== 'object' || Array.isArray(ledger)) {
+    return ['the ledger must be an object'];
+  }
+  const errors = [];
+  if (ledger.schemaVersion !== emptyLedger().schemaVersion) {
+    errors.push(`the ledger schemaVersion must be ${emptyLedger().schemaVersion}`);
+  }
+  for (const field of ['runs', 'proposals']) {
+    const list = ledger[field];
+    if (!Array.isArray(list) || !list.every((x) => x !== null && typeof x === 'object')) {
+      errors.push(`the ledger ${field} must be a list of objects`);
+    }
+  }
+  return errors;
+}
+
+const runLabel = (run) => {
+  if (run.trigger === 'manual') return `manual ${run.manualId} (no slot, since ${run.since})`;
+  const late =
+    run.delayMinutes >= SLOT_WINDOW_MINUTES ? `, started ${run.delayMinutes} minutes late` : '';
+  return `${run.slot ?? 'unknown slot'}${late}`;
+};
 
 /** A short markdown summary for the Tessl run report, the findings fallback. */
 export function summary(ledger, runId) {
@@ -589,7 +809,13 @@ export function summary(ledger, runId) {
 // written as one fast-forward commit, so a lost race is refused, not merged.
 
 const git = (cwd, ...args) =>
-  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Room for the largest ledger the size check lets through.
+    maxBuffer: MAX_LEDGER_BYTES + 1024 * 1024,
+  }).trim();
 
 /** The ledger on origin and the commit it was read from, or an empty one. */
 export function readLedger(repo, remote = 'origin') {
@@ -604,7 +830,19 @@ export function readLedger(repo, remote = 'origin') {
   const tracking = `refs/remotes/${remote}/${LEDGER_BRANCH}`;
   git(repo, 'fetch', '--quiet', remote, `+refs/heads/${LEDGER_BRANCH}:${tracking}`);
   const base = git(repo, 'rev-parse', tracking);
-  return { ledger: JSON.parse(git(repo, 'show', `${base}:${LEDGER_FILE}`)), base };
+  const size = Number(git(repo, 'cat-file', '-s', `${base}:${LEDGER_FILE}`));
+  if (!(size <= MAX_LEDGER_BYTES)) {
+    throw new Error(`${LEDGER_FILE} is ${size} bytes, over the ${MAX_LEDGER_BYTES} byte limit`);
+  }
+  let ledger;
+  try {
+    ledger = JSON.parse(git(repo, 'show', `${base}:${LEDGER_FILE}`));
+  } catch (error) {
+    throw new Error(`${LEDGER_FILE} at ${base} is not JSON: ${error.message}`, { cause: error });
+  }
+  const errors = ledgerErrors(ledger);
+  if (errors.length) throw new Error(`${LEDGER_FILE} at ${base}: ${errors.join('; ')}`);
+  return { ledger, base };
 }
 
 /** Push the ledger as a child of `base`. Throws if origin moved since the read. */
@@ -612,7 +850,11 @@ export function writeLedger(repo, ledger, base, message, remote = 'origin') {
   const dir = mkdtempSync(join(tmpdir(), 'lens-ledger-'));
   try {
     const file = join(dir, LEDGER_FILE);
-    writeFileSync(file, JSON.stringify(ledger, null, 2) + '\n');
+    const text = JSON.stringify(ledger, null, 2) + '\n';
+    if (Buffer.byteLength(text) > MAX_LEDGER_BYTES) {
+      throw new Error(`refusing to write a ledger over ${MAX_LEDGER_BYTES} bytes`);
+    }
+    writeFileSync(file, text);
     const blob = git(repo, 'hash-object', '-w', file);
     const env = { ...process.env, GIT_INDEX_FILE: join(dir, 'index') };
     execFileSync('git', ['update-index', '--add', '--cacheinfo', `100644,${blob},${LEDGER_FILE}`], {
@@ -633,8 +875,19 @@ const fail = (errors) => {
   process.exit(1);
 };
 
+// An input file is read whole only when it is small, and must be JSON.
+const readInput = (file) => {
+  try {
+    const text = readFileSync(file, 'utf8');
+    if (Buffer.byteLength(text) > MAX_LEDGER_BYTES) fail([`${file} is too large`]);
+    return JSON.parse(text);
+  } catch (error) {
+    return fail([`${file} is not readable JSON: ${error.message}`]);
+  }
+};
+
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const [command, arg] = process.argv.slice(2);
+  const [command, arg, extra] = process.argv.slice(2);
   const repo = process.cwd();
   const now = new Date().toISOString();
   const { ledger, base } = readLedger(repo);
@@ -648,7 +901,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   } else if (command === 'summary') {
     console.log(summary(ledger, arg));
   } else if (command === 'record') {
-    const run = JSON.parse(readFileSync(arg, 'utf8'));
+    const run = readInput(arg);
     const lenses = configuredLenses(readFileSync(join(repo, '.tessl-code-review.yml'), 'utf8'));
     const exists = (path) => existsSync(join(repo, path));
     const errors = validateRun(run, { lenses, now, ledger, exists });
@@ -662,7 +915,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       print({ commit, pending: pendingProposals(next).length });
     }
   } else if (command === 'decide') {
-    const decision = JSON.parse(readFileSync(arg, 'utf8'));
+    const decision = readInput(arg);
     const errors = validateDecision(ledger, decision);
     if (errors.length) fail(errors);
     const next = recordDecision(ledger, decision, now);
@@ -674,9 +927,25 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       status: proposal.status,
       ...(proposal.status === 'accepted' ? { issue: implementationIssue(proposal) } : {}),
     });
+  } else if (command === 'issue') {
+    const proposal = ledger.proposals.find((p) => p.fingerprint === arg);
+    if (proposal?.status !== 'accepted') fail([`proposal ${arg} is not accepted`]);
+    print({
+      marker: issueMarker(arg),
+      ...(proposal.issue ? { recorded: proposal.issue } : {}),
+      issue: implementationIssue(proposal),
+    });
+  } else if (command === 'issued') {
+    const errors = validateIssued(ledger, arg, extra);
+    if (errors.length) fail(errors);
+    const next = recordIssued(ledger, arg, extra);
+    if (next === ledger) print({ unchanged: `${arg} already records ${extra}` });
+    else print({ commit: writeLedger(repo, next, base, `factory learning: issue for ${arg}`) });
+  } else if (command === 'unissued') {
+    print(unissuedProposals(ledger).map((p) => p.fingerprint));
   } else {
     console.error(
-      'usage: ledger.mjs due [learner] | manual <learner> | pending | summary [runId] | record <run> | decide <file>',
+      'usage: ledger.mjs due [learner] | manual <learner> | pending | summary [runId] | record <run> | decide <file> | issue <fp> | issued <fp> <url> | unissued',
     );
     process.exit(2);
   }

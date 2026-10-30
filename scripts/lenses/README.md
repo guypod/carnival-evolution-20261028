@@ -33,11 +33,29 @@ cron. The fix is `tessl schedule update <id> --timezone Europe/London`, and a
 later sync would then reset it.
 
 `node scripts/lenses/ledger.mjs due <learner>` is a second gate. It derives
-the London slot id (`YYYY-MM-DDTHH:MM Europe/London`) from the real clock,
-accepts a run only in the twenty minutes after the slot, and refuses a slot
-already covered completely. `record` also refuses a scheduled run whose slot
-is not the one its real start fell in, or that is recorded more than 30
-minutes after it started. Missed slots are never run late or recorded as run.
+the London slot id (`YYYY-MM-DDTHH:MM Europe/London`) from the real clock and
+refuses a slot already covered completely.
+
+- **Writer-queue delay.** All learners share the `carnival-app-writer` key, so
+  a run can wait in the queue. A run that really starts up to
+  `MAX_QUEUE_DELAY_MINUTES` (180) after its slot still serves that slot. `due`
+  prints the slot, its `scheduledFor` time and `delayMinutes`, and the run
+  records `scheduledFor` and its real `startedAt` separately; `record` refuses
+  a `scheduledFor` that is not the slot's. A start after twenty minutes is
+  shown as late in the summary, never as on time. A run that starts more than
+  180 minutes after its slot finds it missed: missed slots are never run,
+  back-filled or recorded as run.
+- **Owed interval.** `due` prints `since`: the start of the last complete
+  scheduled run less one hour of overlap or, before any, the window of the
+  first scheduled attempt. `record` refuses a scheduled run whose `since` is
+  missing or later than that, so a run cannot cover less than it owes.
+- **Retry.** A partial or failed slot stays due: a run for the same slot may
+  try again while the slot is still owed (within the 180 minutes). After
+  that, the next slot's `since` still reaches back to the last complete run,
+  so the uncovered interval is read then. Partial, failed and manual runs
+  never move that checkpoint.
+- `record` also refuses a slot its real start did not follow, and a run
+  recorded more than 30 minutes after its real start.
 
 ## Manual initial inspection
 
@@ -61,10 +79,16 @@ for this workspace. Ordinary Tessl run reports are available. This is the
 fallback:
 
 - `ledger.json` on branch `factory-state/review-lenses`: runs (learner,
-  trigger, slot or manual id and window, actual start and finish, coverage
+  trigger, slot with `scheduledFor`, `delayMinutes` and `since`, or manual id
+  and window, actual start and finish, coverage
   `complete`, `partial` or `failed` with gaps, the fingerprints seen) and
   proposals (fingerprint, learner, kind, target, change, rationale, `weakens`,
-  `standards`, `netLines`, public evidence, status, decisions).
+  `standards`, `netLines`, public evidence, status, decisions, and the
+  implementation `issue` URL once opened).
+- The ledger is read and written whole, and refused, never truncated, when it
+  is over `MAX_LEDGER_BYTES` (4 MiB) or does not match the schema. A run that
+  hits this fails and says so; trimming the ledger is an owner's reviewed
+  decision, not something a loop does.
 - Each run's Tessl report ends with `ledger.mjs summary`, which names the
   limitation and lists pending proposals.
 
@@ -102,15 +126,28 @@ From a clone of `main`:
    ```
 
 4. `node scripts/lenses/ledger.mjs decide <file>` validates and saves it. It
-   refuses a missing rationale, validation, commit or evidence, evidence
-   outside this repository, a proposal already decided,
-   `decidedBy: "review-lens-improvement"` (the loop cannot decide its own
-   proposals), applying anything not validated as `current`, and applying a
-   weakening proposal with fewer than two pull requests of evidence.
-5. For `apply`, the output carries `issue: { title, body }`. Open it as an
-   issue; the owner labels it `tessl` and the existing implement flow does
-   the work under the `carnival-app-writer` key, with ordinary review. Nothing
+   refuses a malformed file, a missing rationale, validation, commit or
+   evidence, evidence that is not a canonical `https://github.com` URL in
+   this repository, a `pr` item whose `ref` is not `#<n>` of its URL, a
+   proposal already decided, `decidedBy: "review-lens-improvement"` (the
+   loop cannot decide its own proposals), applying anything not validated as
+   `current`, and applying a weakening proposal with evidence from fewer
+   than two distinct pull requests, counted by the number in their URL.
+5. For `apply`, the output carries `issue: { title, body }`. The body starts
+   with the marker `<!-- factory-learning:proposal <fingerprint> -->` and the
+   title ends with `[<fingerprint>]`. Before opening it, search the
+   repository's issues for that marker; if one exists, use it instead of
+   opening another. Then run
+   `node scripts/lenses/ledger.mjs issued <fingerprint> <issue url>`. The
+   owner labels the issue `tessl` and the existing implement flow does the
+   work under the `carnival-app-writer` key, with ordinary review. Nothing
    here approves or merges it.
+6. **Recovery.** At every block start, run
+   `node scripts/lenses/ledger.mjs unissued`. It lists accepted proposals with
+   no recorded issue, for example after a restart between `decide` and
+   `issued`. For each, `ledger.mjs issue <fingerprint>` prints the same title,
+   body and marker again; search for the marker and repeat step 5. Recording
+   the same issue twice changes nothing, and a different one is refused.
 
 `defer` keeps the proposal pending for the next block. `reject` closes it;
 the same proposal seen again keeps its rejection and only gains evidence.
@@ -119,16 +156,26 @@ the same proposal seen again keeps its rejection and only gains evidence.
 
 `SAFETY_STANDARDS` in `ledger.mjs`: mandatory safety, public-input guards,
 exact-head tests and review, and evidence standards. A proposal that weakens
-one, or weakens a protected path (`.github/`, `tessl.json`,
-`scripts/factory/`, `scripts/lenses/`, `scripts/visual/`,
-`.tessl-code-review.yml`, the security lens), can be deferred or rejected but
-never applied, however many pull requests support it. Targets must be
-repository paths in normal form, so `./tessl.json` cannot dodge the list.
-Lens files under `review-lenses/` and the other `tessl/code-review` lenses are
-not protected paths: weakening them needs two pull requests of evidence and
-an honest `weakens: true`. A repeat sighting can only add caution to a
-proposal, never remove it. Two-source evidence
-only unlocks weakening something outside those. The standards are constants
+one, or weakens a protected path in `PROTECTED_PATHS`, can be deferred or
+rejected but never applied, however many pull requests support it. The
+protected paths are the files that carry those standards:
+
+- CI and factory config: `.github/`, `.tessl/`, `tessl.json`,
+  `scripts/factory/`, `scripts/lenses/`, `scripts/visual/`;
+- agent and skill instructions: `AGENTS.md`, `CLAUDE.md`, `skills/`,
+  `tessl-factory/`;
+- review: `.tessl-code-review.yml`, the repository lenses in
+  `review-lenses/` and the `tessl/code-review` security lens;
+- tests, lint, types and scripts: `package.json`, `package-lock.json`,
+  `eslint.config.js`, `tsconfig.json`, `vite.config.ts`, Prettier config,
+  and every `*.test.*` file.
+
+A proposal's `check` file counts too. Targets must be repository paths in
+normal form, so `./tessl.json` cannot dodge the list. The other
+`tessl/code-review` lenses are not protected: weakening them needs evidence
+from two distinct pull requests and an honest `weakens: true`. A repeat
+sighting can only add caution to a proposal, never remove it. Two-source
+evidence only unlocks weakening something outside the list. The standards are constants
 in code, so changing them is an ordinary reviewed change, not a decision.
 
 Instructions do not grow by themselves: every proposal declares `netLines`,
@@ -136,8 +183,15 @@ and an instruction tidy may not add any.
 
 ## Failure handling
 
-- A push refused because the branch moved: nothing was saved. Read again and
-  redo the step.
+- A push refused because the branch moved: nothing was saved.
+  - `record` (a learner run): the learner reports it and stops, as its skill
+    says. The slot stays due, so a retry while it is still owed, or the next
+    slot, reads the same interval again from `since`.
+  - `decide` and `issued` (the coordinator): read again and redo the step.
+    For `decide`, read `pending` first: if the proposal is already decided,
+    the earlier attempt was saved.
+- A ledger over the size limit or malformed: the command stops with the
+  reason and writes nothing. Report it to the owner.
 - Never force-push or hand-edit `factory-state/review-lenses`.
 - The tests: `node --test scripts/lenses/ledger.test.mjs` (part of
   `npm run check`).

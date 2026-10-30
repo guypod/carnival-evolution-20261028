@@ -41,9 +41,12 @@ Any "stop" ends the run with the ledger unchanged. Say why in the run output.
    queued), like every writing action.
 2. **Slot or manual.** Exactly one of:
    - **Scheduled.** Run `node scripts/lenses/ledger.mjs due <LEARNER>`. Unless
-     it prints `"due": true`, stop. A slot is open for twenty minutes and is
-     covered once. A missed slot is never run late, back-filled or described
-     as run.
+     it prints `"due": true`, stop. Keep its `slot`, `scheduledFor`,
+     `delayMinutes` and `since`. A run that waited behind the writer key
+     still serves its slot for up to 180 minutes; say how late it started,
+     never describe it as on time. A slot is covered once; a partial or
+     failed one stays due and may be retried while it is still owed. A
+     missed slot is never run late, back-filled or described as run.
    - **Manual initial inspection.** Only when the run was started by hand to
      verify setup, with `tessl action trigger review-lens-improvement
 --request-id manual-<id> --input LEARNER=<learner>`. Run
@@ -64,9 +67,12 @@ record`. Leave PR #299 and every other pull request alone.
 
 ## Inspect
 
-Note the actual start time. Gather evidence since the `since` that `due` printed (the last complete scheduled run, less a one-hour overlap; partial, failed and manual runs never move it)
-(before any complete scheduled run, the start owed since the first scheduled attempt, or `since` for a manual run), all
-of it public in this repository:
+Note the actual start time. Gather evidence since the `since` that `due` or
+`manual` printed, all of it public in this repository. For a scheduled run it
+is the start of the owed interval: the last complete scheduled run less a
+one-hour overlap, or before any, the window of the first scheduled attempt.
+Partial, failed and manual runs never move it, and `record` refuses a
+scheduled run whose `since` is later than it.
 
 - **lens-tuning:** merged and open pull requests, their diffs and files
   (`gh pr list --state all --search "updated:>=<time>" --limit 100`); review
@@ -110,7 +116,9 @@ proposal uses the shared schema:
   never positive for `instruction-tidy`;
 - `evidence`: `{ kind, ref, url, commit? }` items, `kind` one of `pr`,
   `review-finding`, `repair`, `test`, `live-play`, `ci-run`,
-  `factory-comment`, `instruction`, each `url` in this repository.
+  `factory-comment`, `instruction`, each `url` a canonical
+  `https://github.com/...` URL in this repository. A `pr` item's url is
+  `.../pull/<n>` and its `ref` is exactly `#<n>`.
 
 The fingerprint is the kind, target and normalised title, so the same
 proposal from two runs or two learners is kept once.
@@ -125,6 +133,8 @@ Write the run to a file outside the clone. Scheduled:
   "learner": "lens-tuning",
   "trigger": "schedule",
   "slot": "<slot from due>",
+  "scheduledFor": "<scheduledFor from due>",
+  "since": "<since from due>",
   "startedAt": "<actual UTC start>",
   "finishedAt": "<actual UTC finish>",
   "coverage": { "status": "complete|partial|failed", "inspected": ["#304"], "gaps": "..." },
@@ -137,7 +147,8 @@ Manual: `"trigger": "manual"`, `"manualId": "manual-<id>"`, `"since"` from
 
 Save it with `node scripts/lenses/ledger.mjs record <file>` within 30 minutes
 of the real start. It refuses a malformed run, a slot that is not the one the
-real start fell in or is already covered, a manual run with a slot, a window
+real start followed or is already covered, a `scheduledFor` that is not the
+slot's, a `since` missing or later than the owed interval, a manual run with a slot, a window
 over 24 hours or over the daily limit, times in the future, a target outside
 the schema or not in normal form, a missing `netLines`, evidence outside this
 repository, and a partial or failed run without `gaps`. A proposal already in
@@ -148,7 +159,10 @@ Recording the same `runId` twice changes nothing. A failed run is still
 recorded, with its real times, so the gap is visible.
 
 If the push is refused because the branch moved, the run is not saved: report
-it and stop. Never force-push or hand-edit the branch.
+it and stop. Do not retry the push in this run. The slot stays due, so a later
+run for it, or the next slot, reads the same interval again. If `record`
+refuses the ledger as too large or malformed, report that as `failed` and
+stop. Never force-push or hand-edit the branch.
 
 ## Run output
 
