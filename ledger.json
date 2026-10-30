@@ -1,9 +1,8 @@
 {
   "version": 1,
-  "head": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+  "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
   "reviewedThrough": null,
   "pending": [
-    "#/parade",
     "#/expedition",
     "#/workshop",
     "#/play/balloon-darts",
@@ -168,20 +167,24 @@
       "criterion": "controls",
       "note": "Still at a863a17: Player 1/2 nickname fields are default white inputs with grey placeholder and the mode radios are default blue/white dots, unlike the themed Start party button.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
-      "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:24:35.396Z",
+      "applied": [
+        "398:merged:2026-10-30T15:46:01Z"
+      ],
+      "pr": 398
     },
     {
       "fingerprint": "#/party:desktop-clean:composition",
       "route": "#/party",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Still at a863a17: the form occupies the top-left and the lower ~35% of the 1280x800 screen is empty dark background with no booth scene as focal point.",
+      "note": "Still at 3f87238: the framed setup panel sits left at 720px wide with a large empty dark area to its right and below; there is no scene or stall as focal point, only the form panel.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:24:35.396Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:spacing",
@@ -190,9 +193,13 @@
       "criterion": "spacing",
       "note": "Still at a863a17: the 200px inputs sit under a full-width fieldset, with a large uneven gap between Start party and the closing note.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
-      "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:24:35.396Z",
+      "applied": [
+        "398:merged:2026-10-30T15:46:01Z"
+      ],
+      "pr": 398
     },
     {
       "fingerprint": "#/circuit:desktop-focus:focus-contrast",
@@ -201,9 +208,9 @@
       "criterion": "focus-contrast",
       "note": "After two Tab presses the desktop and narrow focus screenshots are pixel-identical to the clean ones: no focus ring is visible on any element.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:24:35.396Z"
     },
     {
       "fingerprint": "#/circuit:desktop-clean:materials",
@@ -212,9 +219,9 @@
       "criterion": "materials",
       "note": "Legs are flat purple cards with dashed lavender borders and dashed circle placeholders on a flat dark page: generic dashboard cards, no wood, paper tags or lantern glow.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:24:35.396Z"
     },
     {
       "fingerprint": "#/trail:desktop-clean:materials",
@@ -223,9 +230,9 @@
       "criterion": "materials",
       "note": "The four missions are flat purple cards with dashed lavender borders on a full-bleed dark background; no wood frame, shadow, paper tag or lantern glow like the midway.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:24:35.396Z"
     },
     {
       "fingerprint": "#/records:desktop-clean:materials",
@@ -391,6 +398,61 @@
       "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
       "seenOn": "2026-10-30T15:40:27.415Z"
+    },
+    {
+      "fingerprint": "#/parade:desktop-clean:controls",
+      "route": "#/parade",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Float picks, ↑ ↓ × reorder buttons, Stroll/March/Dance and Play/Pause/Restart/End/Save parade are raw grey browser-default buttons with small default text; same at 390px.",
+      "firstSeen": "2026-10-30T16:24:35.396Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:24:35.396Z"
+    },
+    {
+      "fingerprint": "#/parade:desktop-clean:art-integration",
+      "route": "#/parade",
+      "state": "desktop-clean",
+      "criterion": "art-integration",
+      "note": "Float icons on the buttons, list and the route render as missing-glyph boxes (tofu), and the start gate and finale are bare red and yellow rectangles beside a plain brown path on the flat page; same at 390px.",
+      "firstSeen": "2026-10-30T16:24:35.396Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:24:35.396Z"
+    },
+    {
+      "fingerprint": "#/parade:desktop-focus:focus-contrast",
+      "route": "#/parade",
+      "state": "desktop-focus",
+      "criterion": "focus-contrast",
+      "note": "The focused Ring float button shows only a thin black/white default outline on a pale grey button, and the page heading carries a thin white box outline in the clean state; no theme focus ring.",
+      "firstSeen": "2026-10-30T16:24:35.396Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:24:35.396Z"
+    },
+    {
+      "fingerprint": "#/circuit:desktop-clean:depth",
+      "route": "#/circuit",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "Status box and the three dashed leg cards are flat purple rectangles on the flat dark page with no frame, shadow or counter edge.",
+      "firstSeen": "2026-10-30T16:24:35.396Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:24:35.396Z"
+    },
+    {
+      "fingerprint": "#/trail:desktop-clean:depth",
+      "route": "#/trail",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "The four dashed mission cards and the Next up box are flat purple rectangles on the flat dark page with no frame, shadow or counter edge; same at 390px.",
+      "firstSeen": "2026-10-30T16:24:35.396Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:24:35.396Z"
     }
   ],
   "reviewedAt": {
@@ -398,9 +460,9 @@
     "#/prizes": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/toy": "a863a177a9f316800aceafd0a2590c23ae1abfee",
-    "#/trail": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/circuit": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/party": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+    "#/trail": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/circuit": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/party": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/records": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/booths": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/postcard": "6b03265cd61be971ca3453ff3f79e59114633829",
@@ -409,7 +471,8 @@
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/coaster": "a863a177a9f316800aceafd0a2590c23ae1abfee",
-    "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee"
+    "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+    "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T15:38:25.683Z"
+  "reconciledAt": "2026-10-30T16:22:46.187Z"
 }
