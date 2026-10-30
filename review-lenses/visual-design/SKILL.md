@@ -17,9 +17,12 @@ taken from this pull request's head, at desktop (1280x800) and narrow (390px)
 widths, with keyboard focus on a control, after the main interaction, and with
 reduced motion. `scripts/visual/run-capture.sh` takes them. It captures the
 interaction state only for routes with an entry in `INTERACTIONS` in
-`scripts/visual/capture.mjs` (today only `#/balloon`). For any other route,
-the interaction screenshot is still required: a route with no entry and no
-interaction screenshot is **rendering unverified** for that state.
+`scripts/visual/capture.mjs` (today only `#/balloon`). For any other route
+whose main interaction changes the screen in place (a choice, a form, a
+toggle), the interaction screenshot is still required, and its absence is
+**rendering unverified** for that state. A screen with no in-place
+interaction, such as one whose only controls navigate away, needs none: say
+so instead of reporting it unverified.
 
 - If the pull request changes how a screen looks and carries no such
   screenshots, report one finding: **rendering unverified**, naming the screens

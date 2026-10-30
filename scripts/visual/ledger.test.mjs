@@ -132,9 +132,9 @@ test('findings on routes the repair did not touch survive later commits', () => 
       '#/snack:desktop-clean:controls',
     ],
   );
-  // Open findings are revisited first, ahead of newly owed routes.
-  const plan = planRun(ledger, { ...base, head: 'h6', changedFiles: ['src/style.css'] });
-  assert.deepEqual(plan.batch.slice(0, 2).sort(), ['#/balloon', '#/snack']);
+  // Open findings are revisited in the first batch at a new head.
+  const plan = planRun(ledger, { ...base, head: 'h6', changedFiles: ['src/wish-balloon.ts'] });
+  assert.ok(plan.batch.includes('#/balloon') && plan.batch.includes('#/snack'), plan.batch);
 });
 
 test('a finding that no longer shows on a re-reviewed route is resolved', () => {
@@ -367,4 +367,30 @@ test('a ledger read that fails is an error, not a first run', () => {
   const { a, run } = originRepo();
   run(a, 'remote', 'set-url', 'origin', join(a, 'no-such-remote.git'));
   assert.throws(() => readLedger(a));
+});
+
+test('an older pull request seen in a later run never overwrites a newer outcome', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('MERGED', { number: 41 })], NOW);
+  ledger = reconcileOwnPrs(ledger, [ownPr('CLOSED', { number: 30 })], NOW).ledger;
+  assert.deepEqual([ledger.findings[0].status, ledger.findings[0].pr], ['merged', 41]);
+});
+
+test('open findings on four routes cannot starve owed coverage while main moves', () => {
+  const stuck = ['#/snack', '#/toy', '#/room', '#/plush'];
+  const findings = (r) => (stuck.includes(r) ? [finding(r, 'controls')] : []);
+  let { ledger } = reviewAll(emptyLedger(), 'h0', [], findings);
+  const opened = planRun(ledger, { ...base, head: 'h1', changedFiles: ['src/style.css'] });
+  ledger = opened.ledger;
+  let runs = 0;
+  for (let i = 1; ledger.reviewedThrough !== 'h1'; i++) {
+    const plan = planRun(ledger, { ...base, head: `h1-${i}`, changedFiles: ['src/style.css'] });
+    assert.equal(plan.action, 'review');
+    ledger = recordReview(plan.ledger, {
+      reviewed: plan.batch,
+      findings: plan.batch.flatMap(findings),
+      now: NOW,
+    });
+    assert.ok(++runs <= routes.length, 'coverage keeps moving');
+  }
+  assert.equal(repairable(ledger, NOW).length, 4, 'the open findings are still kept');
 });

@@ -5,7 +5,11 @@
 # after, so a server left over from another checkout can never stand in for
 # this one. Servers it did not start are left alone.
 #
-#   scripts/visual/run-capture.sh <out dir> [route ...]
+# VISUAL_REV=<commit> renders that commit from a temporary worktree instead of
+# the working tree, so a baseline review shows exactly the main commit the
+# ledger will credit. The commit captured is written to <out dir>/commit.
+#
+#   [VISUAL_REV=<commit>] scripts/visual/run-capture.sh <out dir> [route ...]
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -18,11 +22,28 @@ shift
 # shellcheck disable=SC1091
 . "$ROOT/env.sh"
 
+SERVE=$CHECKOUT
+REV=$(git -C "$CHECKOUT" rev-parse HEAD)
+CLEANUP=()
+if [ -n "${VISUAL_REV:-}" ]; then
+  REV=$(git -C "$CHECKOUT" rev-parse --verify "$VISUAL_REV^{commit}")
+  SERVE=$(mktemp -d)
+  git -C "$CHECKOUT" worktree add --quiet --detach "$SERVE" "$REV"
+  ln -s "$CHECKOUT/node_modules" "$SERVE/node_modules"
+  CLEANUP+=("git -C '$CHECKOUT' worktree remove --force '$SERVE'")
+elif [ -n "$(git -C "$CHECKOUT" status --porcelain -- index.html src)" ]; then
+  REV="$REV+uncommitted"
+fi
+
 PORT=$(node -e "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})")
 BASE="http://127.0.0.1:$PORT/"
-(cd "$CHECKOUT" && exec node_modules/.bin/vite --host 127.0.0.1 --port "$PORT" --strictPort) >"$ROOT/dev.log" 2>&1 &
+(cd "$SERVE" && exec node_modules/.bin/vite --host 127.0.0.1 --port "$PORT" --strictPort) >"$ROOT/dev.log" 2>&1 &
 SERVER=$!
-trap 'kill "$SERVER" 2>/dev/null || true' EXIT
+cleanup() {
+  kill "$SERVER" 2>/dev/null || true
+  for c in "${CLEANUP[@]}"; do eval "$c" || true; done
+}
+trap cleanup EXIT
 for _ in $(seq 60); do
   kill -0 "$SERVER" 2>/dev/null || { cat "$ROOT/dev.log" >&2; exit 1; }
   curl -fs "$BASE" >/dev/null 2>&1 && break
@@ -34,5 +55,7 @@ kill -0 "$SERVER" 2>/dev/null && curl -fs "$BASE" >/dev/null || {
   echo "no dev server of this checkout answered on port $PORT" >&2
   exit 1
 }
-echo "capturing $(git -C "$CHECKOUT" rev-parse HEAD) from $BASE" >&2
+echo "capturing $REV from $BASE" >&2
+mkdir -p "$OUT"
+echo "$REV" >"$OUT/commit"
 node "$HERE/capture.mjs" "$BASE" "$OUT" "$@"

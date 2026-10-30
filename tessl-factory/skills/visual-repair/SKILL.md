@@ -87,7 +87,10 @@ refilling the current one.
 
 ## Look
 
-Run `scripts/visual/run-capture.sh <dir outside the clone> <batch routes>`.
+Run `VISUAL_REV=<plan head> scripts/visual/run-capture.sh <dir outside the
+clone> <batch routes>`, with the `head` that `plan` printed. It renders that
+exact `main` commit from a temporary worktree and writes it to `<dir>/commit`,
+so the review covers what the ledger credits, whatever is checked out.
 It captures desktop 1280x800, narrow 390x844, keyboard focus, Quiet (reduced
 motion), and the route's interaction from its `INTERACTIONS` entry in
 `scripts/visual/capture.mjs`; add an entry for a route that has none. It fails
@@ -97,9 +100,10 @@ browser.
 
 Open every screenshot and judge it against each rubric criterion. A finding
 names route, state, criterion and what the image shows. Write the review to a
-file as `{ "reviewed": [<routes>], "findings": [{ "route", "state",
-"criterion", "note" }], "pr": null }` and save it with
-`node scripts/visual/ledger.mjs record <file>`. Do this before repairing, so
+file as `{ "head": <contents of <dir>/commit>, "reviewed": [<routes>],
+"findings": [{ "route", "state", "criterion", "note" }], "pr": null }` and
+save it with `node scripts/visual/ledger.mjs record <file>`, which refuses a
+review of any commit but the planned one. Do this before repairing, so
 the findings are kept even if the repair fails.
 
 ## Repair
@@ -118,7 +122,9 @@ routes' findings stay open in the ledger for later runs.
   replace them. Colours and fonts from the theme only (house rule 3).
 - Original art drawn with canvas, SVG or CSS. No external or generated images.
 - Run `npm run format` and `npm run check`, then capture the same states again
-  and look at them. The repair is done only when the after screenshots clear
+  from the repair branch (`run-capture.sh` without `VISUAL_REV`, into a new
+  directory) and look at them. These after screenshots are the pull request's
+  evidence only; never `record` them, since they are not `main`. The repair is done only when the after screenshots clear
   the findings without new ones. Two attempts at most; otherwise stop without
   a pull request and report what you saw. The findings stay open.
 - Push after every commit. Open a draft pull request labelled `tessl` titled

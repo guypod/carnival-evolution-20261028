@@ -23,7 +23,11 @@ PACKAGES="libglib2.0-0t64 libnspr4 libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 
   fonts-dejavu-core fontconfig-config libfontconfig1 libfreetype6"
 
 mkdir -p "$ROOT/pw" "$LIBS/debs" "$ROOT/apt/lists/partial" "$ROOT/apt/cache/archives/partial"
-if [ ! -d "$ROOT/pw/node_modules/playwright" ]; then
+# Reuse only the pinned version: any other one would capture with a different
+# toolchain than the one recorded in provenance.
+if [ "$(node -p "require('$ROOT/pw/node_modules/playwright/package.json').version" 2>/dev/null)" != "$PLAYWRIGHT_VERSION" ]; then
+  rm -rf "$ROOT/pw"
+  mkdir -p "$ROOT/pw"
   (cd "$ROOT/pw" && npm init -y >/dev/null && npm install --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION" >/dev/null)
 fi
 (cd "$ROOT/pw" && npx playwright install chromium >/dev/null)

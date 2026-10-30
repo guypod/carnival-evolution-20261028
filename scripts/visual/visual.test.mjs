@@ -74,4 +74,10 @@ test('the capture wrapper owns its server and never trusts one already answering
   assert.match(script, /exec node_modules\/\.bin\/vite/, 'the killed pid is the server itself');
   assert.match(script, /kill -0 "\$SERVER"/, 'the answering server is the one it started');
   assert.match(script, /\. "\$ROOT\/env\.sh"/, 'the browser environment is sourced in this shell');
+  assert.match(
+    script,
+    /worktree add --quiet --detach "\$SERVE" "\$REV"/,
+    'VISUAL_REV renders that commit',
+  );
+  assert.match(script, /echo "\$REV" >"\$OUT\/commit"/, 'the captured commit is recorded');
 });

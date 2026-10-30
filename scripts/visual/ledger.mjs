@@ -117,6 +117,9 @@ export function reconcileOwnPrs(ledger, prs, now) {
     for (const finding of next.findings.filter((f) => prints.includes(f.fingerprint))) {
       finding.applied ??= [];
       if (finding.applied.includes(pr.number)) continue;
+      // A pull request older than the one the finding follows is history,
+      // even when it first shows up in a later run.
+      if ((finding.pr ?? 0) > pr.number) continue;
       finding.pr = pr.number;
       finding.status = status;
       if (status === 'pr-open') continue;
@@ -157,7 +160,10 @@ export function planRun(ledger, { head, changedFiles, mainSource, routes, others
   const revisit = repairable(next, now)
     .filter((f) => f.seenAt !== head)
     .map((f) => f.route);
-  const batch = [...new Set([...revisit, ...next.pending])].slice(0, BATCH_SIZE);
+  // Revisits take at most half the batch, so owed coverage always progresses.
+  const revisits = [...new Set(revisit)].filter((r) => !next.pending.includes(r));
+  const owedNow = next.pending.slice(0, BATCH_SIZE - Math.min(revisits.length, BATCH_SIZE / 2));
+  const batch = [...owedNow, ...revisits].slice(0, BATCH_SIZE);
   if (batch.length) return { action: 'review', batch, ledger: next };
   if (repairable(next, now).length) return { action: 'repair', ledger: next };
   return { action: 'nothing', ledger: next };
@@ -288,13 +294,16 @@ function plan(repo, now) {
     return items;
   };
   const fields = 'number,state,headRefName,isCrossRepository,body,closedAt,files';
+  // Only own pull requests updated since the last reconcile: older history is
+  // already in the ledger, so a growing history never reaches the limit.
+  const since = ledger.reconciledAt ? ` updated:>=${ledger.reconciledAt.slice(0, 10)}` : '';
   const prs = list(
     'pr',
     'list',
     '--state',
     'all',
     '--search',
-    'head:tessl/visual-repair-',
+    `head:tessl/visual-repair-${since}`,
     '--json',
     fields,
   );
@@ -338,6 +347,7 @@ function plan(repo, now) {
     openPr: reconciled.openPr,
     now,
   });
+  result.ledger.reconciledAt = now;
   return { ...result, base, head, repairable: repairable(result.ledger, now) };
 }
 
@@ -354,6 +364,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     // supplies the ledger and the commit it was read from.
     const planned = JSON.parse(readFileSync('/tmp/visual-repair-plan.json', 'utf8'));
     const review = JSON.parse(readFileSync(file, 'utf8'));
+    // Coverage is credited to the planned main commit, so the screenshots
+    // must have been taken from it.
+    if (review.head !== planned.head) {
+      console.error(`review is of ${review.head}, the plan is for ${planned.head}`);
+      process.exit(1);
+    }
     const next = recordReview(planned.ledger, { ...review, now });
     const commit = writeLedger(
       repo,
