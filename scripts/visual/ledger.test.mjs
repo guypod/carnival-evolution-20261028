@@ -638,6 +638,24 @@ test('a route reviewed at a later commit than its interval is owed again', () =>
   assert.ok(!planRun(ledger, { ...base, head: 'h4' }).batch);
 });
 
+test('revisits rotate, so a fifth route with a finding is not starved', () => {
+  const five = routes.slice(1, 6);
+  let { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    five.includes(r) ? [finding(r, 'controls')] : [],
+  );
+  const seen = new Set();
+  for (const [i, head] of ['h2', 'h3'].entries()) {
+    const plan = planRun(ledger, { ...base, head, changedFiles: ['README.md'] });
+    plan.batch.forEach((r) => seen.add(r));
+    ledger = recordReview(plan.ledger, {
+      reviewed: plan.batch,
+      findings: plan.batch.map((r) => finding(r, 'controls')),
+      now: `2026-11-0${i + 1}T00:00:00Z`,
+    });
+  }
+  assert.deepEqual([...seen].sort(), [...five].sort());
+});
+
 test('a module another screen imports owes every route, not just its own', () => {
   const importers = (file) =>
     ({

@@ -253,7 +253,11 @@ export function planRun(
   if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
   const live = repairable(next, now).filter((f) => routes.includes(f.route));
   // Open findings are looked at again once per head, so a fix on main clears them.
-  const revisit = live.filter((f) => f.seenAt !== head).map((f) => f.route);
+  // Least recently seen first, so every route with a finding gets its turn.
+  const revisit = live
+    .filter((f) => f.seenAt !== head)
+    .sort((a, b) => (a.seenOn ?? '').localeCompare(b.seenOn ?? ''))
+    .map((f) => f.route);
   // Revisits take at most half the batch, so owed coverage always progresses.
   const revisits = [...new Set(revisit)].filter((r) => !next.pending.includes(r));
   // Owed routes with open findings come first: they are owed either way, so
@@ -341,7 +345,9 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
       old.status = 'resolved';
     }
   }
-  for (const old of next.findings) if (reviewed.includes(old.route)) old.seenAt = next.head;
+  for (const old of next.findings) {
+    if (reviewed.includes(old.route)) Object.assign(old, { seenAt: next.head, seenOn: now });
+  }
   next.reviewedAt = { ...next.reviewedAt };
   for (const r of reviewed) next.reviewedAt[r] = next.head;
   if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
