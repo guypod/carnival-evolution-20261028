@@ -34,7 +34,8 @@ later sync would then reset it.
 
 `node scripts/lenses/ledger.mjs due <learner>` is a second gate. It derives
 the London slot id (`YYYY-MM-DDTHH:MM Europe/London`) from the real clock and
-refuses a slot already covered completely.
+refuses a slot already covered completely by a run that counts towards the
+unbroken covered interval below.
 
 - **Writer-queue delay.** All learners share the `carnival-app-writer` key, so
   a run can wait in the queue. A run that really starts up to
@@ -49,7 +50,15 @@ refuses a slot already covered completely.
   scheduled run less one hour of overlap (never before that run's own
   `since`), or a partial run's `coverage.through`, whichever is later or,
   before any, the window of the first scheduled attempt. `record` refuses a scheduled run whose `since` is
-  missing or later than that, so a run cannot cover less than it owes.
+  missing or later than that, so a run cannot cover less than it owes. Each
+  run covers from its `since` to its start (complete) or its
+  `coverage.through` (partial); the hour of overlap only sets where the next
+  run reads, not what was covered. Only runs whose covered intervals join into
+  one unbroken interval from the earliest window any scheduled run attempted
+  count, whatever order they started in, so the checkpoint is the end of that
+  interval. A later run that reads from further back and falls short or fails
+  moves that start back: runs after its coverage stop counting until a run
+  spans the gap.
 - **Retry.** A partial or failed slot stays due: a run for the same slot may
   try again while the slot is still owed (within the 180 minutes). After
   that, the next slot's `since` still reaches back to the last complete run,
@@ -62,6 +71,61 @@ refuses a slot already covered completely.
   outside its run's window is refused on read and write.
 - `record` also refuses a slot its real start did not follow, and a run
   recorded more than 30 minutes after its real start.
+
+## Source receipts and corrections
+
+A run's `coverage.sources` holds one receipt per source in `REQUIRED_SOURCES`:
+how far it was listed (`complete`, `capped`, `count-only`, `none`), how far
+it was read (`full`, `truncated`, `none`), its scope and gaps. Every run,
+partial and failed ones included, lists a receipt for every source, so a
+source reported unread is never confused with one left out. `record`
+accepts `complete` only when every required source is listed and read in
+full. A partial `coverage.through` needs no time from a source listed
+`complete` and read `full`: that source covers the whole window and must
+omit `through`, which `record` refuses on it. Every other source must be a
+`complete` or `capped` list whose content was read and must name its own
+`through` at or after `coverage.through`. A `count-only` or `none` list, or
+a `read` of `none`, never names a `through`, whatever time it gives, so it
+blocks a partial `coverage.through`. A receipt is the run's own account and cannot
+prove what was understood; the rule is that anything less than a full
+receipt never moves the checkpoint.
+
+A complete claim later shown false is corrected, never edited:
+
+```sh
+node scripts/lenses/ledger.mjs correct <file>
+```
+
+The file names `correctionId` (`correction-<id>`), `target` (`runId`,
+`revision`, the number of corrections that run already has, and `claimed`,
+its current status), the lower `coverage` with a receipt for every source,
+`rationale`, `evidence`, `correctedBy` and `correctedAt`. It is appended to
+the ledger's `corrections`; the run, its proposals and every decision stay as
+they were. `due`, `since`, `checkpoint` and `summary` use the latest
+correction's coverage, so the owed interval comes back. A later run that
+started reading after the reopened start does not close it, even though it
+counted before the correction: the gap stays owed until a recorded run whose
+`since` reaches back to it covers it. Once one does, every run whose interval
+it joins counts again, so nothing already covered is owed twice. A complete
+run cut off this way no longer covers its slot, so the slot may be retried
+while it is still owed. `correct` refuses an
+unknown run, a stale revision or claim, anything but a downgrade, a
+`through`, a ref the run never recorded and the loop correcting itself. The
+same file again changes nothing; another file under the same id is refused.
+Every read replays the corrections in order and refuses one the command
+would not accept now: a duplicate, a revision out of order for its run, an
+upgrade or a `through`. That is a check of what the history means, not tamper
+detection: an edit that stays valid (another rationale, attribution or time)
+or valid corrections of different runs swapped still pass. Append only through
+`correct`; the `factory-state/review-lenses` branch's Git history is the audit
+of what was written and when.
+
+The staged recovery for run `01a18de5-aa80-720a-8fb2-54b58fc34259` (the
+17:40 run of 2026-10-30, #417) is
+`scripts/lenses/recovery/correction-01a18de5.json`, tested against a copy of
+the ledger at `5abf1da` in the same folder. It is applied only after review
+and merge, by the coordinator, from a clone of `main`:
+`node scripts/lenses/ledger.mjs correct scripts/lenses/recovery/correction-01a18de5.json`.
 
 ## Manual initial inspection
 

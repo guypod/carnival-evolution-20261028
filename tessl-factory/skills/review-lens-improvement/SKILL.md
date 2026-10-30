@@ -104,6 +104,26 @@ leave `through` out. The next run resumes exactly there instead of
 meeting the same limit again. Leave `through` out when
 you cannot name such a time.
 
+Record one receipt per required source in `coverage.sources` (the names
+are `REQUIRED_SOURCES` in `ledger.mjs`; for lens-tuning: `pull-requests`,
+`pr-diffs`, `review-comments`, `review-bodies`, `visual-repair`, `ci-runs`,
+`tests`, `live-play`):
+`{ "source", "enumeration": "complete|capped|count-only|none", "read":
+"full|truncated|none", "scope": "what was listed and read", "gaps",
+"through" }`. A list that hit its limit is `capped`; a count of items whose
+content you did not read is `count-only`; a read cut short (`--jq` slices,
+`head`, selected items) is `truncated`. `record` refuses `complete` unless
+every source has a receipt with `complete` and `full`. It accepts a partial
+`coverage.through` only when every source not read in full is a `complete`
+or `capped` source whose content you read and names its own `through` at or
+after it. A `complete`/`full` source already covers the whole window: it
+supports `coverage.through` without a time of its own and must omit
+`through`, which `record` refuses on it. Every run, partial and failed ones
+too, records all of them; a source you could not read gets `none`/`none`,
+never no receipt. A `count-only` or unread source never names a `through`,
+so it blocks a partial `coverage.through`. A receipt is your account, not
+proof: when unsure, classify down.
+
 Read the current target before proposing to change it. Propose only when the
 evidence shows a concrete miss, false alarm, friction or redundancy. Each
 proposal uses the shared schema:
@@ -145,7 +165,12 @@ Write the run to a file outside the clone. Scheduled:
   "since": "<since from due>",
   "startedAt": "<actual UTC start>",
   "finishedAt": "<actual UTC finish>",
-  "coverage": { "status": "complete|partial|failed", "inspected": ["#304"], "gaps": "..." },
+  "coverage": {
+    "status": "complete|partial|failed",
+    "inspected": ["#304"],
+    "gaps": "...",
+    "sources": [{ "source": "pr-diffs", "enumeration": "complete", "read": "full", "scope": "..." }]
+  },
   "proposals": []
 }
 ```
