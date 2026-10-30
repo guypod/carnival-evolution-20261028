@@ -1,12 +1,8 @@
 {
   "version": 1,
   "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
-  "reviewedThrough": null,
-  "pending": [
-    "#/play/skee-ball",
-    "#/play/water-cannon",
-    "#/room"
-  ],
+  "reviewedThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
+  "pending": [],
   "pendingThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
   "findings": [
     {
@@ -49,9 +45,9 @@
       "criterion": "controls",
       "note": "Spot grid buttons, collection buttons (Striped Rug, Paper Lantern...), Turn/Put away/Undo/Clear the room and Previous/Next spot are raw grey browser-default buttons with default font size; the Backdrop radios are default blue radio dots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "merged",
-      "seenOn": "2026-10-30T04:45:35.510Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:36:36.685Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -64,9 +60,9 @@
       "criterion": "composition",
       "note": "The room scene sits at left with an empty right half at 1280x800, followed by a long unframed column of controls, a clipped scrolling collection list and a plain ordered list of spots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "merged",
-      "seenOn": "2026-10-30T04:45:35.510Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:36:36.685Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -79,9 +75,9 @@
       "criterion": "focus-contrast",
       "note": "Locked collection buttons and the disabled Turn/Put away/Undo buttons show light grey text on a mid-grey fill, well under 4.5:1.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "merged",
-      "seenOn": "2026-10-30T04:45:35.510Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:36:36.685Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -94,9 +90,9 @@
       "criterion": "spacing",
       "note": "Collection, backdrop, action buttons and the walk-the-room list are loose blocks without a shared framed panel; the collection list is cut off mid-row (Tiny Mallet Keyring) against the Backdrop fieldset.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "merged",
-      "seenOn": "2026-10-30T04:45:35.510Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:36:36.685Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -109,9 +105,9 @@
       "criterion": "art-integration",
       "note": "The 12 spot buttons under the scene are blank grey bars labelled with a single dot, detached from the drawing they control.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "merged",
-      "seenOn": "2026-10-30T04:45:35.510Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:36:36.685Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -383,11 +379,11 @@
       "route": "#/fair",
       "state": "desktop-clean",
       "criterion": "art-integration",
-      "note": "Placed stall pieces on the plaza grid render as brown missing-glyph boxes (tofu) instead of drawn stalls or benches; same at 390px.",
+      "note": "Still at 3f87238: placed stall pieces on the plaza grid render as brown missing-glyph boxes (tofu) instead of drawn stalls or benches; the page heading carries a thin white box outline; same at 390px.",
       "firstSeen": "2026-10-30T15:40:27.415Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:36:36.685Z"
     },
     {
       "fingerprint": "#/parade:desktop-clean:controls",
@@ -597,12 +593,45 @@
       "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
       "seenOn": "2026-10-30T16:35:25.462Z"
+    },
+    {
+      "fingerprint": "#/play/skee-ball:narrow-clean:responsive",
+      "route": "#/play/skee-ball",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x200 with the instructions, Balls/Total/Last roll and Start (Space) a few pixels tall, unreadable, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:36:36.685Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:36:36.685Z"
+    },
+    {
+      "fingerprint": "#/play/water-cannon:narrow-clean:responsive",
+      "route": "#/play/water-cannon",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x220 with the challenge hint, Calm/Classic/Rapid labels, Score and Water a few pixels tall, hard to read, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:36:36.685Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:36:36.685Z"
+    },
+    {
+      "fingerprint": "#/room:narrow-interaction:typography",
+      "route": "#/room",
+      "state": "narrow-interaction",
+      "criterion": "typography",
+      "note": "At 390px after placing two objects, the filled spot tiles break their labels mid-word ('Paper Lanter / n', 'Stripe / d Rug'), and the Paper Lantern tile grows taller than its row.",
+      "firstSeen": "2026-10-30T16:36:36.685Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:36:36.685Z"
     }
   ],
   "reviewedAt": {
     "#/": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/prizes": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/room": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/toy": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/trail": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/circuit": "3f8723831a5744311b755544f6b851c9aea33dd0",
@@ -615,7 +644,7 @@
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/snack": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/coaster": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+    "#/fair": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/expedition": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/workshop": "3f8723831a5744311b755544f6b851c9aea33dd0",
@@ -626,7 +655,9 @@
     "#/play/mini-putt": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/mole-mayhem": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/puppet-theatre": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/play/ring-toss": "3f8723831a5744311b755544f6b851c9aea33dd0"
+    "#/play/ring-toss": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/skee-ball": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/water-cannon": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T16:34:33.251Z"
+  "reconciledAt": "2026-10-30T16:35:27.126Z"
 }
