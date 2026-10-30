@@ -1,7 +1,8 @@
 <!doctype html>
-<!-- Compliant sample for the visual-design lens: a framed stall with a drawn
-     focal point and themed native controls. Colours copy src/carnival/theme.ts
-     because a standalone fixture cannot import it. -->
+<!-- Compliant sample for the visual-design lens: an illustrated stall with a
+     drawn focal point and themed native controls. Colours copy
+     src/carnival/theme.ts because a standalone fixture cannot import it;
+     darker and lighter shades come only from opacity and gradients. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -20,6 +21,10 @@
         margin: 0 auto;
         padding: 24px 16px;
       }
+      h1 {
+        margin: 0 0 16px;
+        color: #ffcc33;
+      }
       .stall {
         display: grid;
         grid-template-columns: 3fr 2fr;
@@ -32,13 +37,46 @@
       .counter {
         display: flex;
         flex-direction: column;
+        justify-content: center;
         gap: 12px;
-        padding: 34px 20px 20px;
+        padding: 30px 20px 20px;
         border-left: 3px solid #8a5a3b;
         background:
           repeating-linear-gradient(90deg, #e63946 0 24px, #fff8e7 24px 48px) top / 100% 14px
             no-repeat,
           #2a1a52;
+      }
+      .board {
+        margin: 0;
+        padding: 10px 14px;
+        border: 3px solid #8a5a3b;
+        border-radius: 10px;
+        background:
+          linear-gradient(#fff8e7, #fff8e7) center 34px / calc(100% - 28px) 1px no-repeat,
+          #1b1035;
+        box-shadow: inset 0 0 0 2px rgba(255, 204, 51, 0.25);
+      }
+      .board h2 {
+        margin: 0 0 12px;
+        color: #ffcc33;
+        font-size: 1rem;
+        letter-spacing: 0.12em;
+        text-align: center;
+        text-transform: uppercase;
+      }
+      .board dl {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 12px;
+        margin: 0;
+      }
+      .board dt {
+        color: #b9a9d9;
+      }
+      .board dd {
+        margin: 0;
+        color: #ffcc33;
+        font-weight: bold;
       }
       svg {
         display: block;
@@ -48,6 +86,7 @@
       fieldset {
         display: flex;
         gap: 8px;
+        margin: 0;
         border: 2px solid #8a5a3b;
         border-radius: 12px;
       }
@@ -63,6 +102,9 @@
       }
       fieldset input {
         accent-color: #ffcc33;
+      }
+      .counter > label {
+        font-weight: bold;
       }
       input[type='text'] {
         padding: 10px;
@@ -101,21 +143,325 @@
     <main>
       <h1>Ticket Counter</h1>
       <div class="stall">
-        <svg viewBox="0 0 480 360" aria-hidden="true">
-          <rect width="480" height="360" fill="#1b1035" />
-          <circle cx="80" cy="50" r="10" fill="#ffcc33" />
-          <circle cx="240" cy="70" r="10" fill="#ffcc33" />
-          <circle cx="400" cy="50" r="10" fill="#ffcc33" />
-          <path d="M0 40 Q240 90 480 40" stroke="#b9a9d9" fill="none" />
-          <path d="M110 150 h260 l-20 -40 h-220 z" fill="#e63946" />
-          <rect x="130" y="150" width="12" height="130" fill="#8a5a3b" />
-          <rect x="338" y="150" width="12" height="130" fill="#8a5a3b" />
-          <rect x="110" y="270" width="260" height="70" fill="#e63946" />
-          <rect x="180" y="290" width="120" height="30" fill="#1b1035" stroke="#ffcc33" />
-          <text x="240" y="311" fill="#ffcc33" font-size="16" text-anchor="middle">TICKETS</text>
-          <rect y="340" width="480" height="20" fill="#8a5a3b" />
+        <svg
+          viewBox="0 0 480 360"
+          role="img"
+          aria-label="A striped ticket stall lit by lanterns at night"
+        >
+          <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1b1035" />
+              <stop offset="0.75" stop-color="#2a1a52" />
+              <stop offset="1" stop-color="#2a1a52" />
+            </linearGradient>
+            <radialGradient id="glow">
+              <stop offset="0" stop-color="#ffcc33" stop-opacity="0.55" />
+              <stop offset="0.45" stop-color="#ffcc33" stop-opacity="0.18" />
+              <stop offset="1" stop-color="#ffcc33" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="lamp" cx="0.4" cy="0.35">
+              <stop offset="0" stop-color="#fff8e7" />
+              <stop offset="0.5" stop-color="#ffcc33" />
+              <stop offset="1" stop-color="#e63946" />
+            </radialGradient>
+            <radialGradient id="warm" cx="0.5" cy="0.1" r="0.9">
+              <stop offset="0" stop-color="#ffcc33" stop-opacity="0.22" />
+              <stop offset="1" stop-color="#1b1035" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#8a5a3b" />
+              <stop offset="0.35" stop-color="#8a5a3b" />
+              <stop offset="1" stop-color="#1b1035" stop-opacity="0.9" />
+            </linearGradient>
+            <linearGradient id="awningShade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1b1035" stop-opacity="0.35" />
+              <stop offset="0.5" stop-color="#1b1035" stop-opacity="0" />
+              <stop offset="1" stop-color="#1b1035" stop-opacity="0.2" />
+            </linearGradient>
+            <linearGradient id="counterShade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#fff8e7" stop-opacity="0.12" />
+              <stop offset="1" stop-color="#1b1035" stop-opacity="0.45" />
+            </linearGradient>
+            <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#8a5a3b" stop-opacity="0.55" />
+              <stop offset="1" stop-color="#8a5a3b" stop-opacity="0.2" />
+            </linearGradient>
+            <radialGradient id="shine" cx="0.35" cy="0.3" r="0.7">
+              <stop offset="0" stop-color="#fff8e7" stop-opacity="0.7" />
+              <stop offset="0.3" stop-color="#fff8e7" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+
+          <!-- night sky, stars and a moon -->
+          <rect width="480" height="360" fill="url(#sky)" />
+          <circle cx="0" cy="20" r="1.5" fill="#fff8e7" opacity="0.63" />
+          <circle cx="256" cy="33" r="0.7" fill="#fff8e7" opacity="0.76" />
+          <circle cx="326" cy="140" r="1.1" fill="#fff8e7" opacity="0.66" />
+          <circle cx="399" cy="5" r="0.7" fill="#fff8e7" opacity="0.67" />
+          <circle cx="322" cy="1" r="1.1" fill="#fff8e7" opacity="0.39" />
+          <circle cx="406" cy="79" r="0.7" fill="#fff8e7" opacity="0.74" />
+          <circle cx="126" cy="7" r="1.5" fill="#fff8e7" opacity="0.55" />
+          <circle cx="119" cy="147" r="1.5" fill="#fff8e7" opacity="0.80" />
+          <circle cx="313" cy="11" r="1.4" fill="#fff8e7" opacity="0.88" />
+          <circle cx="234" cy="135" r="1.7" fill="#fff8e7" opacity="0.39" />
+          <circle cx="434" cy="76" r="1.2" fill="#fff8e7" opacity="0.54" />
+          <circle cx="474" cy="74" r="0.9" fill="#fff8e7" opacity="0.40" />
+          <circle cx="455" cy="11" r="1.2" fill="#fff8e7" opacity="0.58" />
+          <circle cx="133" cy="137" r="1.2" fill="#fff8e7" opacity="0.63" />
+          <circle cx="452" cy="8" r="1.5" fill="#fff8e7" opacity="0.81" />
+          <circle cx="397" cy="19" r="0.6" fill="#fff8e7" opacity="0.76" />
+          <circle cx="417" cy="94" r="1.5" fill="#fff8e7" opacity="0.79" />
+          <circle cx="480" cy="133" r="0.9" fill="#fff8e7" opacity="0.53" />
+          <circle cx="198" cy="126" r="0.9" fill="#fff8e7" opacity="0.60" />
+          <circle cx="74" cy="86" r="1.6" fill="#fff8e7" opacity="0.37" />
+          <circle cx="266" cy="134" r="1.3" fill="#fff8e7" opacity="0.86" />
+          <circle cx="77" cy="32" r="1.5" fill="#fff8e7" opacity="0.43" />
+          <circle cx="44" cy="41" r="0.6" fill="#fff8e7" opacity="0.60" />
+          <circle cx="13" cy="106" r="1.7" fill="#fff8e7" opacity="0.49" />
+          <circle cx="72" cy="102" r="1.1" fill="#fff8e7" opacity="0.58" />
+          <circle cx="240" cy="22" r="1.3" fill="#fff8e7" opacity="0.86" />
+          <circle cx="283" cy="143" r="1.3" fill="#fff8e7" opacity="0.44" />
+          <circle cx="472" cy="61" r="0.8" fill="#fff8e7" opacity="0.69" />
+          <circle cx="60" cy="30" r="1.0" fill="#fff8e7" opacity="0.73" />
+          <circle cx="61" cy="98" r="1.3" fill="#fff8e7" opacity="0.83" />
+          <circle cx="420" cy="62" r="16" fill="#fff8e7" opacity="0.9" />
+          <circle cx="428" cy="56" r="14" fill="#1b1035" opacity="0.85" />
+          <!-- distant hills -->
+          <path d="M0 300 Q120 250 240 290 T480 280 V360 H0 Z" fill="#1b1035" opacity="0.6" />
+
+          <!-- bunting -->
+          <path d="M0 22 Q240 102 480 22" stroke="#b9a9d9" stroke-width="1.5" fill="none" />
+          <path d="M5.5 22.9 L31.4 26.9 L18.5 45.0 Z" fill="#e63946" />
+          <path d="M42.5 28.5 L68.3 31.8 L55.4 50.2 Z" fill="#ffcc33" />
+          <path d="M79.4 33.0 L105.2 35.7 L92.3 54.4 Z" fill="#5ec8f2" />
+          <path d="M116.3 36.7 L142.2 38.7 L129.2 57.7 Z" fill="#fff8e7" />
+          <path d="M153.2 39.4 L179.1 40.7 L166.2 60.1 Z" fill="#e63946" />
+          <path d="M190.2 41.1 L216.0 41.8 L203.1 61.5 Z" fill="#ffcc33" />
+          <path d="M227.1 41.9 L252.9 41.9 L240.0 62.0 Z" fill="#5ec8f2" />
+          <path d="M264.0 41.8 L289.8 41.1 L276.9 61.5 Z" fill="#fff8e7" />
+          <path d="M300.9 40.7 L326.8 39.4 L313.8 60.1 Z" fill="#e63946" />
+          <path d="M337.8 38.7 L363.7 36.7 L350.8 57.7 Z" fill="#ffcc33" />
+          <path d="M374.8 35.7 L400.6 33.0 L387.7 54.4 Z" fill="#5ec8f2" />
+          <path d="M411.7 31.8 L437.5 28.5 L424.6 50.2 Z" fill="#fff8e7" />
+          <path d="M448.6 26.9 L474.5 22.9 L461.5 45.0 Z" fill="#e63946" />
+
+          <!-- warm light spilling from the stall -->
+          <ellipse cx="240" cy="200" rx="200" ry="150" fill="url(#warm)" />
+
+          <!-- back wall of the stall -->
+          <rect x="112" y="128" width="256" height="140" fill="#1b1035" />
+          <rect x="112" y="128" width="256" height="140" fill="#2a1a52" opacity="0.7" />
+          <g stroke="#1b1035" stroke-width="1" opacity="0.6">
+            <path
+              d="M144 128 V268 M176 128 V268 M208 128 V268 M240 128 V268 M272 128 V268 M304 128 V268 M336 128 V268"
+            />
+          </g>
+
+          <!-- shelves -->
+          <rect x="120" y="186" width="240" height="7" rx="1" fill="#8a5a3b" />
+          <rect x="120" y="193" width="240" height="4" fill="#1b1035" opacity="0.5" />
+          <rect x="120" y="234" width="240" height="7" rx="1" fill="#8a5a3b" />
+          <rect x="120" y="241" width="240" height="4" fill="#1b1035" opacity="0.5" />
+
+          <!-- top shelf: balloons tied to the shelf -->
+          <g>
+            <path d="M150 186 Q146 172 152 160" stroke="#b9a9d9" fill="none" />
+            <ellipse cx="152" cy="150" rx="11" ry="13" fill="#5ec8f2" />
+            <ellipse cx="152" cy="150" rx="11" ry="13" fill="url(#shine)" />
+            <path d="M190 186 Q194 170 188 156" stroke="#b9a9d9" fill="none" />
+            <ellipse cx="188" cy="146" rx="11" ry="13" fill="#e63946" />
+            <ellipse cx="188" cy="146" rx="11" ry="13" fill="url(#shine)" />
+            <path d="M292 186 Q288 170 294 157" stroke="#b9a9d9" fill="none" />
+            <ellipse cx="294" cy="147" rx="11" ry="13" fill="#ffcc33" />
+            <ellipse cx="294" cy="147" rx="11" ry="13" fill="url(#shine)" />
+            <path d="M330 186 Q334 172 328 161" stroke="#b9a9d9" fill="none" />
+            <ellipse cx="328" cy="151" rx="11" ry="13" fill="#b9a9d9" />
+            <ellipse cx="328" cy="151" rx="11" ry="13" fill="url(#shine)" />
+          </g>
+          <!-- top shelf: a big gold star prize -->
+          <path
+            d="M240 148 l8 16 l18 2 l-13 12 l4 17 l-17 -9 l-17 9 l4 -17 l-13 -12 l18 -2 z"
+            transform="translate(0 -9)"
+            fill="#ffcc33"
+            stroke="#8a5a3b"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+          <circle cx="234" cy="161" r="1.8" fill="#1b1035" />
+          <circle cx="246" cy="161" r="1.8" fill="#1b1035" />
+          <path d="M235 168 q5 4 10 0" stroke="#1b1035" stroke-width="1.5" fill="none" />
+
+          <!-- bottom shelf: plush bears and prize boxes -->
+          <g>
+            <circle cx="150" cy="214" r="6" fill="#8a5a3b" />
+            <circle cx="166" cy="214" r="6" fill="#8a5a3b" />
+            <circle cx="158" cy="222" r="11" fill="#8a5a3b" />
+            <ellipse cx="158" cy="226" rx="5" ry="4" fill="#fff8e7" opacity="0.8" />
+            <circle cx="154" cy="219" r="1.5" fill="#1b1035" />
+            <circle cx="162" cy="219" r="1.5" fill="#1b1035" />
+            <path d="M147 233 h22" stroke="#1b1035" stroke-width="2" opacity="0.4" />
+          </g>
+          <g>
+            <rect x="190" y="212" width="22" height="22" rx="2" fill="#5ec8f2" />
+            <rect x="199" y="212" width="4" height="22" fill="#fff8e7" />
+            <path d="M201 212 q-8 -8 -10 -2 q4 3 10 2 q8 -8 10 -2 q-4 3 -10 2" fill="#fff8e7" />
+            <rect x="190" y="228" width="22" height="6" fill="#1b1035" opacity="0.25" />
+          </g>
+          <g>
+            <circle cx="242" cy="210" r="5" fill="#e63946" />
+            <circle cx="258" cy="210" r="5" fill="#e63946" />
+            <circle cx="250" cy="220" r="12" fill="#e63946" />
+            <ellipse cx="250" cy="224" rx="5" ry="4" fill="#fff8e7" opacity="0.8" />
+            <circle cx="246" cy="217" r="1.5" fill="#1b1035" />
+            <circle cx="254" cy="217" r="1.5" fill="#1b1035" />
+          </g>
+          <g>
+            <rect x="282" y="216" width="18" height="18" rx="2" fill="#ffcc33" />
+            <rect x="289" y="216" width="4" height="18" fill="#e63946" />
+            <rect x="306" y="206" width="20" height="28" rx="2" fill="#b9a9d9" />
+            <rect x="306" y="216" width="20" height="4" fill="#fff8e7" />
+          </g>
+          <g>
+            <circle cx="336" cy="214" r="6" fill="#5ec8f2" />
+            <circle cx="350" cy="214" r="6" fill="#5ec8f2" />
+            <circle cx="343" cy="223" r="10" fill="#5ec8f2" />
+            <circle cx="339" cy="220" r="1.5" fill="#1b1035" />
+            <circle cx="347" cy="220" r="1.5" fill="#1b1035" />
+          </g>
+
+          <!-- ground and the stall's shadow -->
+          <rect y="318" width="480" height="42" fill="url(#ground)" />
+          <path d="M0 330 H480 M0 345 H480" stroke="#1b1035" stroke-opacity="0.35" />
+          <ellipse cx="240" cy="322" rx="190" ry="12" fill="#1b1035" opacity="0.6" />
+
+          <!-- posts with grain -->
+          <rect x="98" y="118" width="14" height="204" fill="url(#wood)" />
+          <rect x="368" y="118" width="14" height="204" fill="url(#wood)" />
+          <path
+            d="M102 140 q2 40 0 80 q-2 40 1 90 M376 140 q-2 40 0 80 q2 40 -1 90"
+            stroke="#1b1035"
+            stroke-opacity="0.4"
+            fill="none"
+          />
+
+          <!-- counter: planks, grain, a top board and shading -->
+          <rect x="84" y="262" width="312" height="60" fill="#8a5a3b" />
+          <g stroke="#1b1035" stroke-opacity="0.45">
+            <path d="M84 282 H396 M84 302 H396" />
+            <path
+              d="M150 262 V282 M260 262 V282 M340 262 V282 M120 282 V302 M210 282 V302 M310 282 V302 M170 302 V322 M280 302 V322 M370 302 V322"
+            />
+          </g>
+          <g stroke="#fff8e7" stroke-opacity="0.12" fill="none">
+            <path
+              d="M92 270 q30 -3 50 0 M180 274 q40 3 70 0 M270 268 q30 -2 60 1 M95 292 q50 3 100 0 M230 294 q40 -3 70 0 M110 312 q30 2 50 0 M300 312 q30 -3 60 0"
+            />
+          </g>
+          <rect x="84" y="262" width="312" height="60" fill="url(#counterShade)" />
+          <rect x="76" y="254" width="328" height="10" rx="2" fill="#8a5a3b" />
+          <rect x="76" y="254" width="328" height="3" rx="1" fill="#fff8e7" opacity="0.25" />
+          <rect x="76" y="264" width="328" height="4" fill="#1b1035" opacity="0.5" />
+
+          <!-- painted sign -->
+          <rect
+            x="172"
+            y="276"
+            width="136"
+            height="34"
+            rx="5"
+            fill="#1b1035"
+            stroke="#ffcc33"
+            stroke-width="3"
+          />
+          <rect
+            x="177"
+            y="281"
+            width="126"
+            height="24"
+            rx="3"
+            fill="none"
+            stroke="#e63946"
+            stroke-width="1"
+          />
+          <circle cx="180" cy="284" r="1.6" fill="#ffcc33" />
+          <circle cx="300" cy="284" r="1.6" fill="#ffcc33" />
+          <circle cx="180" cy="302" r="1.6" fill="#ffcc33" />
+          <circle cx="300" cy="302" r="1.6" fill="#ffcc33" />
+          <text
+            x="240"
+            y="299"
+            fill="#ffcc33"
+            font-size="15"
+            font-weight="bold"
+            letter-spacing="2"
+            text-anchor="middle"
+            font-family="'Trebuchet MS', 'Segoe UI', system-ui, sans-serif"
+          >
+            TICKETS
+          </text>
+
+          <!-- striped awning with a scalloped edge -->
+          <path d="M112 72 H368 L398 82 H82 Z" fill="#8a5a3b" />
+          <path d="M118.0 78 L148.5 78 L124.5 118 L86.0 118 Z" fill="#e63946" />
+          <path d="M148.5 78 L179.0 78 L163.0 118 L124.5 118 Z" fill="#fff8e7" />
+          <path d="M179.0 78 L209.5 78 L201.5 118 L163.0 118 Z" fill="#e63946" />
+          <path d="M209.5 78 L240.0 78 L240.0 118 L201.5 118 Z" fill="#fff8e7" />
+          <path d="M240.0 78 L270.5 78 L278.5 118 L240.0 118 Z" fill="#e63946" />
+          <path d="M270.5 78 L301.0 78 L317.0 118 L278.5 118 Z" fill="#fff8e7" />
+          <path d="M301.0 78 L331.5 78 L355.5 118 L317.0 118 Z" fill="#e63946" />
+          <path d="M331.5 78 L362.0 78 L394.0 118 L355.5 118 Z" fill="#fff8e7" />
+          <path d="M118 78 H362 L394 118 H86 Z" fill="url(#awningShade)" />
+          <path d="M86.0 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#e63946" />
+          <path d="M124.5 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#fff8e7" />
+          <path d="M163.0 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#e63946" />
+          <path d="M201.5 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#fff8e7" />
+          <path d="M240.0 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#e63946" />
+          <path d="M278.5 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#fff8e7" />
+          <path d="M317.0 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#e63946" />
+          <path d="M355.5 118 h38.5 v4 a19.3 17.3 0 0 1 -38.5 0 z" fill="#fff8e7" />
+          <path d="M86 118 H394" stroke="#1b1035" stroke-opacity="0.3" stroke-width="2" />
+          <path d="M98 128 H382" stroke="#1b1035" stroke-opacity="0.35" stroke-width="5" />
+
+          <!-- lanterns hanging from the awning -->
+          <g>
+            <circle cx="70" cy="152" r="34" fill="url(#glow)" />
+            <path d="M86 120 Q78 128 70 136" stroke="#b9a9d9" fill="none" />
+            <rect x="65" y="135" width="10" height="4" rx="1" fill="#8a5a3b" />
+            <ellipse cx="70" cy="152" rx="11" ry="13" fill="url(#lamp)" />
+            <path
+              d="M70 139 V165 M62 145 Q70 152 62 160 M78 145 Q70 152 78 160"
+              stroke="#e63946"
+              stroke-opacity="0.5"
+              fill="none"
+            />
+            <rect x="65" y="164" width="10" height="4" rx="1" fill="#8a5a3b" />
+          </g>
+          <g>
+            <circle cx="410" cy="152" r="34" fill="url(#glow)" />
+            <path d="M394 120 Q402 128 410 136" stroke="#b9a9d9" fill="none" />
+            <rect x="405" y="135" width="10" height="4" rx="1" fill="#8a5a3b" />
+            <ellipse cx="410" cy="152" rx="11" ry="13" fill="url(#lamp)" />
+            <path
+              d="M410 139 V165 M402 145 Q410 152 402 160 M418 145 Q410 152 418 160"
+              stroke="#e63946"
+              stroke-opacity="0.5"
+              fill="none"
+            />
+            <rect x="405" y="164" width="10" height="4" rx="1" fill="#8a5a3b" />
+          </g>
         </svg>
         <form class="counter">
+          <section class="board" aria-labelledby="prices">
+            <h2 id="prices">Today's prices</h2>
+            <dl>
+              <dt>One ticket</dt>
+              <dd>2 coins</dd>
+              <dt>Two tickets</dt>
+              <dd>3 coins</dd>
+              <dt>Prize swap</dt>
+              <dd>5 tickets</dd>
+            </dl>
+          </section>
           <fieldset>
             <legend>How many</legend>
             <label><input type="radio" name="n" checked /> One</label>

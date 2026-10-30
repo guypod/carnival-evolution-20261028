@@ -8,14 +8,16 @@
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "15m"
+      "timeout": "15m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "shepherd": {
       "skill": "tessl-labs/factory@0.6.0#shepherd",
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "10m"
+      "timeout": "10m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "follow-ticket-changes": {
       "skill": "tessl-labs/factory@0.6.0#follow-ticket-changes",
@@ -29,14 +31,16 @@
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "15m"
+      "timeout": "15m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "visual-repair": {
       "skill": "file:tessl-factory#visual-repair",
       "environment": "carnival-evolution-20261028-factory",
       "agent": "claude-code",
       "model": "claude-opus-5-5",
-      "timeout": "30m"
+      "timeout": "30m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     }
   },
   "triggers": {

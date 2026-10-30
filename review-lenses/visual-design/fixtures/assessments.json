@@ -21,14 +21,14 @@
       "expect": "pass",
       "screenshots": ["compliant-desktop.png", "compliant-narrow.png"],
       "verdicts": {
-        "composition": "pass: the drawn stall is the focal point with the counter panel beside it",
-        "typography": "pass: theme font throughout, controls inherit it, bold labels and button",
-        "spacing": "pass: controls grouped in one framed counter with even gaps",
-        "depth": "pass: wood frame and drop shadow under the stall",
-        "materials": "pass: striped awning edge, wood posts, lanterns, a painted sign",
-        "art-integration": "pass: the SVG scene shares the frame with its controls and uses theme colours",
+        "composition": "pass: the illustrated stall fills the left of the frame as the focal point; the counter panel beside it is filled by a price board and the form, centred, with no large empty area",
+        "typography": "pass: theme font throughout, gold headings, a letter-spaced price board title, controls inherit the font, bold labels and button",
+        "spacing": "pass: price board, radios, name field and button grouped in one framed counter with even gaps",
+        "depth": "pass: wood frame and drop shadow under the stall, a sky gradient, shaded awning, counter and shelves, a ground shadow under the stall and lantern glow",
+        "materials": "pass: scalloped red and cream striped awning, wood posts and plank counter with grain lines, glowing paper lanterns, bunting, balloons and plush prizes on shelves, a painted TICKETS sign",
+        "art-integration": "pass: the SVG scene shares the frame with its controls, the counter's striped top echoes the awning and both use only theme colours",
         "controls": "pass: native radios, text box and button, all styled from the theme, labels associated",
-        "responsive": "pass: at 390px the scene scales down and the counter stacks under it",
+        "responsive": "pass: at 390px the scene scales down whole and the counter stacks under it, nothing cut off or scrolling sideways",
         "focus-contrast": "pass: a 3px gold focus ring shows on the Buy button against the purple counter",
         "quiet": "pass: nothing animates"
       }

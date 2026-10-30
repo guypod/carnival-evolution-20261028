@@ -1,0 +1,334 @@
+// The visual repair loop's durable record: which routes still need a review,
+// which findings are still open, and what happened to the loop's own pull
+// requests. It lives as ledger.json on the branch LEDGER_BRANCH on origin,
+// written with an ordinary fast-forward push, so it survives between runs and
+// a run that stops halfway leaves it exactly as it was.
+//
+// The decisions are plain functions, tested in ledger.test.mjs. The command
+// line at the bottom wires them to git and gh for the skill:
+//
+//   node scripts/visual/ledger.mjs plan            what this run should do
+//   node scripts/visual/ledger.mjs record <file>   save a finished review
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+export const LEDGER_BRANCH = 'factory-state/visual-repair';
+export const LEDGER_FILE = 'ledger.json';
+export const OWN_BRANCH = /^tessl\/visual-repair-/;
+export const BATCH_SIZE = 4;
+export const DECLINE_DAYS = 30;
+const MARKER = /<!-- tessl-visual-finding: (\S+) -->/g;
+
+// Files that every screen draws with: a change to one affects every route.
+const SHARED = [/^index\.html$/, /^src\/main\.ts$/, /^src\/style\.css$/, /^src\/carnival\//];
+// Files no screen draws with.
+const IGNORED = [/\.test\.ts$/, /\.md$/, /^src\/games\/index\.ts$/];
+
+/** Every route the router serves: the midway, each standalone screen and each game. */
+export function allRoutes(mainSource, gameIds) {
+  const screens = [...mainSource.matchAll(/location\.hash === '(#\/[\w-]+)'/g)].map((m) => m[1]);
+  return ['#/', ...new Set(screens), ...gameIds.map((id) => `#/play/${id}`)];
+}
+
+/** Which module each standalone route draws with, read from main.ts. */
+export function routeModules(mainSource) {
+  const renderers = new Map(
+    [...mainSource.matchAll(/location\.hash === '(#\/[\w-]+)'\) (render\w+)\(\)/g)].map((m) => [
+      m[2],
+      m[1],
+    ]),
+  );
+  const starts = [...mainSource.matchAll(/^function (render\w+)\(/gm)];
+  const bodies = new Map(
+    starts.map((m, i) => [m[1], mainSource.slice(m.index, starts[i + 1]?.index)]),
+  );
+  const modules = new Map();
+  for (const m of mainSource.matchAll(/^import \{([^}]+)\} from '\.\/([\w-]+)';/gm)) {
+    const names = m[1].split(',').map((n) =>
+      n
+        .replace(/^\s*type\s+/, '')
+        .trim()
+        .split(' as ')
+        .pop(),
+    );
+    const routes = [...renderers]
+      .filter(([fn]) => names.some((n) => n && new RegExp(`\\b${n}\\b`).test(bodies.get(fn) ?? '')))
+      .map(([, route]) => route);
+    modules.set(`src/${m[2]}.ts`, routes);
+  }
+  return modules;
+}
+
+/**
+ * The routes a set of changed files can look different on. Shared files and
+ * files the map cannot place affect every route, so coverage errs wide.
+ */
+export function affectedRoutes(files, mainSource, routes) {
+  const modules = routeModules(mainSource);
+  const hit = new Set();
+  for (const file of files) {
+    if (IGNORED.some((p) => p.test(file))) continue;
+    if (!file.startsWith('src/') && !SHARED.some((p) => p.test(file))) continue;
+    const game = file.match(/^src\/games\/([\w-]+)\//);
+    if (SHARED.some((p) => p.test(file))) routes.forEach((r) => hit.add(r));
+    else if (game) hit.add(`#/play/${game[1]}`);
+    else if (file.startsWith('src/midway/')) hit.add('#/');
+    else if (modules.get(file)?.length) modules.get(file).forEach((r) => hit.add(r));
+    else routes.forEach((r) => hit.add(r));
+  }
+  return routes.filter((r) => hit.has(r));
+}
+
+/** A ledger with nothing reviewed yet: the first run owes every route a look. */
+export function emptyLedger() {
+  return { version: 1, reviewedThrough: null, pending: [], pendingThrough: null, findings: [] };
+}
+
+/**
+ * Bring the loop's own pull requests into the ledger before anything else.
+ * An open one is the only work this run may do; merged and declined ones are
+ * recorded. A leftover branch never blocks a run: branches are named per run,
+ * and the shared writer key means no other writer is holding one.
+ */
+export function reconcileOwnPrs(ledger, prs, now) {
+  const next = structuredClone(ledger);
+  let openPr = null;
+  for (const pr of prs.filter((p) => OWN_BRANCH.test(p.headRefName))) {
+    const prints = [...(pr.body ?? '').matchAll(MARKER)].map((m) => m[1]);
+    const status = pr.state === 'OPEN' ? 'pr-open' : pr.state === 'MERGED' ? 'merged' : 'declined';
+    if (status === 'pr-open') openPr ??= pr.number;
+    for (const finding of next.findings.filter((f) => prints.includes(f.fingerprint))) {
+      if (finding.pr === pr.number && finding.status === status) continue;
+      if (finding.status === 'resolved') continue;
+      finding.pr = pr.number;
+      finding.status = status;
+      if (status === 'declined') finding.declinedAt = pr.closedAt ?? now;
+      // Merged is not deployed: look at the route again on main to confirm it.
+      if (status === 'merged' && !next.pending.includes(finding.route)) {
+        next.pending.push(finding.route);
+      }
+    }
+  }
+  return { ledger: next, openPr };
+}
+
+/**
+ * What this run does. Other Tessl work in flight means defer. The loop's own
+ * open pull request means look after that pull request and nothing else.
+ * Otherwise review a bounded batch: routes with open findings first, then
+ * routes still owed a look.
+ */
+export function planRun(ledger, { head, changedFiles, mainSource, routes, others, openPr }) {
+  if (others.length) return { action: 'defer', reason: others.join('; '), ledger };
+  if (openPr) return { action: 'monitor', pr: openPr, ledger };
+  const next = structuredClone(ledger);
+  // Owed routes are added once per new head; the diff runs from the last
+  // fully reviewed commit, so a head that moves mid-backlog loses nothing.
+  if (next.pendingThrough !== head) {
+    const owed =
+      next.reviewedThrough === null ? routes : affectedRoutes(changedFiles, mainSource, routes);
+    for (const route of owed) if (!next.pending.includes(route)) next.pending.push(route);
+    next.pendingThrough = head;
+  }
+  // Open findings are looked at again once per head, so a fix on main clears them.
+  const revisit = next.findings
+    .filter((f) => f.status === 'open' && f.seenAt !== head)
+    .map((f) => f.route);
+  const batch = [...new Set([...revisit, ...next.pending])].slice(0, BATCH_SIZE);
+  if (!batch.length) return { action: 'nothing', ledger: next };
+  return { action: 'review', batch, ledger: next };
+}
+
+/**
+ * Save a finished review of a batch. Findings are keyed by route, state and
+ * criterion. A reviewed route's old findings that did not come back are
+ * resolved. The coverage checkpoint moves only once no route is owed a look.
+ */
+export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
+  const next = structuredClone(ledger);
+  next.pending = next.pending.filter((r) => !reviewed.includes(r));
+  for (const f of findings) {
+    const fingerprint = `${f.route}:${f.state}:${f.criterion}`;
+    const old = next.findings.find((o) => o.fingerprint === fingerprint);
+    const fixed = pr && f.fixedBy === pr;
+    if (old) {
+      old.note = f.note;
+      old.seenAt = next.pendingThrough;
+      if (old.status !== 'declined' || isStale(old, now)) {
+        old.status = fixed ? 'pr-open' : 'open';
+        if (fixed) old.pr = pr;
+      }
+    } else {
+      next.findings.push({
+        fingerprint,
+        route: f.route,
+        state: f.state,
+        criterion: f.criterion,
+        note: f.note,
+        firstSeen: now,
+        seenAt: next.pendingThrough,
+        status: fixed ? 'pr-open' : 'open',
+        ...(fixed ? { pr } : {}),
+      });
+    }
+  }
+  const seen = new Set(findings.map((f) => `${f.route}:${f.state}:${f.criterion}`));
+  for (const old of next.findings) {
+    if (reviewed.includes(old.route) && !seen.has(old.fingerprint) && old.status !== 'pr-open') {
+      old.status = 'resolved';
+    }
+  }
+  for (const old of next.findings)
+    if (reviewed.includes(old.route)) old.seenAt = next.pendingThrough;
+  if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
+  return next;
+}
+
+/** Findings a repair may take on: open, and not declined in the last 30 days. */
+export function repairable(ledger, now) {
+  return ledger.findings.filter(
+    (f) => f.status === 'open' || (f.status === 'declined' && isStale(f, now)),
+  );
+}
+
+function isStale(finding, now) {
+  return Date.parse(now) - Date.parse(finding.declinedAt) > DECLINE_DAYS * 86400e3;
+}
+
+// Storage. Reads and writes go through git on a plain branch: no custom ref,
+// no new service. A write is a fast-forward push; if another run moved the
+// branch first, the push is refused and this run's record is not saved.
+
+const git = (cwd, ...args) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+/** The ledger on origin and the commit it was read from, or an empty one. */
+export function readLedger(repo, remote = 'origin') {
+  try {
+    git(
+      repo,
+      'fetch',
+      '--quiet',
+      remote,
+      `+refs/heads/${LEDGER_BRANCH}:refs/remotes/${remote}/${LEDGER_BRANCH}`,
+    );
+  } catch {
+    return { ledger: emptyLedger(), base: null };
+  }
+  const base = git(repo, 'rev-parse', `refs/remotes/${remote}/${LEDGER_BRANCH}`);
+  return { ledger: JSON.parse(git(repo, 'show', `${base}:${LEDGER_FILE}`)), base };
+}
+
+/** Push the ledger as a child of `base`. Throws if origin moved since the read. */
+export function writeLedger(repo, ledger, base, message, remote = 'origin') {
+  const dir = mkdtempSync(join(tmpdir(), 'ledger-'));
+  try {
+    const file = join(dir, LEDGER_FILE);
+    writeFileSync(file, JSON.stringify(ledger, null, 2) + '\n');
+    const blob = git(repo, 'hash-object', '-w', file);
+    const env = { ...process.env, GIT_INDEX_FILE: join(dir, 'index') };
+    execFileSync('git', ['update-index', '--add', '--cacheinfo', `100644,${blob},${LEDGER_FILE}`], {
+      cwd: repo,
+      env,
+    });
+    const tree = execFileSync('git', ['write-tree'], { cwd: repo, env, encoding: 'utf8' }).trim();
+    const commit = git(repo, 'commit-tree', tree, ...(base ? ['-p', base] : []), '-m', message);
+    // Without a force flag git refuses anything but a fast-forward of base.
+    git(repo, 'push', '--quiet', remote, `${commit}:refs/heads/${LEDGER_BRANCH}`);
+    return commit;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The command line the skill runs.
+
+const gh = (...args) => JSON.parse(execFileSync('gh', args, { encoding: 'utf8' }));
+
+function plan(repo, now) {
+  const { ledger, base } = readLedger(repo);
+  git(repo, 'fetch', '--quiet', 'origin', 'main');
+  const head = git(repo, 'rev-parse', 'origin/main');
+  const mainSource = git(repo, 'show', `${head}:src/main.ts`);
+  const gameIds = git(repo, 'ls-tree', '--name-only', `${head}:src/games`)
+    .split('\n')
+    .filter((n) => !n.includes('.'));
+  const routes = allRoutes(mainSource, gameIds);
+  const changedFiles = ledger.reviewedThrough
+    ? git(repo, 'diff', '--name-only', `${ledger.reviewedThrough}..${head}`)
+        .split('\n')
+        .filter(Boolean)
+    : [];
+  const prs = gh(
+    'pr',
+    'list',
+    '--state',
+    'all',
+    '--limit',
+    '200',
+    '--json',
+    'number,state,headRefName,body,closedAt',
+  );
+  const issues = gh('issue', 'list', '--state', 'open', '--label', 'tessl', '--json', 'number');
+  const open = gh(
+    'pr',
+    'list',
+    '--state',
+    'open',
+    '--json',
+    'number,headRefName,body,files',
+  ).filter((p) => !OWN_BRANCH.test(p.headRefName));
+  const others = [
+    ...open
+      .filter((p) => p.headRefName.startsWith('tessl/'))
+      .map((p) => `open Tessl pull request #${p.number}`),
+    ...open
+      .filter((p) => !p.headRefName.startsWith('tessl/'))
+      .filter((p) => (p.files ?? []).some((f) => SHARED.some((s) => s.test(f.path))))
+      .map((p) => `open pull request #${p.number} changes shared UI files`),
+    ...issues
+      .filter((i) => !open.some((p) => (p.body ?? '').includes(`Closes #${i.number}`)))
+      .map((i) => `labelled issue #${i.number} has no pull request yet`),
+  ];
+  const reconciled = reconcileOwnPrs(ledger, prs, now);
+  const result = planRun(reconciled.ledger, {
+    head,
+    changedFiles,
+    mainSource,
+    routes,
+    others,
+    openPr: reconciled.openPr,
+  });
+  return { ...result, base, head, repairable: repairable(result.ledger, now) };
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const [command, file] = process.argv.slice(2);
+  const repo = process.cwd();
+  const now = new Date().toISOString();
+  if (command === 'plan') {
+    const result = plan(repo, now);
+    writeFileSync('/tmp/visual-repair-plan.json', JSON.stringify(result, null, 2) + '\n');
+    console.log(JSON.stringify({ ...result, ledger: undefined }, null, 2));
+  } else if (command === 'record') {
+    // <file> holds { reviewed, findings, pr }; the plan written by `plan`
+    // supplies the ledger and the commit it was read from.
+    const planned = JSON.parse(readFileSync('/tmp/visual-repair-plan.json', 'utf8'));
+    const review = JSON.parse(readFileSync(file, 'utf8'));
+    const next = recordReview(planned.ledger, { ...review, now });
+    const commit = writeLedger(
+      repo,
+      next,
+      planned.base,
+      `visual repair: reviewed ${review.reviewed.join(' ')}`,
+    );
+    console.log(
+      JSON.stringify({ commit, reviewedThrough: next.reviewedThrough, pending: next.pending }),
+    );
+  } else {
+    console.error('usage: ledger.mjs plan | record <review.json>');
+    process.exit(2);
+  }
+}

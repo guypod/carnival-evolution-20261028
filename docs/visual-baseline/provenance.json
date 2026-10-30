@@ -159,10 +159,15 @@
         "pixels": {
           "width": 1280,
           "height": 834,
-          "colours": 206,
-          "flatShare": 0.562
+          "colours": 212,
+          "flatShare": 0.563
         },
-        "errors": []
+        "errors": [],
+        "recaptured": {
+          "commit": "8e580ae",
+          "capturedAt": "2026-10-30T01:25:12.602Z",
+          "why": "plain wishes, so the comparison image carries no sanitizer test text"
+        }
       },
       {
         "route": "#/balloon",
@@ -177,9 +182,14 @@
           "width": 1280,
           "height": 834,
           "colours": 215,
-          "flatShare": 0.563
+          "flatShare": 0.564
         },
-        "errors": []
+        "errors": [],
+        "recaptured": {
+          "commit": "8e580ae",
+          "capturedAt": "2026-10-30T01:25:12.602Z",
+          "why": "plain wishes, so the comparison image carries no sanitizer test text"
+        }
       },
       {
         "route": "#/balloon",
@@ -209,11 +219,16 @@
         "state": "interaction",
         "pixels": {
           "width": 390,
-          "height": 1190,
+          "height": 1176,
           "colours": 171,
-          "flatShare": 0.429
+          "flatShare": 0.438
         },
-        "errors": []
+        "errors": [],
+        "recaptured": {
+          "commit": "8e580ae",
+          "capturedAt": "2026-10-30T01:25:12.602Z",
+          "why": "plain wishes, so the comparison image carries no sanitizer test text"
+        }
       }
     ]
   }

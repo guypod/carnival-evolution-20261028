@@ -18,15 +18,16 @@ const { chromium } = require('playwright');
 const VIEWPORTS = { desktop: { width: 1280, height: 800 }, narrow: { width: 390, height: 844 } };
 const targets = routes.length ? routes : ['#/', '#/balloon'];
 
-// Interaction states per route: what a visitor does before the screenshot. The
-// wish includes markup on purpose: it must show as plain text.
+// Interaction states per route: what a visitor does before the screenshot.
+// Plain wishes, so the comparison images stay clean; safe text for markup is
+// covered by cleanWish's unit tests, not by these screenshots.
 const INTERACTIONS = {
   '#/balloon': async (page) => {
     await page.getByLabel('gold').check();
     await page.getByLabel(/Your wish/).fill('ride the big wheel');
     await page.getByRole('button', { name: 'Release the balloon' }).click();
     await page.getByLabel('blue').check();
-    await page.getByLabel(/Your wish/).fill('<b>see the stars</b>');
+    await page.getByLabel(/Your wish/).fill('see the stars');
     await page.getByRole('button', { name: 'Release the balloon' }).click();
     await page.waitForTimeout(1500);
   },

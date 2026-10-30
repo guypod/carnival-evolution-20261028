@@ -58,18 +58,20 @@ Quiet), the criterion id, and what in the screenshot shows it.
 ## Taking screenshots
 
 Playwright is not a dependency of the carnival. `scripts/visual/setup-browser.sh`
-installs Playwright 1.61.1 and its matching Chromium outside the clone, unpacks
-the shared libraries Chromium needs without sudo, and prints an environment
-file to source. Then, with `npm run dev` running:
+installs Playwright 1.61.1 and its matching Chromium outside the clone and
+unpacks the shared libraries Chromium needs without sudo.
+`scripts/visual/run-capture.sh` runs that setup, loads its environment in the
+same shell, starts the dev server when nothing answers on port 5173, and
+captures. It works from a fresh shell with nothing exported:
 
 ```sh
-scripts/visual/setup-browser.sh
-source /tmp/carnival-browser/env.sh
-node scripts/visual/capture.mjs http://localhost:5173/ /tmp/shots '#/' '#/balloon'
+scripts/visual/run-capture.sh /tmp/shots '#/' '#/balloon'
+node scripts/visual/pixels.mjs /tmp/shots/*.png
 ```
 
 `capture.mjs` writes one PNG per route, viewport and state, and a
 `report.json`. It inspects every image in the browser and fails when one is
 blank or nearly one flat colour, or the page threw an error. A pixel summary
-only proves an image is real. Whether it meets the rubric is a judgment a
+only proves an image is real. `pixels.mjs` repeats that check on the saved
+files without the browser, as a second opinion. Whether it meets the rubric is a judgment a
 person or the review lens makes by looking at it.
