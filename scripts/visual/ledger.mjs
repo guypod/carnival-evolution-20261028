@@ -228,7 +228,7 @@ export function repairConflicts(openPrs, { mainSource, routes, importers = () =>
  */
 export function planRun(
   ledger,
-  { head, changedFiles, mainSource, routes, openPrs = [], openPr, now, importers },
+  { head, changedFiles, mainSource, routes, openPrs = [], openPr, now, importers, recheck = [] },
 ) {
   const next = structuredClone(ledger);
   next.head = head;
@@ -244,8 +244,11 @@ export function planRun(
       next.reviewedThrough === null
         ? routes
         : affectedRoutes(changedFiles, mainSource, routes, importers);
-    next.pending = [...owed];
+    // A route reviewed at a later commit than its interval may have changed
+    // and changed back in between, which the endpoint diff cannot see.
+    next.pending = routes.filter((r) => owed.includes(r) || recheck.includes(r));
     next.pendingThrough = head;
+    next.reviewedAt = {};
   }
   // An interval with nothing left owed is covered, whether or not it needed a look.
   if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
@@ -340,6 +343,8 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
     }
   }
   for (const old of next.findings) if (reviewed.includes(old.route)) old.seenAt = next.head;
+  next.reviewedAt = { ...next.reviewedAt };
+  for (const r of reviewed) next.reviewedAt[r] = next.head;
   if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
   return next;
 }
@@ -446,6 +451,21 @@ function plan(repo, now) {
         .split('\n')
         .filter(Boolean)
     : [];
+  // Routes reviewed at a commit other than their interval's, whose files
+  // changed between the two, are owed again in the next interval.
+  const recheck = Object.entries(ledger.reviewedAt ?? {})
+    .filter(([, at]) => ledger.pendingThrough && at !== ledger.pendingThrough)
+    .filter(([route, at]) =>
+      affectedRoutes(
+        git(repo, 'diff', '--name-only', `${ledger.pendingThrough}..${at}`)
+          .split('\n')
+          .filter(Boolean),
+        mainSource,
+        routes,
+        importersAt(repo, head),
+      ).includes(route),
+    )
+    .map(([route]) => route);
   // Lists that hit their limit may be missing work, so treat that as a stop.
   const list = (...args) => {
     const items = gh(...args, '--limit', String(LIST_LIMIT));
@@ -504,6 +524,7 @@ function plan(repo, now) {
     mainSource,
     routes,
     openPrs,
+    recheck,
     openPr: reconciled.openPr,
     now,
     importers: importersAt(repo, head),

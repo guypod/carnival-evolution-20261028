@@ -610,6 +610,26 @@ test('a backlog whose last route was removed completes instead of stalling', () 
   assert.equal(quiet.ledger.reviewedThrough, 'h2');
 });
 
+test('a route reviewed at a later commit than its interval is owed again', () => {
+  let ledger = reviewAll(emptyLedger(), 'h1', []).ledger;
+  // An interval opens at h2; the first batch is reviewed at h2, the rest at h3.
+  let plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  const late = [];
+  for (;;) {
+    plan = planRun(ledger, { ...base, head: 'h3' });
+    if (plan.action !== 'review') break;
+    late.push(...plan.batch);
+    ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  }
+  assert.equal(ledger.reviewedThrough, 'h2');
+  assert.deepEqual(ledger.reviewedAt['#/'], 'h2');
+  // plan() owes the late routes whose files changed between h2 and h3.
+  const next = planRun(ledger, { ...base, head: 'h4', recheck: [late[0]] });
+  assert.ok(next.batch.includes(late[0]));
+  assert.ok(!planRun(ledger, { ...base, head: 'h4' }).batch);
+});
+
 test('a module another screen imports owes every route, not just its own', () => {
   const importers = (file) =>
     ({

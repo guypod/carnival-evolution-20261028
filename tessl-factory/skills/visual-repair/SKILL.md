@@ -112,7 +112,10 @@ narrowing. Routes are reviewed four at a time.
 spread over several runs and no route is skipped. A new interval, from
 `reviewedThrough` to the newest `main`, opens only once the last one is done,
 so commits landing between runs wait for the next interval instead of
-refilling the current one.
+refilling the current one. Each route's review commit is kept in `reviewedAt`;
+a route reviewed at a later commit than its interval is owed again in the
+next interval when its files changed between the two, so a change that is
+undone before the interval ends cannot hide a defect.
 
 ## Look
 
