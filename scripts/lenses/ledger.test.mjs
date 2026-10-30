@@ -1067,3 +1067,23 @@ test('a persisted ledger is checked for the fields the commands read', () => {
     assert.notDeepEqual(ledgerErrors(bad), []);
   }
 });
+
+test('any added caution reopens an accepted proposal, and malformed targets never reach the ledger', () => {
+  const target = 'tessl/code-review@0.5.0#review-maintainability-and-code-quality';
+  let ledger = recordRun(emptyLedger(), run({ proposals: [proposal({ target })] }));
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
+  ledger = recordRun(
+    ledger,
+    run({ runId: 'run-2', proposals: [proposal({ target, weakens: true })] }),
+  );
+  assert.equal(ledger.proposals[0].status, 'deferred');
+  assert.deepEqual(unissuedProposals(ledger), []);
+  // Re-deciding it needs two distinct PRs now.
+  assert.notDeepEqual(
+    validateDecision(ledger, decision(ledger, { evidence: [evidence('pr', '#283')] })),
+    [],
+  );
+  const bad = run({ proposals: [proposal({ kind: 'new-lens', target: ['new:audio-cues'] })] });
+  assert.notDeepEqual(validateRun(bad, opts()), []);
+  assert.throws(() => writeLedger('.', { ...emptyLedger(), runs: [{}] }, null, 'x'), /malformed/);
+});

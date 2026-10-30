@@ -412,7 +412,7 @@ function proposalErrors(p, at, learner, { lenses, exists }) {
   }
   if (p.kind === 'amend-lens' && !lenses.includes(p.target)) {
     errors.push(`${at}: ${p.target} is not a configured lens`);
-  } else if (p.kind === 'new-lens' && !/^new:[a-z0-9-]+$/.test(p.target ?? '')) {
+  } else if (p.kind === 'new-lens' && !(isText(p.target) && /^new:[a-z0-9-]+$/.test(p.target))) {
     errors.push(`${at}: a new lens is named new:<slug>`);
   } else if (!p.kind.endsWith('-lens') && !isRepoPath(p.target)) {
     errors.push(`${at}: target must be a path in this repository`);
@@ -573,16 +573,20 @@ export function recordRun(ledger, run) {
       known.evidence = mergeEvidence(known.evidence, p.evidence);
       known.seenIn = [...known.seenIn, run.runId];
       // A later sighting can only make it more cautious, never less.
+      const before = JSON.stringify([known.weakens, known.standards ?? []]);
       known.weakens = known.weakens || p.weakens;
       known.standards = [...new Set([...(known.standards ?? []), ...p.standards])];
-      // An acceptance that the new caution forbids goes back to the
-      // coordinator instead of staying eligible for an issue.
-      if (known.status === 'accepted' && touchesSafety(known)) {
+      // An acceptance decided under less caution goes back to the coordinator,
+      // so the safety and two-PR rules are checked again before any issue.
+      if (
+        known.status === 'accepted' &&
+        JSON.stringify([known.weakens, known.standards]) !== before
+      ) {
         known.status = 'deferred';
         known.reopened = {
           at: run.finishedAt,
           runId: run.runId,
-          reason: 'a later sighting declared it weakens a safety standard or protected path',
+          reason: 'a later sighting declared more caution than the accepted decision saw',
         };
       }
       continue;
@@ -921,6 +925,10 @@ export function writeLedger(repo, ledger, base, message, remote = 'origin') {
   const dir = mkdtempSync(join(tmpdir(), 'lens-ledger-'));
   try {
     const file = join(dir, LEDGER_FILE);
+    // Never save a ledger the next read would refuse.
+    const errors = ledgerErrors(ledger);
+    if (errors.length)
+      throw new Error(`refusing to write a malformed ledger: ${errors.join('; ')}`);
     const text = JSON.stringify(ledger, null, 2) + '\n';
     if (Buffer.byteLength(text) > MAX_LEDGER_BYTES) {
       throw new Error(`refusing to write a ledger over ${MAX_LEDGER_BYTES} bytes`);

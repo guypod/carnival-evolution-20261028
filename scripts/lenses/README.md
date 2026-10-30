@@ -54,8 +54,8 @@ refuses a slot already covered completely.
   that, the next slot's `since` still reaches back to the last complete run,
   so the uncovered interval is read then. Partial, failed and manual runs
   never move that checkpoint, except that a partial scheduled run may
-  record `coverage.through`, the time up to which it read everything
-  (oldest first), so a backlog over a list limit is worked through instead
+  record `coverage.through`, a time up to which it read every source in
+  full (oldest first), so a backlog over a list limit is worked through instead
   of hitting the same limit every run.
 - `record` also refuses a slot its real start did not follow, and a run
   recorded more than 30 minutes after its real start.
@@ -152,10 +152,12 @@ From a clone of `main`:
    body and marker again; search for the marker and repeat step 5. Recording
    the same issue twice changes nothing, and a different one is refused.
 
-If a later sighting of an accepted proposal declares that it weakens a safety
-standard or a protected path, the ledger moves it back to `deferred` with a
-`reopened` note, so it leaves `unissued` and comes back to the coordinator.
-`issue` and `issued` refuse such a proposal.
+If a later sighting of an accepted proposal declares more caution (it now
+weakens something, or names more standards), the ledger moves it back to
+`deferred` with a `reopened` note, so it leaves `unissued` and comes back to
+the coordinator, whose next decision checks the safety and two-PR rules
+again. `issue` and `issued` refuse a proposal that weakens a safety
+standard.
 
 `defer` keeps the proposal pending for the next block. `reject` closes it;
 the same proposal seen again keeps its rejection and only gains evidence.
