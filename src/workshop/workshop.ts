@@ -641,3 +641,115 @@ export function createRepairsStore(storage: SaveStorage | undefined) {
     save: (repairs: Repairs) => slot.save(repairs),
   };
 }
+
+// The inspection rig: one test run, read back stage by stage from input to output.
+
+export interface Stage {
+  /** The part this stage looks at. */
+  part: string;
+  moving: boolean;
+  note: string;
+}
+
+export interface Inspection {
+  stages: Stage[];
+  /** The first stage that does not move, where the motion stops; undefined when it all moves. */
+  stopsAt: number | undefined;
+}
+
+const turnWord = (spin: number) =>
+  spin > 0 ? 'turns with the crank' : spin < 0 ? 'turns against the crank' : 'stays still';
+
+/** Walks the same run the Test button uses, so the rig never disagrees with a test. */
+export function inspectToy(toy: ToyState): Inspection {
+  const run = runToy(toy);
+  const stages: Stage[] = [];
+  if (run.kind === 'gears') {
+    const gears = gearsOf(toy).sort((a, b) => a.x - b.x);
+    for (const g of gears) {
+      const name = g.id === 'crank' || g.id === 'bear' ? `${g.id} gear` : partLabel(g.id);
+      stages.push(
+        run.jammed
+          ? { part: name, moving: false, note: `The ${name} is jammed: two gears overlap.` }
+          : {
+              part: name,
+              moving: run.spin[g.id] !== 0,
+              note: `The ${name} ${turnWord(run.spin[g.id])}.`,
+            },
+      );
+    }
+  } else if (run.kind === 'bell') {
+    stages.push({ part: 'lever', moving: true, note: 'The lever swings.' });
+    stages.push(
+      toy.pinTight
+        ? { part: 'pivot pin', moving: true, note: 'The tight pin carries the rod with the lever.' }
+        : {
+            part: 'pivot pin',
+            moving: false,
+            note: 'The pin is loose, so the rod slides and stays put.',
+          },
+    );
+    if (toy.pinTight) {
+      stages.push({
+        part: 'link rod',
+        moving: true,
+        note: `The rod pushes from hole ${toy.parts.rod.slice(5)}.`,
+      });
+      stages.push({
+        part: 'hammer',
+        moving: true,
+        note: run.working
+          ? 'The hammer strikes the bell.'
+          : run.travel < 1
+            ? 'The hammer swings short of the bell.'
+            : 'The hammer swings past the bell into the rubber stop.',
+      });
+    }
+  } else {
+    stages.push({
+      part: 'crank',
+      moving: true,
+      note: run.stalled ? 'The crank turns until the clutch slips.' : 'The crank turns.',
+    });
+    stages.push(
+      run.stalled
+        ? { part: 'shaft', moving: false, note: 'The shaft stalls: the cam is wedged on a pebble.' }
+        : { part: 'shaft', moving: true, note: 'The shaft turns.' },
+    );
+    if (!run.stalled) {
+      stages.push(
+        run.cam
+          ? {
+              part: `${run.cam} cam`,
+              moving: true,
+              note: `The ${run.cam} cam turns under the rod.`,
+            }
+          : {
+              part: 'cam',
+              moving: false,
+              note: 'There is no cam on the shaft, so nothing lifts the rod.',
+            },
+      );
+      if (run.cam) stages.push({ part: 'frog', moving: true, note: run.message });
+    }
+  }
+  // A stall upstream means nothing after it moves either.
+  const first = stages.findIndex((s) => !s.moving);
+  return { stages, stopsAt: first < 0 ? undefined : first };
+}
+
+/** What the rig says at a step; steps wrap round, so repeated presses are always safe. */
+export function inspectionLine(inspection: Inspection, step: number): string {
+  const { stages, stopsAt } = inspection;
+  const at = ((step % stages.length) + stages.length) % stages.length;
+  const stage = stages[at];
+  const where =
+    stopsAt === undefined
+      ? 'Motion reaches the end.'
+      : at < stopsAt
+        ? `Motion stops later, at the ${stages[stopsAt].part}.`
+        : at === stopsAt
+          ? 'Motion stops here.'
+          : `Motion already stopped at the ${stages[stopsAt].part}.`;
+  return `Inspect ${at + 1} of ${stages.length}: ${stage.note} ${where}`;
+}

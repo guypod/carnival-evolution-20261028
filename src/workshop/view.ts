@@ -27,6 +27,8 @@ import {
   recordRepair,
   resetBench,
   runToy,
+  inspectToy,
+  inspectionLine,
   targets,
   toyInfo,
   undo,
@@ -73,6 +75,7 @@ export function startWorkshop(
       aria-label="Repair bench. Left and right arrows pick a part or spot, Enter or Space acts on it."></canvas>
     <div class="workshop-actions" role="group" aria-label="Bench controls">
       <button type="button" data-act="test">Test (T)</button>
+      <button type="button" data-act="inspect">Inspect step (I)</button>
       <button type="button" data-act="undo">Undo (U)</button>
       <button type="button" data-act="reset">Reset toy (R)</button>
     </div>
@@ -176,6 +179,18 @@ export function startWorkshop(
     } else {
       say(`The ${target.label} is empty. Pick up a part first.`);
     }
+    refresh();
+  }
+
+  /** The inspection rig's step, and the set-up it was stepping through; a change starts it over. */
+  let inspecting: { toy: string; step: number } | undefined;
+
+  function inspect() {
+    held = drag = undefined;
+    const key = JSON.stringify(bench.toy);
+    inspecting =
+      inspecting?.toy === key ? { toy: key, step: inspecting.step + 1 } : { toy: key, step: 0 };
+    say(inspectionLine(inspectToy(bench.toy), inspecting.step));
     refresh();
   }
 
@@ -488,7 +503,7 @@ export function startWorkshop(
     if (event.target instanceof HTMLInputElement && key !== 'Escape') return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     // Holding a key down must not test, undo or reset over and over.
-    if (event.repeat && 'tTuUrR'.includes(key)) return event.preventDefault();
+    if (event.repeat && 'tTiIuUrR'.includes(key)) return event.preventDefault();
     if (event.target === canvas && (key === 'ArrowRight' || key === 'ArrowDown')) {
       stepFocus(1);
     } else if (event.target === canvas && (key === 'ArrowLeft' || key === 'ArrowUp')) {
@@ -502,6 +517,7 @@ export function startWorkshop(
       say(`Using the ${tool}.`);
       refresh();
     } else if (key === 't' || key === 'T') test();
+    else if (key === 'i' || key === 'I') inspect();
     else if (key === 'u' || key === 'U') undoStep();
     else if (key === 'r' || key === 'R') reset();
     else if (key === 'Escape') {
@@ -588,6 +604,7 @@ export function startWorkshop(
       say(`Using the ${tool}.`);
       refresh();
     } else if (button.dataset.act === 'test') test();
+    else if (button.dataset.act === 'inspect') inspect();
     else if (button.dataset.act === 'undo') undoStep();
     else if (button.dataset.act === 'reset') reset();
   };

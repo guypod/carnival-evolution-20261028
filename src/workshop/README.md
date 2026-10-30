@@ -37,7 +37,7 @@ toy's mechanism, so what moves follows from where the parts are.
   picks up that gear.
 - Keyboard: focus the bench, then the arrow keys step through parts, fixtures
   and empty spots, and Enter or Space acts on the ringed one. 1, 2 and 3 choose
-  the hand, screwdriver and tweezers. T tests, U undoes, R resets the toy to the
+  the hand, screwdriver and tweezers. T tests, I inspects (see below), U undoes, R resets the toy to the
   faults it came in with (Undo brings the work back), and Escape puts a held
   part down or goes back to the midway.
 - With Quiet midway or the system's reduced motion, a test shows one still
@@ -48,6 +48,16 @@ toy's mechanism, so what moves follows from where the parts are.
 - The bench's holes and the rod ride the bell lever as it turns, and clicks,
   drops and the keyboard ring follow them to wherever they are drawn, during a
   test run and in the still frame.
+
+## Inspecting a toy
+
+Inspect step (I) is a slow, untimed crank. Each press steps one part further
+along the drive, from the crank or lever to the bear, hammer or frog, and the
+words under the bench say whether that part moves and where the motion stops
+("Motion stops here." on the first part that stays still). It reads the same
+run the Test button uses, so it never disagrees with a test, and it changes
+nothing: press it as often as you like, and it wraps back to the start. Moving
+a part or a pin starts it over. It never records a repair; only Test does.
 
 ## Repairs and the midway
 
