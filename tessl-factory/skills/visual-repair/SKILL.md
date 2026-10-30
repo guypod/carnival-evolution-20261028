@@ -58,13 +58,16 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
      Only same-repository pull requests count as the loop's own; a fork with the
      same branch name is ignored.
      Merged repairs become `merged` and their route is reviewed again on
-     `main`: merged is not deployed until the route looks right there.
+     `main`. A finding that no longer shows there becomes `resolved`: resolved
+     on `main` as rendered locally. That is not evidence of the live deploy;
+     never report a repair as deployed.
      Declined repairs (closed without merging) stay declined for 30 days.
      Leftover `tessl/visual-repair-*` branches never block a run; each repair
      branch is named for its run, so an old one is never reused.
 3. **Browser.** Capture only through `scripts/visual/run-capture.sh`, which
-   sets up Chromium, loads its environment in the same shell, starts the dev
-   server and captures. If Chromium does not start, stop and report the
+   sets up Chromium, loads its environment in the same shell, starts its own
+   dev server for this checkout on a free port (never one already running)
+   and captures. If Chromium does not start, stop and report the
    error. Never describe a screen you did not render, and never treat tests,
    lint or a build as a visual pass.
 

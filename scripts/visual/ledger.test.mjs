@@ -362,3 +362,9 @@ test('a fork pull request with the loop’s branch name is not the loop’s own'
 test('a game registry change owes every route, because the midway lays out from it', () => {
   assert.deepEqual(affectedRoutes(['src/games/index.ts'], mainSource, routes), routes);
 });
+
+test('a ledger read that fails is an error, not a first run', () => {
+  const { a, run } = originRepo();
+  run(a, 'remote', 'set-url', 'origin', join(a, 'no-such-remote.git'));
+  assert.throws(() => readLedger(a));
+});

@@ -61,8 +61,8 @@ Playwright is not a dependency of the carnival. `scripts/visual/setup-browser.sh
 installs Playwright 1.61.1 and its matching Chromium outside the clone and
 unpacks the shared libraries Chromium needs without sudo.
 `scripts/visual/run-capture.sh` runs that setup, loads its environment in the
-same shell, starts the dev server when nothing answers on port 5173, and
-captures. It works from a fresh shell with nothing exported:
+same shell, starts its own dev server for this checkout on a free port (it
+never reuses a server already running), and captures. It works from a fresh shell with nothing exported:
 
 ```sh
 scripts/visual/run-capture.sh /tmp/shots '#/' '#/balloon'

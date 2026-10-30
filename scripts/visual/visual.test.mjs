@@ -66,3 +66,12 @@ test('every repository-local action skill is exported by its plugin', () => {
     assert.ok(exists(`tessl-factory/skills/${local[1]}/SKILL.md`), `${name} has a SKILL.md`);
   }
 });
+
+test('the capture wrapper owns its server and never trusts one already answering', () => {
+  const script = readFileSync(new URL('./run-capture.sh', import.meta.url), 'utf8');
+  assert.doesNotMatch(script, /5173|VISUAL_BASE_URL/, 'no fixed or caller-supplied port');
+  assert.match(script, /createServer\(\)\.listen\(0/, 'a free port chosen per run');
+  assert.match(script, /exec node_modules\/\.bin\/vite/, 'the killed pid is the server itself');
+  assert.match(script, /kill -0 "\$SERVER"/, 'the answering server is the one it started');
+  assert.match(script, /\. "\$ROOT\/env\.sh"/, 'the browser environment is sourced in this shell');
+});

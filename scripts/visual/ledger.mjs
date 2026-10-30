@@ -226,18 +226,18 @@ const git = (cwd, ...args) =>
 
 /** The ledger on origin and the commit it was read from, or an empty one. */
 export function readLedger(repo, remote = 'origin') {
+  // ls-remote exits 2 only when the remote answered and has no such branch.
+  // Any other failure (network, auth, a missing remote) throws: it must stop
+  // the run, not pass for a first run that owes every route again.
   try {
-    git(
-      repo,
-      'fetch',
-      '--quiet',
-      remote,
-      `+refs/heads/${LEDGER_BRANCH}:refs/remotes/${remote}/${LEDGER_BRANCH}`,
-    );
-  } catch {
-    return { ledger: emptyLedger(), base: null };
+    git(repo, 'ls-remote', '--exit-code', '--heads', remote, LEDGER_BRANCH);
+  } catch (error) {
+    if (error.status === 2) return { ledger: emptyLedger(), base: null };
+    throw error;
   }
-  const base = git(repo, 'rev-parse', `refs/remotes/${remote}/${LEDGER_BRANCH}`);
+  const tracking = `refs/remotes/${remote}/${LEDGER_BRANCH}`;
+  git(repo, 'fetch', '--quiet', remote, `+refs/heads/${LEDGER_BRANCH}:${tracking}`);
+  const base = git(repo, 'rev-parse', tracking);
   return { ledger: JSON.parse(git(repo, 'show', `${base}:${LEDGER_FILE}`)), base };
 }
 
