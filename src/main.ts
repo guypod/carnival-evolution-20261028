@@ -3509,13 +3509,19 @@ function renderToy() {
         <h1 id="toy-title" tabindex="-1">Wind-up Desk Toy</h1>
       </div>
       <p class="toy-intro"></p>
-      <canvas class="toy-scene" aria-hidden="true"></canvas>
-      <div class="toy-controls">
-        <button type="button" class="toy-wind">Wind the key (W)</button>
-        <button type="button" class="toy-release">Let it go (Space)</button>
-        <button type="button" class="toy-reset">Reset (R)</button>
+      <div class="toy-bench">
+        <div class="toy-desk">
+          <canvas class="toy-scene" aria-hidden="true"></canvas>
+        </div>
+        <div class="toy-counter">
+          <div class="toy-controls">
+            <button type="button" class="toy-wind">Wind the key (W)</button>
+            <button type="button" class="toy-release">Let it go (Space)</button>
+            <button type="button" class="toy-reset">Reset (R)</button>
+          </div>
+          <p class="toy-status" role="status" aria-live="polite"></p>
+        </div>
       </div>
-      <p class="toy-status" role="status" aria-live="polite"></p>
       <p class="note">Up to ${MAX_WINDS} turns of the key. Nothing is scored, saved or earned here. Escape goes back to the Prize Pavilion.</p>
     </section>
   `;
@@ -3527,9 +3533,11 @@ function renderToy() {
   const releaseButton = app.querySelector<HTMLButtonElement>('.toy-release')!;
   const resetButton = app.querySelector<HTMLButtonElement>('.toy-reset')!;
   const canvas = app.querySelector<HTMLCanvasElement>('.toy-scene')!;
-  canvas.width = DESK_SCENE.width;
-  canvas.height = DESK_SCENE.height;
+  // Twice the scene's size, so the desk stays sharp when the stall widens it.
+  canvas.width = DESK_SCENE.width * 2;
+  canvas.height = DESK_SCENE.height * 2;
   const ctx = canvas.getContext('2d');
+  ctx?.scale(2, 2);
   let toy = RESTING_TOY;
   let frame = 0;
   let timer = 0;
