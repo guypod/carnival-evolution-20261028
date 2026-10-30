@@ -15,7 +15,8 @@ toy's mechanism, so what moves follows from where the parts are.
   pivot pin is loose the rod just slides. Tighten it with the screwdriver, and
   the hole the rod sits in sets the swing: too near the pivot swings short of the
   bell, too far thumps the rubber stop. The middle hole rings it. Loosen the pin
-  again to move the rod.
+  again to move the rod. The mechanism stands in a fixed wooden frame with a
+  carved rooster on top: the frame and rooster never move and touch nothing.
 - **Hopping Frog Automaton.** The frog sits on a rod whose foot stands on the
   cam, straight above the shaft, so the frog rises and falls with the cam's
   edge as it turns. A pebble in the cam track stalls the shaft as soon as the
