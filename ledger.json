@@ -3,8 +3,6 @@
   "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
   "reviewedThrough": null,
   "pending": [
-    "#/play/balloon-darts",
-    "#/play/duck-dash",
     "#/play/high-striker",
     "#/play/memory-menagerie",
     "#/play/mini-putt",
@@ -270,11 +268,11 @@
       "route": "#/postcard",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "The 600px postcard sits at the left of the 930px column with the right third empty at 1280x800, followed by long unframed bullet lists running down the page.",
+      "note": "The 600px postcard sits left with a large empty area to its right, and below it two long plain bulleted lists repeat the card's contents, so the page reads as a document rather than a souvenir focal point.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenOn": "2026-10-30T16:26:22.640Z"
     },
     {
       "fingerprint": "#/postcard:desktop-clean:spacing",
@@ -283,31 +281,31 @@
       "criterion": "spacing",
       "note": "The 'On the card' and 'Stamps and emblems' sections are plain default bullet lists loose on the background, not grouped in a framed panel with the postcard and its name/download controls.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:26:22.640Z"
     },
     {
       "fingerprint": "#/plush:desktop-clean:controls",
       "route": "#/plush",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Body/Face/Colour use browser-default blue radio dots, the Attach/Undo/Start over/Save my plush buttons are raw grey default buttons, and the Name field is a small white default text box; same at 390px.",
+      "note": "Attach party hat/bow/wings, Undo, Start over and Save my plush are raw grey browser-default buttons, the radios are default blue, and the Name field is a default white input; same at 390px.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenOn": "2026-10-30T16:26:22.640Z"
     },
     {
       "fingerprint": "#/plush:desktop-clean:typography",
       "route": "#/plush",
       "state": "desktop-clean",
       "criterion": "typography",
-      "note": "Parts tray and action buttons use the browser's small default control font size, much smaller than the body text and fieldset legends beside them.",
+      "note": "Fieldset legends (Body, Face, Colour, Parts tray) are plain default-weight text sitting on the fieldset border with no heading weight, and the page heading carries a thin white box outline.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenOn": "2026-10-30T16:26:22.640Z"
     },
     {
       "fingerprint": "#/tune:desktop-clean:controls",
@@ -506,6 +504,28 @@
       "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
       "seenOn": "2026-10-30T16:25:30.287Z"
+    },
+    {
+      "fingerprint": "#/play/balloon-darts:narrow-clean:responsive",
+      "route": "#/play/balloon-darts",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x220 with the start text and score row at a few pixels tall, unreadable, and the lower two-thirds of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:26:22.640Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:26:22.640Z"
+    },
+    {
+      "fingerprint": "#/play/duck-dash:narrow-clean:responsive",
+      "route": "#/play/duck-dash",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x210 with the instructions, Start (Space) and the score labels at a few pixels tall, unreadable, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:26:22.640Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:26:22.640Z"
     }
   ],
   "reviewedAt": {
@@ -518,8 +538,8 @@
     "#/party": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/records": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/booths": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/postcard": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/plush": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/postcard": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/plush": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
@@ -527,7 +547,9 @@
     "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/expedition": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/workshop": "3f8723831a5744311b755544f6b851c9aea33dd0"
+    "#/workshop": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/balloon-darts": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/duck-dash": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T16:24:42.665Z"
+  "reconciledAt": "2026-10-30T16:25:32.045Z"
 }
