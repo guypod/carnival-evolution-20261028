@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkContract, EXPECTED_SCHEDULES, WRITER_KEY } from '../factory/contract.mjs';
 import {
+  checkpoint,
   configuredLenses,
   dueSlot,
   emptyLedger,
@@ -597,4 +598,28 @@ test('a second scheduled run cannot claim a slot already covered', () => {
     run({ coverage: { status: 'partial', inspected: [], gaps: 'gh list hit its limit' } }),
   );
   assert.deepEqual(validateRun(again, opts({ ledger: partial })), []);
+});
+
+test('failed and partial runs keep the last successful checkpoint, and the retry overlaps it', () => {
+  const run = (runId, startedAt, status) => ({
+    runId,
+    learner: 'lens-tuning',
+    trigger: 'schedule',
+    startedAt,
+    finishedAt: startedAt,
+    coverage: { status, inspected: [], gaps: status === 'complete' ? undefined : 'x' },
+  });
+  const ledger = {
+    ...emptyLedger(),
+    runs: [
+      run('a', '2026-10-30T05:41:00.000Z', 'complete'),
+      run('b', '2026-10-30T11:41:00.000Z', 'failed'),
+      run('c', '2026-10-30T17:41:00.000Z', 'partial'),
+    ],
+  };
+  assert.equal(checkpoint(ledger, 'lens-tuning'), '2026-10-30T05:41:00.000Z');
+  assert.equal(checkpoint(ledger, 'run-learning'), null);
+  const due = dueSlot(ledger, '2026-10-30T23:41:00.000Z', 'lens-tuning');
+  assert.equal(due.due, true);
+  assert.equal(due.since, '2026-10-30T04:41:00.000Z');
 });

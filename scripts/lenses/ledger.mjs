@@ -165,6 +165,27 @@ const learnerOf = (run) => run.learner ?? DEFAULT_LEARNER;
  * inside its window. A slot whose window has passed is never run late or
  * recorded as run. Manual runs never count here.
  */
+export const RETRY_OVERLAP_MINUTES = 60;
+
+/**
+ * A learner's last successful coverage checkpoint: the start of its latest
+ * complete run. Partial and failed runs never advance it.
+ */
+export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
+  const done = ledger.runs
+    .filter((r) => learnerOf(r) === learner && r.coverage.status === 'complete')
+    .map((r) => Date.parse(r.startedAt));
+  return done.length ? new Date(Math.max(...done)).toISOString() : null;
+}
+
+/** Where the next run starts reading: the checkpoint less an overlap, so no gap is skipped. */
+export function retrySince(ledger, now, learner = DEFAULT_LEARNER) {
+  const mark = checkpoint(ledger, learner);
+  const floor = Date.parse(now) - MANUAL_LOOKBACK_HOURS * 3600_000;
+  const from = mark ? Date.parse(mark) - RETRY_OVERLAP_MINUTES * 60_000 : floor;
+  return new Date(from).toISOString();
+}
+
 export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
   if (!LEARNERS[learner]) return { due: false, slot: null, reason: `unknown learner ${learner}` };
   const slot = slotAt(now, learner);
@@ -177,7 +198,8 @@ export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
       r.coverage.status === 'complete',
   );
   if (covered) return { due: false, slot, reason: `slot ${slot} is already covered` };
-  return { due: true, slot, reason: `slot ${slot} is due` };
+  const since = retrySince(ledger, now, learner);
+  return { due: true, slot, since, reason: `slot ${slot} is due, reading from ${since}` };
 }
 
 /**
