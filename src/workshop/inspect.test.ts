@@ -12,6 +12,7 @@ import {
   inspectionLine,
   inspectionMarks,
   movePart,
+  putDown,
   NO_REPAIRS,
   REPAIRS_KEY,
   runToy,
@@ -21,7 +22,7 @@ import {
   useTool,
   type ToyState,
 } from './workshop';
-import { frogPose } from './cams';
+import { frogPose, stallTurn } from './cams';
 
 /** Applies moves in order, failing loudly if one is refused. */
 function build(toy: ToyState, ...moves: [string, string][]): ToyState {
@@ -274,5 +275,54 @@ describe('inspection changes nothing', () => {
     expect(store.load()).toEqual(NO_REPAIRS);
     expect(store.save(NO_REPAIRS)).toBe(false);
     expect(REPAIRS_KEY).not.toMatch(/score/);
+  });
+});
+
+describe('a stalling frog under inspection', () => {
+  it('shows the shaft turning until the pose reaches the stall, then stopped', () => {
+    const toy = faultyToy('hopping-frog');
+    const run = runToy(toy);
+    expect(run).toMatchObject({ kind: 'cam', stalled: true });
+    if (run.kind !== 'cam') return;
+    // The first step's pose has not turned the cam onto the pebble yet.
+    expect(frogPose(run.cam, inspectPhase(0), true).turns).toBeLessThan(stallTurn(run.cam));
+    for (let i = 0; i < INSPECT_STEPS; i++) {
+      const phase = inspectPhase(i);
+      const stalled = frogPose(run.cam, phase, true).turns >= stallTurn(run.cam);
+      const insp = inspectToy(toy, run, phase);
+      const shaft = inspectionMarks(toy, run, phase).find((m) => m.id === 'shaft')!;
+      expect(shaft.state, `step ${i + 1}`).toBe(stalled ? 'stops' : 'moves');
+      expect(insp.stopsAt).toBe(stalled ? 0 : undefined);
+      expect(inspectionLine(insp, i)).toContain(stalled ? 'stops at the shaft' : 'motion reaches');
+    }
+    expect(inspectionMarks(toy, run, inspectPhase(1)).find((m) => m.id === 'shaft')!.state).toBe(
+      'stops',
+    );
+    // Without a phase it is the whole run's verdict, as a test reports it.
+    expect(inspectToy(toy, run).stopsAt).toBe(0);
+  });
+});
+
+describe('putting a part back in its own spot', () => {
+  it('changes nothing but still clears a test or an inspection, every time', () => {
+    const toy = faultyToy('music-box');
+    let bench = { toy, history: [] as ToyState[] };
+    const home = toy.parts.medium;
+    for (let i = 0; i < 3; i++) {
+      // Picked up during a test or a few steps into an inspection.
+      const before =
+        i % 2 ? startTest(bench.toy, 0) : stepInspection(stepInspection(undefined, toy), toy);
+      expect(before).toBeDefined();
+      const placed = putDown(bench, 'medium', home);
+      expect(placed).toMatchObject({ run: undefined, moved: false });
+      expect(placed.message).toBe('Put the medium gear back down.');
+      expect(placed.bench).toBe(bench);
+      bench = placed.bench;
+      expect(stepInspection(placed.run, bench.toy)).toMatchObject({ mode: 'inspect', step: 0 });
+    }
+    expect(bench.history).toHaveLength(0);
+    const moved = putDown(bench, 'medium', 'tray-2');
+    expect(moved).toMatchObject({ run: undefined, moved: true });
+    expect(moved.bench.history).toHaveLength(1);
   });
 });

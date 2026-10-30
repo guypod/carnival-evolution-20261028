@@ -16,6 +16,7 @@ import {
   inspectionMarks,
   LEVER_REST,
   startTest,
+  putDown,
   stepInspection,
   type BenchRun,
   type InspectionMark,
@@ -31,9 +32,7 @@ import {
   LEVER_PIN,
   leverTurn,
   releaseTarget,
-  movePart,
   openBench,
-  partLabel,
   SHAFT,
   recordRepair,
   resetBench,
@@ -171,13 +170,12 @@ export function startWorkshop(
       const part = held;
       held = drag = undefined;
       const slot = dropSlot(bench.toy, target);
-      if (slot === bench.toy.parts[part]) {
-        say(`Put the ${partLabel(part)} back down.`);
-        return refresh();
-      }
+      const placed = putDown(bench, part, slot);
       // The ring follows the part to where it lands.
-      focusKey = `part:${part}`;
-      return apply(movePart(bench.toy, part, slot));
+      if (placed.moved) focusKey = `part:${part}`;
+      ({ bench, run } = placed);
+      say(placed.message);
+      return refresh();
     }
     if (target.kind === 'part') {
       held = target.id;
@@ -201,7 +199,8 @@ export function startWorkshop(
     held = drag = undefined;
     cancelAnimationFrame(frame);
     run = stepInspection(run, bench.toy);
-    if (run.mode === 'inspect') say(inspectionLine(inspectToy(bench.toy, run.result), run.step));
+    if (run.mode === 'inspect')
+      say(inspectionLine(inspectToy(bench.toy, run.result, runPhase()), run.step));
     refresh();
   }
 

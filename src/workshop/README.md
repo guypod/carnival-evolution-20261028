@@ -52,10 +52,13 @@ toy's mechanism, so what moves follows from where the parts are.
 ## Inspecting a toy
 
 Inspect step (I) is a slow, untimed crank. The first press stops any test that
-is animating and holds the toy still at the start of the same run the Test
-button uses. Each press after that turns the crank (or pulls the lever) one step
-further, in 8 even steps that wrap round, so gears, lever, rod, cam and frog
-stand where a test would carry them, Quiet or not. Clicks and the keyboard ring
+is animating and holds the same run the Test button uses at its first step: the
+crank a sixteenth of the way through the run (an eighth of a turn, or a little
+way into the lever's pull), not at rest. Each press after that turns the crank
+(or pulls the lever) one step further, in 8 even steps that wrap round, so
+gears, lever, rod, cam and frog stand where a test would carry them, Quiet or
+not. A frog shaft that will stall on the pebble shows as turning until the cam
+actually meets the pebble, and stalled from that step on. Clicks and the keyboard ring
 follow the parts to where they are drawn at that step.
 
 On the bench, every part along the drive gets a numbered arrow with words:
@@ -71,8 +74,9 @@ hammer stays still: the rod slides on the loose pivot pin, so its push never
 reaches the hammer.
 
 Press Test to leave the inspection and run the toy normally. Any move, tool use,
-Undo (even one with nothing to undo), Reset or toy switch clears the inspection, even one that puts the toy back
-as it was, so the next press starts at step 1. Inspecting changes nothing and
+Undo (even one with nothing to undo), Reset or toy switch clears the inspection
+or a running test, even one that puts the toy back as it was, such as picking a
+part up and putting it back in its own spot, so the next press starts at step 1. Inspecting changes nothing and
 never records a repair; only Test does.
 
 ## Repairs and the midway

@@ -14,6 +14,7 @@ import {
   camOutline,
   frogPose,
   frogRig,
+  stallTurn,
   stillPhase,
   type CamShape,
 } from './cams';
@@ -692,6 +693,26 @@ export function startTest(toy: ToyState, now: number): BenchRun {
   return { result: runToy(toy), mode: 'test', startedAt: now };
 }
 
+/**
+ * Putting a held part down on `slot`. Back in its own slot nothing moves, but it
+ * is still an edit, so like every edit it clears any test or inspection.
+ */
+export function putDown(
+  bench: Bench,
+  part: string,
+  slot: string,
+): { bench: Bench; run: BenchRun | undefined; moved: boolean; message: string } {
+  if (slot === bench.toy.parts[part])
+    return {
+      bench,
+      run: undefined,
+      moved: false,
+      message: `Put the ${partLabel(part)} back down.`,
+    };
+  const result = movePart(bench.toy, part, slot);
+  return { bench: commit(bench, result), run: undefined, moved: true, message: result.message };
+}
+
 /** One press of Inspect step: the next step of an inspection, or the first one, which stops any test. */
 export function stepInspection(current: BenchRun | undefined, toy: ToyState): BenchRun {
   const step = current?.mode === 'inspect' ? current.step + 1 : 0;
@@ -725,8 +746,12 @@ export interface Inspection {
 const turnWord = (spin: number) =>
   spin > 0 ? 'turns with the crank' : spin < 0 ? 'turns against the crank' : 'stays still';
 
-/** Walks the same run the Test button uses, from input to output, so the rig never disagrees with a test. */
-export function inspectToy(toy: ToyState, run: Run = runToy(toy)): Inspection {
+/**
+ * Walks the same run the Test button uses, from input to output, so the rig never
+ * disagrees with a test. Given the `phase` an inspection holds, a shaft that will
+ * stall only stalls once its pose has turned the cam onto the pebble.
+ */
+export function inspectToy(toy: ToyState, run: Run = runToy(toy), phase?: number): Inspection {
   const stages: Stage[] = [];
   if (run.kind === 'gears') {
     const gears = gearsOf(toy).sort((a, b) => a.x - b.x);
@@ -783,17 +808,27 @@ export function inspectToy(toy: ToyState, run: Run = runToy(toy)): Inspection {
       });
     }
   } else {
+    const stalls =
+      run.stalled &&
+      (phase === undefined || frogPose(run.cam, phase, true).turns >= stallTurn(run.cam));
     stages.push(
-      run.stalled
+      stalls
         ? {
             id: 'shaft',
             part: 'shaft',
             moving: false,
             note: 'The shaft stalls: the cam is wedged on a pebble.',
           }
-        : { id: 'shaft', part: 'shaft', moving: true, note: 'The shaft turns with the crank.' },
+        : {
+            id: 'shaft',
+            part: 'shaft',
+            moving: true,
+            note: run.stalled
+              ? 'The shaft turns with the crank, and the cam is closing on a pebble.'
+              : 'The shaft turns with the crank.',
+          },
     );
-    if (!run.stalled) {
+    if (!stalls) {
       stages.push(
         run.cam
           ? {
@@ -809,7 +844,13 @@ export function inspectToy(toy: ToyState, run: Run = runToy(toy)): Inspection {
               note: 'There is no cam on the shaft, so nothing lifts the rod.',
             },
       );
-      if (run.cam) stages.push({ id: 'frog', part: 'frog', moving: true, note: run.message });
+      if (run.cam)
+        stages.push({
+          id: 'frog',
+          part: 'frog',
+          moving: true,
+          note: run.stalled ? 'The follower lifts the frog.' : run.message,
+        });
     }
   }
   // A stall upstream means nothing after it moves either.
@@ -848,7 +889,7 @@ export interface InspectionMark {
  * the same targets the bench draws, clicks and rings, so a mark sits on its part.
  */
 export function inspectionMarks(toy: ToyState, run: Run, phase: number): InspectionMark[] {
-  const { stages, stopsAt } = inspectToy(toy, run);
+  const { stages, stopsAt } = inspectToy(toy, run, phase);
   const at = new Map(targets(toy, phase, run).map((t) => [t.id, t]));
   const fixed: Record<string, { x: number; y: number }> = {
     crank: { x: GEAR_LEFT + CRANK.x * GEAR_UNIT, y: GEAR_Y },
