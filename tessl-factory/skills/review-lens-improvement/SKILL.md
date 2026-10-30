@@ -64,8 +64,8 @@ record`. Leave PR #299 and every other pull request alone.
 
 ## Inspect
 
-Note the actual start time. Gather evidence since the `since` that `due` printed (the last complete run, less a one-hour overlap; partial and failed runs never move it)
-(or the last 24 hours on the first run, or `since` for a manual run), all
+Note the actual start time. Gather evidence since the `since` that `due` printed (the last complete scheduled run, less a one-hour overlap; partial, failed and manual runs never move it)
+(before any complete scheduled run, the start owed since the first scheduled attempt, or `since` for a manual run), all
 of it public in this repository:
 
 - **lens-tuning:** merged and open pull requests, their diffs and files

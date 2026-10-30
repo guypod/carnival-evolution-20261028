@@ -623,3 +623,55 @@ test('failed and partial runs keep the last successful checkpoint, and the retry
   assert.equal(due.due, true);
   assert.equal(due.since, '2026-10-30T04:41:00.000Z');
 });
+
+test('failed first runs keep the initial uncovered start instead of sliding it forward', () => {
+  const failed = (runId, startedAt) => ({
+    runId,
+    learner: 'lens-tuning',
+    trigger: 'schedule',
+    startedAt,
+    finishedAt: startedAt,
+    coverage: { status: 'failed', inspected: [], gaps: 'x' },
+  });
+  const ledger = { ...emptyLedger(), runs: [failed('a', '2026-10-29T05:40:00.000Z')] };
+  assert.equal(checkpoint(ledger, 'lens-tuning'), null);
+  const next = dueSlot(ledger, '2026-10-30T05:41:00.000Z', 'lens-tuning');
+  assert.equal(next.since, '2026-10-28T05:40:00.000Z');
+  const later = {
+    ...ledger,
+    runs: [...ledger.runs, failed('b', '2026-10-30T05:41:00.000Z')],
+  };
+  assert.equal(dueSlot(later, '2026-10-30T11:41:00.000Z', 'lens-tuning').since, next.since);
+});
+
+test('a complete manual inspection does not advance scheduled coverage', () => {
+  const ledger = {
+    ...emptyLedger(),
+    runs: [
+      {
+        runId: 'a',
+        learner: 'lens-tuning',
+        trigger: 'schedule',
+        slot: '2026-10-28T05:40 Europe/London',
+        startedAt: '2026-10-28T05:40:00.000Z',
+        finishedAt: '2026-10-28T05:50:00.000Z',
+        coverage: { status: 'complete', inspected: [] },
+      },
+      {
+        runId: 'm',
+        learner: 'lens-tuning',
+        trigger: 'manual',
+        manualId: 'manual-1',
+        since: '2026-10-29T12:00:00.000Z',
+        startedAt: '2026-10-30T12:00:00.000Z',
+        finishedAt: '2026-10-30T12:10:00.000Z',
+        coverage: { status: 'complete', inspected: [] },
+      },
+    ],
+  };
+  assert.equal(checkpoint(ledger, 'lens-tuning'), '2026-10-28T05:40:00.000Z');
+  assert.equal(
+    dueSlot(ledger, '2026-10-30T17:41:00.000Z', 'lens-tuning').since,
+    '2026-10-28T04:40:00.000Z',
+  );
+});

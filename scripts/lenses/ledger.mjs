@@ -169,21 +169,31 @@ export const RETRY_OVERLAP_MINUTES = 60;
 
 /**
  * A learner's last successful coverage checkpoint: the start of its latest
- * complete run. Partial and failed runs never advance it.
+ * complete scheduled run. Partial and failed runs never advance it, and nor
+ * does a manual inspection, whose bounded window may skip an older interval.
  */
 export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
   const done = ledger.runs
-    .filter((r) => learnerOf(r) === learner && r.coverage.status === 'complete')
+    .filter(
+      (r) => r.trigger !== 'manual' && learnerOf(r) === learner && r.coverage.status === 'complete',
+    )
     .map((r) => Date.parse(r.startedAt));
   return done.length ? new Date(Math.max(...done)).toISOString() : null;
 }
 
-/** Where the next run starts reading: the checkpoint less an overlap, so no gap is skipped. */
+/**
+ * Where the next scheduled run starts reading: the checkpoint less an overlap,
+ * so no gap is skipped. Before any complete scheduled run, it stays anchored at
+ * the first scheduled attempt's window, so failed first runs never move it on.
+ */
 export function retrySince(ledger, now, learner = DEFAULT_LEARNER) {
   const mark = checkpoint(ledger, learner);
-  const floor = Date.parse(now) - MANUAL_LOOKBACK_HOURS * 3600_000;
-  const from = mark ? Date.parse(mark) - RETRY_OVERLAP_MINUTES * 60_000 : floor;
-  return new Date(from).toISOString();
+  if (mark) return new Date(Date.parse(mark) - RETRY_OVERLAP_MINUTES * 60_000).toISOString();
+  const lookback = MANUAL_LOOKBACK_HOURS * 3600_000;
+  const starts = ledger.runs
+    .filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner)
+    .map((r) => (r.since ? Date.parse(r.since) : Date.parse(r.startedAt) - lookback));
+  return new Date(Math.min(Date.parse(now) - lookback, ...starts)).toISOString();
 }
 
 export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
@@ -421,7 +431,9 @@ export function recordRun(ledger, run) {
   }
   const { runId, learner, trigger, startedAt, finishedAt, coverage } = run;
   const when =
-    trigger === 'manual' ? { manualId: run.manualId, since: run.since } : { slot: run.slot };
+    trigger === 'manual'
+      ? { manualId: run.manualId, since: run.since }
+      : { slot: run.slot, ...(run.since ? { since: run.since } : {}) };
   return {
     ...ledger,
     runs: [
