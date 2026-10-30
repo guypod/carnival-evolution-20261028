@@ -6,6 +6,9 @@ import {
   addKeepsake,
   balloonPosition,
   BALLOON_SCENE,
+  LANTERNS,
+  RESTING_POSITION,
+  STARS,
   cleanWish,
   createKeepsakeStore,
   makeBalloon,
@@ -69,5 +72,18 @@ describe('wish balloons', () => {
     expect(start.y).toBeLessThan(BALLOON_SCENE.height);
     // The wish is drawn 100px below the centre, so it must leave the canvas too.
     expect(end.y + 100).toBeLessThan(0);
+  });
+
+  it('keeps the stall art fixed and inside the scene, so Quiet redraws match', () => {
+    for (const point of [...STARS, ...LANTERNS]) {
+      expect(point.x).toBeGreaterThanOrEqual(0);
+      expect(point.x).toBeLessThanOrEqual(BALLOON_SCENE.width);
+      expect(point.y).toBeGreaterThan(0);
+      expect(point.y).toBeLessThan(BALLOON_SCENE.height / 2);
+    }
+    // The resting balloon and its wish tag (to 108px below the centre) sit above
+    // the counter, so the wish never covers the stall's sign.
+    expect(RESTING_POSITION.y - 34).toBeGreaterThan(0);
+    expect(RESTING_POSITION.y + 108).toBeLessThan(balloonPosition(0).y + 70);
   });
 });

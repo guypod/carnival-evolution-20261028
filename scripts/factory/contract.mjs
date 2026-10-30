@@ -12,18 +12,27 @@ export const REVIEWER_ID = 325629464;
 const ENVIRONMENT = 'carnival-evolution-20261028-factory';
 const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
 
-const action = (name, timeout) => ({
+// One static key every writing action holds, from any trigger, schedule or
+// manual `tessl action trigger`, so no two runs change the app at once. It sits
+// beside each trigger's own per-issue or per-PR key; it does not replace them.
+// follow-ticket-changes is left out on purpose: it cancels writers, and queued
+// behind the run it should cancel it could not.
+export const WRITER_KEY = 'carnival-app-writer';
+const writer = { keys: [{ key: WRITER_KEY, limit: 1 }], mode: 'queue' };
+
+const action = (name, timeout, concurrency = writer) => ({
   skill: `${SKILL_PREFIX}${name}`,
   environment: ENVIRONMENT,
   agent: 'claude-code',
   model: 'claude-opus-5-5',
   timeout,
+  ...(concurrency ? { concurrency } : {}),
 });
 
 export const EXPECTED_ACTIONS = {
   'implement-github-issue': action('implement-github-issue', '15m'),
   shepherd: action('shepherd', '10m'),
-  'follow-ticket-changes': action('follow-ticket-changes', '5m'),
+  'follow-ticket-changes': action('follow-ticket-changes', '5m', null),
   // The test health maintenance loop, from the repository's own skill. It files
   // issues only; a person labels them before the factory ships a fix.
   'test-health': {
@@ -32,16 +41,83 @@ export const EXPECTED_ACTIONS = {
     agent: 'claude-code',
     model: 'claude-opus-5-5',
     timeout: '15m',
+    concurrency: writer,
+  },
+  // The visual repair loop, from the repository's own skill. It renders changed
+  // screens in a headless browser and opens at most one draft repair PR a run,
+  // inspecting even while other pull requests are open and deferring only a repair whose files overlap one.
+  'visual-repair': {
+    skill: 'file:tessl-factory#visual-repair',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '30m',
+    concurrency: writer,
+  },
+  // The factory learning loops (issue #371): lens tuning, review feedback,
+  // run learning and instruction tidy, one skill chosen by its LEARNER input.
+  // They save proposals to the factory-state/review-lenses ledger and never
+  // edit anything else; the external block coordinator decides each one. It
+  // holds the writer key because it pushes that ledger.
+  'review-lens-improvement': {
+    skill: 'file:tessl-factory#review-lens-improvement',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '20m',
+    concurrency: writer,
   },
 };
 
-// Weekly, per WORKSHOP module 04. No other schedules: gameplay batching is
-// owned outside this repository.
+// Test health weekly, per WORKSHOP module 04, visual repair every six hours
+// (issue #303), and the four proposal-only factory learners (issue #371) in
+// the scheduler's own Europe/London timezone so DST needs no change: lens
+// tuning twenty minutes before each six-hour London block ends, review
+// feedback and run learning daily, and the instruction tidy on Mondays. No
+// other schedules: gameplay batching is owned outside this repository.
+const learner = (name) => ({
+  use: 'review-lens-improvement',
+  inputs: { LEARNER: name },
+});
 export const EXPECTED_SCHEDULES = {
   'test-health-weekly': {
     cron: '0 9 * * 1',
     description: 'Weekly test health check: file an issue for each test that cannot fail',
     action: 'test-health',
+  },
+  'visual-repair-six-hourly': {
+    cron: '17 */6 * * *',
+    description:
+      'Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR',
+    action: 'visual-repair',
+  },
+  'review-lens-improvement-six-hourly': {
+    cron: '40 5,11,17,23 * * *',
+    timezone: 'Europe/London',
+    description:
+      'Twenty minutes before each six-hour London block ends: propose evidence-based review lens improvements to the fallback ledger',
+    action: learner('lens-tuning'),
+  },
+  'review-feedback-learning-daily': {
+    cron: '10 5 * * *',
+    timezone: 'Europe/London',
+    description:
+      'Daily at 05:10 London: propose improvements from review feedback that was accepted or declined',
+    action: learner('review-feedback'),
+  },
+  'run-learning-daily': {
+    cron: '20 5 * * *',
+    timezone: 'Europe/London',
+    description:
+      'Daily at 05:20 London: propose improvements from factory run friction, failures and no-op causes',
+    action: learner('run-learning'),
+  },
+  'instruction-tidy-weekly': {
+    cron: '30 5 * * 1',
+    timezone: 'Europe/London',
+    description:
+      'Mondays at 05:30 London: propose replacing AGENTS.md guidance with tests, lint or area-scoped instructions',
+    action: learner('instruction-tidy'),
   },
 };
 

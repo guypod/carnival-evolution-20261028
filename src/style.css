@@ -2163,7 +2163,6 @@ kbd {
   box-shadow: none;
 }
 
-.balloon-scene,
 .snack-scene,
 .toy-scene {
   display: block;
@@ -2173,15 +2172,221 @@ kbd {
   border-radius: var(--radius);
 }
 
-.balloon-form fieldset,
 .snack-form fieldset {
   border: 1px solid var(--color-muted);
   border-radius: var(--radius);
   margin: 0 0 0.75rem;
 }
 
-.balloon-keepsakes {
+/* Wish Balloon: a lantern-lit stall. The scene and the counter sit side by
+   side on wide screens and stack on narrow ones. */
+.balloon-stall {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(16rem, 2fr);
+  gap: 0;
+  margin: 1rem 0 1.5rem;
+  border: 3px solid var(--color-wood);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: 0 10px 0 var(--color-wood);
+}
+
+.balloon-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 6 / 5;
+}
+
+.balloon-counter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border-left: 3px solid var(--color-wood);
+  background:
+    repeating-linear-gradient(90deg, var(--color-stripeA) 0 24px, var(--color-stripeB) 24px 48px)
+      top / 100% 14px no-repeat,
+    var(--color-surface);
+  padding-top: calc(14px + 1.25rem);
+}
+
+.balloon-intro {
+  margin: 0;
+}
+
+.balloon-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.balloon-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.75rem;
+  border: 2px solid var(--color-wood);
+  border-radius: var(--radius);
+}
+
+.balloon-colors legend {
+  padding: 0 0.35rem;
+  font-weight: bold;
+}
+
+.balloon-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem 0.35rem 0.45rem;
+  border: 2px solid var(--color-muted);
+  border-radius: 999px;
+  background: var(--color-background);
+  cursor: pointer;
+}
+
+.balloon-swatch input {
+  appearance: none;
+  width: 1.1rem;
+  height: 1.35rem;
+  margin: 0;
+  border: 2px solid var(--color-stripeB);
+  border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
+  cursor: pointer;
+}
+
+.balloon-swatch-stripeA input {
+  background: var(--color-stripeA);
+}
+
+.balloon-swatch-accent input {
+  background: var(--color-accent);
+}
+
+.balloon-swatch-water input {
+  background: var(--color-water);
+}
+
+.balloon-swatch-muted input {
+  background: var(--color-muted);
+}
+
+.balloon-swatch:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 2px var(--color-accent);
+  font-weight: bold;
+}
+
+.balloon-swatch:has(input:focus-visible) {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.balloon-form > label {
+  font-weight: bold;
+}
+
+#balloon-wish {
+  padding: 0.6rem 0.75rem;
+  border: 2px solid var(--color-wood);
+  border-radius: var(--radius);
+  background: var(--color-stripeB);
+  color: var(--color-background);
+  font: inherit;
+}
+
+#balloon-wish:focus-visible,
+.balloon-form button:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.balloon-form button {
+  padding: 0.7rem 1rem;
+  border: 2px solid var(--color-background);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font: inherit;
+  font-weight: bold;
+  box-shadow: 0 4px 0 var(--color-wood);
+  cursor: pointer;
+}
+
+.balloon-form button:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--color-wood);
+}
+
+.balloon-status {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--color-accent);
   overflow-wrap: anywhere;
+}
+
+.balloon-shelf h2 {
+  margin: 0 0 0.75rem;
+}
+
+.balloon-keepsakes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.balloon-tag {
+  max-width: 100%;
+  padding: 0.45rem 0.8rem 0.45rem 0.65rem;
+  border-left: 8px solid var(--color-muted);
+  border-radius: 4px var(--radius) var(--radius) 4px;
+  background: var(--color-stripeB);
+  color: var(--color-background);
+}
+
+.balloon-tag-stripeA {
+  border-left-color: var(--color-stripeA);
+}
+
+.balloon-tag-accent {
+  border-left-color: var(--color-accent);
+}
+
+.balloon-tag-water {
+  border-left-color: var(--color-water);
+}
+
+.balloon-tag-muted {
+  border-left-color: var(--color-muted);
+}
+
+.balloon .note {
+  color: var(--color-muted);
+}
+
+@media (max-width: 720px) {
+  .balloon-stall {
+    grid-template-columns: 1fr;
+  }
+
+  .balloon-counter {
+    border-left: 0;
+    border-top: 3px solid var(--color-wood);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .balloon-form button:active {
+    transform: none;
+  }
 }
 
 .room h1:focus {

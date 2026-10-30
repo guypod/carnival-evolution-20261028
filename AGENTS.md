@@ -116,8 +116,9 @@ You often work on an issue with nobody around to answer questions.
 - `skills/set-up-your-fork/SKILL.md`: turn on Issues, Actions and GitHub Pages
   in a fork, and deploy the carnival.
 - `tessl-factory/skills/`: sample skills for scheduled maintenance loops
-  (rule mining, doc gardening, test health). Each one files issues and never
-  changes code.
+  (rule mining, doc gardening, test health, visual repair). Each one files
+  issues and never changes code, except `visual-repair`, which opens at most
+  one bounded draft repair pull request a run.
 
 `WORKSHOP.md` walks people through the workshop this repo was built for, module
 by module.

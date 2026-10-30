@@ -7,7 +7,20 @@ pins that file to an approved contract and tests the routes offline.
   `claude-code`, model `claude-opus-5-5`, environment, timeouts) and the eleven
   triggers, with their guards, concurrency keys (the existing 90s shepherd
   debounce, and replies sharing the implement lock) and actions, plus the
-  `test-health` action and its one weekly schedule.
+  `test-health` and `visual-repair` actions with their two schedules (weekly
+  and every six hours). Every writing action also holds the static
+  `carnival-app-writer` key (limit 1, mode `queue`) beside its trigger's own
+  keys, so at most one writer changes the app at a time. `follow-ticket-changes`
+  does not hold it, because it cancels writers.
+
+  The key is taken at action admission, so start a manual run through the
+  action: `tessl action trigger <action> --request-id <stable id> --input
+KEY=value`. The action's declared key applies; `--concurrency-key
+carnival-app-writer=1` states it explicitly. A raw launch run bypasses
+  action keys and must not be used. Runs admitted before the key was synced
+  keep their old snapshot, so drain or reconcile them before counting on the
+  serialization.
+
 - `check-contract.mjs`: fails when `tessl.json`'s `actions`, `triggers` or `schedules`
   differ from the contract. It does not check the top-level `name`, `mode` or
   `dependencies`, which `tessl install` manages.
