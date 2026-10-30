@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "timezone": "Europe/London",
+  "runs": [
+    {
+      "runId": "01a18d46-50da-7046-b218-76d25345238a",
+      "learner": "lens-tuning",
+      "trigger": "manual",
+      "manualId": "manual-imac-lens-setup-bb86036-20261030",
+      "since": "2026-10-29T14:46:38.040Z",
+      "startedAt": "2026-10-30T14:46:38.040Z",
+      "finishedAt": "2026-10-30T14:47:51.000Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#228",
+          "#232",
+          "#236",
+          "#243",
+          "#250",
+          "#257",
+          "#262",
+          "#263",
+          "#271",
+          "#272",
+          "#276",
+          "#283",
+          "#299",
+          "#304",
+          "#375"
+        ],
+        "gaps": "Read the PR list since 'since' (15 PRs, under the 100 limit) and every inline review comment on them, plus the #304 description and file list. Not read in this bounded run: PR diffs, review summary bodies, CI runs, the factory-state/visual-repair branch, tests and live-play notes."
+      },
+      "fingerprints": [
+        "12d72f039beaf6b6"
+      ]
+    }
+  ],
+  "proposals": [
+    {
+      "fingerprint": "12d72f039beaf6b6",
+      "learner": "lens-tuning",
+      "kind": "new-lens",
+      "target": "new:drawn-geometry-agreement",
+      "title": "Check that drawn geometry, hit tests and reported outcomes share one source",
+      "change": "Add a lens for canvas code under src/ (games, midway, workshop): for every drawn part that the player can click, drag or watch move, check that its pointer hit area, its movement logic and any reported outcome are computed from the same geometry as the drawing, and flag anything hidden but still hittable, or drawn but not connected to what it is said to drive.",
+      "rationale": "On #283 the first review let through drawing/logic mismatches (the frog not following the cam, the bell rod staying fixed while its lever turned, hit tests using radius circles instead of the drawn gear outline) that later review rounds found one at a time, costing several extra rounds. #263 had the same class: a hidden gift that still intercepted clicks. src/workshop/** is outside the carnival-house-rules lens globs, and no lens names this check.",
+      "weakens": false,
+      "standards": [],
+      "netLines": 8,
+      "evidence": [
+        {
+          "kind": "pr",
+          "ref": "#283",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/283"
+        },
+        {
+          "kind": "review-finding",
+          "ref": "#283 r4418431361",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/283#discussion_r4418431361"
+        },
+        {
+          "kind": "review-finding",
+          "ref": "#283 r4418431365",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/283#discussion_r4418431365"
+        },
+        {
+          "kind": "review-finding",
+          "ref": "#283 r4418847524",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/283#discussion_r4418847524"
+        },
+        {
+          "kind": "pr",
+          "ref": "#263",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/263"
+        },
+        {
+          "kind": "review-finding",
+          "ref": "#263 r4417033845",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/263#discussion_r4417033845"
+        }
+      ],
+      "status": "open",
+      "firstSeen": "2026-10-30T14:47:51.000Z",
+      "seenIn": [
+        "01a18d46-50da-7046-b218-76d25345238a"
+      ],
+      "decisions": []
+    }
+  ]
+}
