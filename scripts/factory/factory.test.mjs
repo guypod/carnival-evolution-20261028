@@ -5,7 +5,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { checkContract, OWNER_ID, REPOSITORY_ID, REVIEWER_ID } from './contract.mjs';
+import {
+  checkContract,
+  OWNER_ID,
+  PR_WRITING_INSTRUCTIONS,
+  REPOSITORY_ID,
+  REVIEWER_ID,
+} from './contract.mjs';
 import { matchesTrigger, matchingTriggers } from './matcher.mjs';
 
 const manifest = JSON.parse(readFileSync(new URL('../../tessl.json', import.meta.url), 'utf8'));
@@ -84,6 +90,34 @@ const positives = {
 
 test('the committed manifest keeps the contract', () => {
   assert.deepEqual(checkContract(manifest), []);
+});
+
+test('only the three PR-writing actions carry instructions, and they reach docs/pr-writing.md', () => {
+  const withInstructions = Object.entries(manifest.actions)
+    .filter(([, a]) => Object.hasOwn(a, 'instructions'))
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(withInstructions, ['implement-github-issue', 'shepherd', 'visual-repair']);
+  for (const name of withInstructions) {
+    assert.equal(manifest.actions[name].instructions, PR_WRITING_INSTRUCTIONS, name);
+    assert.ok(manifest.actions[name].concurrency, `${name} keeps the writer key`);
+  }
+  // The instruction names a file that exists, and it opens with the contract.
+  const path = PR_WRITING_INSTRUCTIONS.match(/read (\S+\.md)/)[1];
+  const contract = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+  assert.match(contract, /^# Experiment pull requests: write for the reviewer$/m);
+  assert.match(contract, /^## Cold-reader pass$/m);
+  // The published skills stay referenced, not forked.
+  assert.equal(
+    manifest.actions['implement-github-issue'].skill,
+    'tessl-labs/factory@0.6.0#implement-github-issue',
+  );
+  assert.equal(manifest.actions.shepherd.skill, 'tessl-labs/factory@0.6.0#shepherd');
+  // visual-repair's own skill and root AGENTS.md also point at it.
+  for (const file of ['tessl-factory/skills/visual-repair/SKILL.md', 'AGENTS.md']) {
+    const text = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
+    assert.match(text, /`docs\/pr-writing\.md`/, file);
+  }
 });
 
 test('every one of the eleven routes has a positive fixture that only it accepts', () => {
@@ -265,6 +299,11 @@ test('unsafe mutants fail the contract', () => {
       (m.actions['implement-github-issue'].concurrency.keys[0].key = 'implement-writer'),
     'let visual repair join instead of queue': (m) =>
       (m.actions['visual-repair'].concurrency.mode = 'join'),
+    'drop the PR writing instructions from shepherd': (m) => delete m.actions.shepherd.instructions,
+    'reword the PR writing instructions on implement': (m) =>
+      (m.actions['implement-github-issue'].instructions = 'Write a short description.'),
+    'give follow-ticket-changes instructions': (m) =>
+      (m.actions['follow-ticket-changes'].instructions = PR_WRITING_INSTRUCTIONS),
   };
   for (const [label, change] of Object.entries(mutants)) {
     const m = clone();

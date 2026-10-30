@@ -9,6 +9,7 @@
       "agent": "claude-code",
       "model": "claude-opus-5-5",
       "timeout": "15m",
+      "instructions": "Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.",
       "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "shepherd": {
@@ -17,6 +18,7 @@
       "agent": "claude-code",
       "model": "claude-opus-5-5",
       "timeout": "10m",
+      "instructions": "Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.",
       "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "follow-ticket-changes": {
@@ -40,6 +42,7 @@
       "agent": "claude-code",
       "model": "claude-opus-5-5",
       "timeout": "30m",
+      "instructions": "Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.",
       "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     },
     "review-lens-improvement": {

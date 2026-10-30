@@ -21,6 +21,12 @@ carnival-app-writer=1` states it explicitly. A raw launch run bypasses
   keep their old snapshot, so drain or reconcile them before counting on the
   serialization.
 
+  `implement-github-issue`, `shepherd` and `visual-repair` also carry an
+  `instructions` line that sends their agent to `docs/pr-writing.md` before it
+  writes a pull request description. It takes effect from the default branch,
+  so only after merge. A manual `--instructions` replaces it, so a manual run
+  must repeat it.
+
 - `check-contract.mjs`: fails when `tessl.json`'s `actions`, `triggers` or `schedules`
   differ from the contract. It does not check the top-level `name`, `mode` or
   `dependencies`, which `tessl install` manages.
