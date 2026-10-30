@@ -147,9 +147,13 @@ export function startWorkshop(
     draw();
   }
 
+  /** The inspection rig's step, and the set-up it was stepping through; any bench edit, undo, reset or toy switch starts it over. */
+  let inspecting: { toy: string; step: number } | undefined;
+
   function apply(result: { toy: Bench['toy']; changed: boolean; message: string }) {
     bench = commit(bench, result);
     run = undefined;
+    inspecting = undefined;
     say(result.message);
     refresh();
   }
@@ -181,9 +185,6 @@ export function startWorkshop(
     }
     refresh();
   }
-
-  /** The inspection rig's step, and the set-up it was stepping through; a change starts it over. */
-  let inspecting: { toy: string; step: number } | undefined;
 
   function inspect() {
     held = drag = undefined;
@@ -228,6 +229,7 @@ export function startWorkshop(
   function selectToy(id: ToyId) {
     held = drag = undefined;
     run = undefined;
+    inspecting = undefined;
     focusKey = undefined;
     benches[bench.toy.id] = bench;
     bench = benches[id] ?? openBench(repairs.toys[id] ?? faultyToy(id));
@@ -545,6 +547,7 @@ export function startWorkshop(
     }
     bench = undo(bench);
     run = undefined;
+    inspecting = undefined;
     say('Undid the last change.');
     refresh();
   }
@@ -552,6 +555,7 @@ export function startWorkshop(
   function reset() {
     held = drag = undefined;
     run = undefined;
+    inspecting = undefined;
     bench = resetBench(bench);
     say('The toy is back as it came in, faults and all. Undo brings your work back.');
     refresh();
