@@ -27,6 +27,7 @@
 //   node scripts/lenses/ledger.mjs due [learner]     is a London slot due now?
 //   node scripts/lenses/ledger.mjs manual <learner>  may a manual run start now?
 //   node scripts/lenses/ledger.mjs record <file>     save a finished run
+//   node scripts/lenses/ledger.mjs correct <file>    downgrade a false coverage claim
 //   node scripts/lenses/ledger.mjs pending           proposals awaiting a decision
 //   node scripts/lenses/ledger.mjs decide <file>     record apply/defer/reject
 //   node scripts/lenses/ledger.mjs issue <fp>        the issue for an accepted proposal
@@ -134,7 +135,86 @@ const EVIDENCE_KINDS = [
   'factory-comment',
   'instruction',
 ];
+// A correction may also cite the issue that reported the false claim.
+const CORRECTION_EVIDENCE_KINDS = [...EVIDENCE_KINDS, 'issue'];
 const COVERAGE = ['complete', 'partial', 'failed'];
+
+// The sources each learner must read, as in its skill. A run records one
+// receipt per source in coverage.sources. A receipt cannot prove the source
+// was understood, only what was listed and read, so classification is
+// conservative: complete coverage needs every source listed in full
+// (enumeration "complete") and read in full (read "full"). A capped list, a
+// count without content, a truncated read or a missing receipt is partial at
+// best, and gives no through unless that source names its own through.
+export const REQUIRED_SOURCES = Object.freeze({
+  'lens-tuning': [
+    'pull-requests',
+    'pr-diffs',
+    'review-comments',
+    'review-bodies',
+    'visual-repair',
+    'ci-runs',
+    'tests',
+    'live-play',
+  ],
+  'review-feedback': ['review-comments', 'review-bodies', 'follow-up-commits'],
+  'run-learning': ['factory-comments', 'ci-runs', 'pull-requests', 'run-outcomes'],
+  'instruction-tidy': ['instructions', 'review-lenses', 'tests-and-lint'],
+});
+const ENUMERATION = ['complete', 'capped', 'count-only', 'none'];
+const READ = ['full', 'truncated', 'none'];
+
+const sourceDone = (s) => s.enumeration === 'complete' && s.read === 'full';
+
+/** The errors in a run's per-source receipts, given its coverage status. */
+export function sourceErrors(run) {
+  const required = Object.hasOwn(REQUIRED_SOURCES, run?.learner ?? '')
+    ? REQUIRED_SOURCES[run.learner]
+    : null;
+  const sources = run?.coverage?.sources;
+  if (!required) return [];
+  if (!Array.isArray(sources) || !sources.every(isObject)) {
+    return ['coverage.sources must list a receipt for every required source'];
+  }
+  const errors = [];
+  const names = sources.map((s) => s.source);
+  for (const [i, s] of sources.entries()) {
+    const at = `coverage.sources[${i}]`;
+    if (!required.includes(s.source)) errors.push(`${at}: unknown source ${s.source}`);
+    if (names.indexOf(s.source) !== i) errors.push(`${at}: ${s.source} is listed twice`);
+    if (!ENUMERATION.includes(s.enumeration)) {
+      errors.push(`${at}: enumeration must be one of ${ENUMERATION.join(', ')}`);
+    }
+    if (!READ.includes(s.read)) errors.push(`${at}: read must be one of ${READ.join(', ')}`);
+    if (!isText(s.scope)) errors.push(`${at}: scope must say what was listed and read`);
+    if (!sourceDone(s) && !isText(s.gaps)) errors.push(`${at}: say what was not read in gaps`);
+    if (s.through !== undefined && (!isTime(s.through) || sourceDone(s))) {
+      errors.push(`${at}: through is a time, and only for a source not read in full`);
+    }
+  }
+  const missing = required.filter((name) => !names.includes(name));
+  const status = run.coverage.status;
+  if (status === 'complete') {
+    if (missing.length)
+      errors.push(`complete coverage is missing receipts for ${missing.join(', ')}`);
+    const short = sources.filter((s) => !sourceDone(s)).map((s) => s.source);
+    if (short.length) {
+      errors.push(
+        `complete coverage needs every source listed and read in full, not ${short.join(', ')}`,
+      );
+    }
+  }
+  if (status === 'partial' && run.coverage.through !== undefined) {
+    // Every source must have been read in full up to through.
+    if (missing.length) errors.push(`coverage.through needs receipts for ${missing.join(', ')}`);
+    for (const s of sources.filter((x) => !sourceDone(x))) {
+      if (!isTime(s.through) || Date.parse(s.through) < Date.parse(run.coverage.through)) {
+        errors.push(`coverage.through is later than ${s.source} was read in full`);
+      }
+    }
+  }
+  return errors;
+}
 const DECISIONS = ['apply', 'defer', 'reject'];
 // What the coordinator found when it checked a proposal against current code.
 // Only a proposal that still holds may be applied.
@@ -241,8 +321,18 @@ const resumeAt = (r) => {
   return NaN;
 };
 
+// The runs with each correction applied: a corrected run counts with the
+// coverage of its latest correction, never with the claim it replaced.
+export function effectiveRuns(ledger) {
+  const corrections = ledger.corrections ?? [];
+  return ledger.runs.map((r) => {
+    const latest = corrections.filter((c) => c.target.runId === r.runId).at(-1);
+    return latest ? { ...r, coverage: latest.coverage, corrected: true } : r;
+  });
+}
+
 const scheduledRuns = (ledger, learner) =>
-  ledger.runs.filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner);
+  effectiveRuns(ledger).filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner);
 
 /**
  * A learner's last successful coverage checkpoint: the start of its latest
@@ -302,7 +392,7 @@ export function dueSlot(ledger, now, learner = DEFAULT_LEARNER) {
     };
   }
   const { slot, scheduledFor, delayMinutes } = owed;
-  const covered = ledger.runs.some(
+  const covered = effectiveRuns(ledger).some(
     (r) =>
       r.trigger !== 'manual' &&
       learnerOf(r) === learner &&
@@ -388,12 +478,12 @@ export function pullNumber(url) {
 }
 
 /** Evidence must point at something public in this repository. */
-export function evidenceErrors(evidence, where) {
+export function evidenceErrors(evidence, where, kinds = EVIDENCE_KINDS) {
   if (!Array.isArray(evidence) || evidence.length === 0) return [`${where}: needs evidence`];
   return evidence.flatMap((item, i) => {
     const at = `${where}.evidence[${i}]`;
     const errors = [];
-    if (!EVIDENCE_KINDS.includes(item?.kind)) errors.push(`${at}: unknown kind ${item?.kind}`);
+    if (!kinds.includes(item?.kind)) errors.push(`${at}: unknown kind ${item?.kind}`);
     if (!isText(item?.ref)) errors.push(`${at}: needs a ref`);
     const url = item?.url;
     if (!repositoryUrl(url)) {
@@ -564,6 +654,7 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
       errors.push('coverage.through must fall after since and no later than startedAt');
     }
   }
+  if (COVERAGE.includes(run?.coverage?.status)) errors.push(...sourceErrors(run));
   const proposals = run.proposals ?? [];
   if (!Array.isArray(proposals)) return [...errors, 'proposals must be a list'];
   if (run.coverage?.status === 'failed' && proposals.length) {
@@ -691,6 +782,80 @@ export function recordRun(ledger, run) {
     ],
     proposals,
   };
+}
+
+const RANK = { failed: 0, partial: 1, complete: 2 };
+const correctionsOf = (ledger, runId) =>
+  (ledger.corrections ?? []).filter((c) => c.target?.runId === runId);
+
+/**
+ * The errors in a correction of a recorded run's coverage claim. A correction
+ * targets one run at the revision it read (the number of corrections that run
+ * already has), only ever lowers the coverage, never records a through, and
+ * claims no ref the run did not record. The run, its proposals and their
+ * decisions are left as they are.
+ */
+export function validateCorrection(ledger, correction) {
+  if (!isObject(correction)) return ['the correction must be an object'];
+  const errors = [];
+  const c = correction;
+  if (!/^correction-[A-Za-z0-9._-]{1,64}$/.test(c.correctionId ?? '')) {
+    errors.push('needs correctionId correction-<id>');
+  }
+  const run = ledger.runs.find((r) => r.runId === c.target?.runId);
+  if (!run) return [...errors, `no recorded run ${c.target?.runId}`];
+  const prior = correctionsOf(ledger, run.runId);
+  const same = (ledger.corrections ?? []).find((x) => x.correctionId === c.correctionId);
+  if (same) {
+    return JSON.stringify(same) === JSON.stringify(c)
+      ? []
+      : [`${c.correctionId} is already recorded with different content`];
+  }
+  if (c.target.revision !== prior.length) {
+    errors.push(
+      `run ${run.runId} is at correction revision ${prior.length}, not ${c.target.revision}`,
+    );
+  }
+  const current = prior.at(-1)?.coverage ?? run.coverage;
+  if (c.target.claimed !== current.status) {
+    errors.push(`run ${run.runId} currently claims ${current.status}, not ${c.target.claimed}`);
+  }
+  const coverage = c.coverage;
+  if (!isObject(coverage) || !COVERAGE.includes(coverage.status)) {
+    return [...errors, 'coverage.status is not valid'];
+  }
+  if (!(RANK[coverage.status] < RANK[current.status])) {
+    errors.push(
+      `a correction only lowers coverage, and ${coverage.status} is not below ${current.status}`,
+    );
+  }
+  if (coverage.through !== undefined) errors.push('a correction never records coverage.through');
+  if (!isText(coverage.gaps)) errors.push('a correction says what was missed in coverage.gaps');
+  if (!Array.isArray(coverage.inspected) || !coverage.inspected.every(isText)) {
+    errors.push('coverage.inspected must list refs');
+  } else {
+    const extra = coverage.inspected.filter((ref) => !run.coverage.inspected?.includes(ref));
+    if (extra.length) errors.push(`the run never recorded inspecting ${extra.join(', ')}`);
+  }
+  errors.push(...sourceErrors({ learner: learnerOf(run), coverage }));
+  // A correction names what was and was not read for every required source.
+  const named = Array.isArray(coverage.sources) ? coverage.sources.map((s) => s?.source) : [];
+  const unnamed = (REQUIRED_SOURCES[learnerOf(run)] ?? []).filter((n) => !named.includes(n));
+  if (unnamed.length) errors.push(`a correction needs receipts for ${unnamed.join(', ')}`);
+  if (!isText(c.rationale)) errors.push('a correction needs its rationale');
+  errors.push(...evidenceErrors(c.evidence, 'correction', CORRECTION_EVIDENCE_KINDS));
+  if (!isText(c.correctedBy)) errors.push('a correction needs correctedBy');
+  else if (c.correctedBy === LOOP_NAME) errors.push('the loop cannot correct its own runs');
+  if (!isTime(c.correctedAt)) errors.push('a correction needs correctedAt');
+  return errors;
+}
+
+/** The ledger with a correction appended. The same correction again changes nothing. */
+export function recordCorrection(ledger, correction) {
+  if ((ledger.corrections ?? []).some((c) => c.correctionId === correction.correctionId)) {
+    return ledger;
+  }
+  return { ...ledger, corrections: [...(ledger.corrections ?? []), correction] };
 }
 
 /** Proposals still waiting for apply, defer or reject. */
@@ -884,7 +1049,25 @@ export function ledgerErrors(ledger) {
       errors.push(`the ledger ${field} must be a list of objects`);
     }
   }
+  if (
+    ledger.corrections !== undefined &&
+    (!Array.isArray(ledger.corrections) || !ledger.corrections.every(isObject))
+  ) {
+    errors.push('the ledger corrections must be a list of objects');
+  }
   if (errors.length) return errors;
+  // Each correction must still be one the correct command would accept,
+  // replayed in order, so a reordered or edited history is refused.
+  let replay = { ...ledger, corrections: [] };
+  for (const [i, c] of (ledger.corrections ?? []).entries()) {
+    if ((ledger.corrections ?? []).findIndex((x) => x.correctionId === c.correctionId) !== i) {
+      errors.push(`corrections[${i}]: ${c.correctionId} is listed twice`);
+      continue;
+    }
+    const found = validateCorrection(replay, c);
+    for (const e of found) errors.push(`corrections[${i}]: ${e}`);
+    replay = recordCorrection(replay, c);
+  }
   // The fields the commands read, so a bad record is named here instead of
   // failing later.
   for (const [i, r] of ledger.runs.entries()) {
@@ -962,7 +1145,8 @@ const runLabel = (run) => {
 
 /** A short markdown summary for the Tessl run report, the findings fallback. */
 export function summary(ledger, runId) {
-  const run = ledger.runs.find((r) => r.runId === runId) ?? ledger.runs.at(-1);
+  const runs = effectiveRuns(ledger);
+  const run = runs.find((r) => r.runId === runId) ?? runs.at(-1);
   const pending = pendingProposals(ledger);
   const lines = [
     `Factory learning proposals (repository ledger; the runtime scheduled-findings integration is disabled, so this run report is the fallback): ${REPOSITORY_URL}/blob/${LEDGER_BRANCH}/${LEDGER_FILE}`,
@@ -971,6 +1155,10 @@ export function summary(ledger, runId) {
     lines.push(
       `Run ${run.runId} (${learnerOf(run)}) for ${runLabel(run)}: coverage ${run.coverage.status}, ${run.fingerprints.length} proposal(s), started ${run.startedAt}, finished ${run.finishedAt}.`,
     );
+    if (run.corrected) {
+      const ids = correctionsOf(ledger, run.runId).map((c) => c.correctionId);
+      lines.push(`Coverage corrected by ${ids.join(', ')}; the original claim stays in the run.`);
+    }
     if (run.coverage.gaps) lines.push(`Gaps: ${run.coverage.gaps}`);
   }
   lines.push(`${pending.length} proposal(s) awaiting a decision:`);
@@ -1097,6 +1285,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const commit = writeLedger(repo, next, base, message);
       print({ commit, pending: pendingProposals(next).length });
     }
+  } else if (command === 'correct') {
+    const correction = readInput(arg);
+    const errors = validateCorrection(ledger, correction);
+    if (errors.length) fail(errors);
+    const next = recordCorrection(ledger, correction);
+    if (next === ledger) print({ unchanged: `${correction.correctionId} is already recorded` });
+    else {
+      const message = `factory learning: ${correction.correctionId} for ${correction.target.runId}`;
+      print({ commit: writeLedger(repo, next, base, message) });
+    }
   } else if (command === 'decide') {
     const decision = readInput(arg);
     const errors = validateDecision(ledger, decision);
@@ -1129,7 +1327,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     print(unissuedProposals(ledger).map((p) => p.fingerprint));
   } else {
     console.error(
-      'usage: ledger.mjs due [learner] | manual <learner> | pending | summary [runId] | record <run> | decide <file> | issue <fp> | issued <fp> <url> | unissued',
+      'usage: ledger.mjs due [learner] | manual <learner> | pending | summary [runId] | record <run> | correct <file> | decide <file> | issue <fp> | issued <fp> <url> | unissued',
     );
     process.exit(2);
   }

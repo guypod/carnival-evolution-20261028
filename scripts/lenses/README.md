@@ -63,6 +63,43 @@ refuses a slot already covered completely.
 - `record` also refuses a slot its real start did not follow, and a run
   recorded more than 30 minutes after its real start.
 
+## Source receipts and corrections
+
+A run's `coverage.sources` holds one receipt per source in `REQUIRED_SOURCES`:
+how far it was listed (`complete`, `capped`, `count-only`, `none`), how far
+it was read (`full`, `truncated`, `none`), its scope and gaps. `record`
+accepts `complete` only when every required source is listed and read in
+full, and `coverage.through` only when every other source names its own
+`through` at or after it. A receipt is the run's own account and cannot
+prove what was understood; the rule is that anything less than a full
+receipt never moves the checkpoint.
+
+A complete claim later shown false is corrected, never edited:
+
+```sh
+node scripts/lenses/ledger.mjs correct <file>
+```
+
+The file names `correctionId` (`correction-<id>`), `target` (`runId`,
+`revision`, the number of corrections that run already has, and `claimed`,
+its current status), the lower `coverage` with a receipt for every source,
+`rationale`, `evidence`, `correctedBy` and `correctedAt`. It is appended to
+the ledger's `corrections`; the run, its proposals and every decision stay as
+they were. `due`, `since`, `checkpoint` and `summary` use the latest
+correction's coverage, so the owed interval comes back. `correct` refuses an
+unknown run, a stale revision or claim, anything but a downgrade, a
+`through`, a ref the run never recorded and the loop correcting itself. The
+same file again changes nothing; another file under the same id is refused.
+Every read replays the corrections in order, so a reordered, duplicated or
+edited history is refused.
+
+The staged recovery for run `01a18de5-aa80-720a-8fb2-54b58fc34259` (the
+17:40 run of 2026-10-30, #417) is
+`scripts/lenses/recovery/correction-01a18de5.json`, tested against a copy of
+the ledger at `5abf1da` in the same folder. It is applied only after review
+and merge, by the coordinator, from a clone of `main`:
+`node scripts/lenses/ledger.mjs correct scripts/lenses/recovery/correction-01a18de5.json`.
+
 ## Manual initial inspection
 
 To verify setup live without waiting for, or pretending to be, a slot:

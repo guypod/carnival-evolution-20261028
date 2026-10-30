@@ -104,6 +104,19 @@ leave `through` out. The next run resumes exactly there instead of
 meeting the same limit again. Leave `through` out when
 you cannot name such a time.
 
+Record one receipt per required source in `coverage.sources` (the names
+are `REQUIRED_SOURCES` in `ledger.mjs`; for lens-tuning: `pull-requests`,
+`pr-diffs`, `review-comments`, `review-bodies`, `visual-repair`, `ci-runs`,
+`tests`, `live-play`):
+`{ "source", "enumeration": "complete|capped|count-only|none", "read":
+"full|truncated|none", "scope": "what was listed and read", "gaps",
+"through" }`. A list that hit its limit is `capped`; a count of items whose
+content you did not read is `count-only`; a read cut short (`--jq` slices,
+`head`, selected items) is `truncated`. `record` refuses `complete` unless
+every source has a receipt with `complete` and `full`, and refuses
+`coverage.through` unless every other source names its own `through` at or
+after it. A receipt is your account, not proof: when unsure, classify down.
+
 Read the current target before proposing to change it. Propose only when the
 evidence shows a concrete miss, false alarm, friction or redundancy. Each
 proposal uses the shared schema:
@@ -145,7 +158,12 @@ Write the run to a file outside the clone. Scheduled:
   "since": "<since from due>",
   "startedAt": "<actual UTC start>",
   "finishedAt": "<actual UTC finish>",
-  "coverage": { "status": "complete|partial|failed", "inspected": ["#304"], "gaps": "..." },
+  "coverage": {
+    "status": "complete|partial|failed",
+    "inspected": ["#304"],
+    "gaps": "...",
+    "sources": [{ "source": "pr-diffs", "enumeration": "complete", "read": "full", "scope": "..." }]
+  },
   "proposals": []
 }
 ```
