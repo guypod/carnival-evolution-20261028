@@ -20,6 +20,8 @@ export const OWN_BRANCH = /^tessl\/visual-repair-/;
 export const BATCH_SIZE = 4;
 export const LIST_LIMIT = 1000;
 export const DECLINE_DAYS = 30;
+// gh reads at most this many files of a pull request.
+export const PR_FILES_LIMIT = 100;
 const STATE = /^(desktop|narrow)(-quiet)?-(clean|focus|interaction)$/;
 const MARKER = /<!-- tessl-visual-finding: (\S+) -->/g;
 
@@ -168,17 +170,62 @@ export function reconcileOwnPrs(ledger, prs, now) {
 }
 
 /**
- * What this run does. Other Tessl work in flight defers only the repair. The loop's own
- * open pull request means look after that pull request and nothing else.
- * Otherwise review a bounded batch: routes with open findings first, then
- * routes still owed a look. With nothing to capture but findings still
- * repairable, repair. Only with neither is there nothing to do.
+ * The other open pull requests a repair of `route` would collide with. A
+ * repair writes the route's markup in src/main.ts, its rules in src/style.css
+ * and its own drawing module, so a pull request conflicts when it changes a
+ * shared file or one of the files that route's repair may edit. A pull
+ * request whose file list is missing or may be cut off counts as conflicting.
+ * Queued issues and pull requests elsewhere in the app do not: the shared
+ * writer key already keeps their runs from writing at the same time.
+ */
+export function repairConflicts(route, openPrs, mainSource, modules = routeModules(mainSource)) {
+  const owns = repairTargetFiles(route, modules);
+  const reasons = [];
+  for (const pr of openPrs) {
+    const files = (pr.files ?? null)?.map((f) => f.path ?? f);
+    if (!files || files.length >= PR_FILES_LIMIT) {
+      reasons.push(`open pull request #${pr.number} has no complete file list`);
+      continue;
+    }
+    const shared = files.find((f) => SHARED.some((p) => p.test(f)));
+    const own = files.find(owns);
+    if (shared) reasons.push(`open pull request #${pr.number} changes shared file ${shared}`);
+    else if (own)
+      reasons.push(`open pull request #${pr.number} changes ${own}, which ${route} draws with`);
+  }
+  return reasons;
+}
+
+/** Whether a file is one a repair of `route` may edit, beyond the shared files. */
+function repairTargetFiles(route, modules) {
+  const game = route.match(/^#\/play\/([\w-]+)$/);
+  if (game) return (f) => f.startsWith(`src/games/${game[1]}/`);
+  const own = [...modules].filter(([, rs]) => rs.length === 1 && rs[0] === route).map(([f]) => f);
+  // The midway draws with src/midway/ and with every module main.ts uses
+  // outside one screen's renderer.
+  if (route === '#/') {
+    const midway = [...modules].filter(([, rs]) => !rs.length).map(([f]) => f);
+    return (f) => f.startsWith('src/midway/') || midway.includes(f);
+  }
+  // A screen the map cannot place may draw with anything in src.
+  if (!own.length) return (f) => f.startsWith('src/');
+  return (f) => own.includes(f);
+}
+
+/**
+ * What this run does. Every run inspects: open pull requests, queued issues
+ * and the loop's own repair awaiting review never stop a review of `main`.
+ * Review a bounded batch, routes with open findings first, then routes still
+ * owed a look. While the loop's own repair is open it is the only repair:
+ * look after it, and open no second one. Otherwise, with nothing to capture
+ * but findings repairable, repair a route no open pull request conflicts
+ * with, and defer only when every repairable route conflicts. Deferred and
+ * unrepaired findings stay in the ledger.
  */
 export function planRun(
   ledger,
-  { head, changedFiles, mainSource, routes, others, openPr, now, importers },
+  { head, changedFiles, mainSource, routes, openPrs = [], openPr, now, importers },
 ) {
-  if (openPr) return { action: 'monitor', pr: openPr, ledger };
   const next = structuredClone(ledger);
   next.head = head;
   // A coverage interval runs from reviewedThrough to pendingThrough. A new one
@@ -201,15 +248,22 @@ export function planRun(
   const revisits = [...new Set(revisit)].filter((r) => !next.pending.includes(r));
   const owedNow = next.pending.slice(0, BATCH_SIZE - Math.min(revisits.length, BATCH_SIZE / 2));
   const batch = [...owedNow, ...revisits].slice(0, BATCH_SIZE);
-  // Inspection runs even while other Tessl work is open. Only the repair, which
-  // writes app code, waits for it; unresolved findings stay in the ledger.
-  const deferRepair = others.length ? others.join('; ') : null;
-  if (batch.length) return { action: 'review', batch, deferRepair, ledger: next };
-  if (repairable(next, now).length) {
-    if (deferRepair) return { action: 'defer', reason: deferRepair, ledger: next };
-    return { action: 'repair', ledger: next };
-  }
-  return { action: 'nothing', ledger: next };
+  // Which routes a repair must leave alone this run, and why.
+  const modules = routeModules(mainSource);
+  const conflicts = Object.fromEntries(
+    routes
+      .map((r) => [r, repairConflicts(r, openPrs, mainSource, modules)])
+      .filter(([, reasons]) => reasons.length),
+  );
+  const monitor = openPr ?? null;
+  if (batch.length) return { action: 'review', batch, monitor, conflicts, ledger: next };
+  if (monitor) return { action: 'monitor', pr: monitor, ledger: next };
+  const waiting = [...new Set(repairable(next, now).map((f) => f.route))];
+  if (!waiting.length) return { action: 'nothing', ledger: next };
+  const targets = waiting.filter((r) => !conflicts[r]);
+  if (targets.length) return { action: 'repair', targets, conflicts, ledger: next };
+  const reason = waiting.map((r) => `${r}: ${conflicts[r].join('; ')}`).join('; ');
+  return { action: 'defer', reason, conflicts, ledger: next };
 }
 
 /** Reject a review that does not match its plan or the rubric. */
@@ -243,6 +297,9 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
     const fixed = pr && f.fixedBy === pr;
     if (old) {
       old.note = f.note;
+      // A finding under the loop's open repair still shows on main until that
+      // repair merges, so it stays with the repair instead of reopening.
+      if (old.status === 'pr-open' && !fixed) continue;
       if (old.status !== 'declined' || isStale(old, now)) {
         old.status = fixed ? 'pr-open' : 'open';
         if (fixed) old.pr = pr;
@@ -396,20 +453,12 @@ function plan(repo, now) {
     '--json',
     fields,
   );
-  const issues = list('issue', 'list', '--state', 'open', '--label', 'tessl', '--json', 'number');
-  const open = list('pr', 'list', '--state', 'open', '--json', fields).filter((p) => !isOwnPr(p));
-  const others = [
-    ...open
-      .filter((p) => p.headRefName.startsWith('tessl/'))
-      .map((p) => `open Tessl pull request #${p.number}`),
-    ...open
-      .filter((p) => !p.headRefName.startsWith('tessl/'))
-      .filter((p) => (p.files ?? []).some((f) => SHARED.some((s) => s.test(f.path))))
-      .map((p) => `open pull request #${p.number} changes shared UI files`),
-    ...issues
-      .filter((i) => !open.some((p) => new RegExp(`Closes #${i.number}\\b`).test(p.body ?? '')))
-      .map((i) => `labelled issue #${i.number} has no pull request yet`),
-  ];
+  // Other open pull requests, any author, with their files: a repair waits
+  // only for those whose files overlap it. Queued issues are not read here,
+  // because the shared writer key already serializes the runs that write them.
+  const openPrs = list('pr', 'list', '--state', 'open', '--json', fields).filter(
+    (p) => !isOwnPr(p),
+  );
   // The open list is complete, so an own open PR is never missed even when
   // the search is slow to index it.
   const ownOpen = gh(
@@ -438,7 +487,7 @@ function plan(repo, now) {
     changedFiles,
     mainSource,
     routes,
-    others,
+    openPrs,
     openPr: reconciled.openPr,
     now,
     importers: importersAt(repo, head),

@@ -1,6 +1,6 @@
 ---
 name: visual-repair
-description: Every six hours, look at the carnival screens owed a review in its ledger, in a real headless browser, against the visual design baseline, and repair the worst one in one small draft pull request. Use when running the visual repair maintenance loop. Defers whenever other Tessl work could touch the same files.
+description: Every six hours, look at the carnival screens owed a review in its ledger, in a real headless browser, against the visual design baseline, and repair the worst one in one small draft pull request. Use when running the visual repair maintenance loop. Inspects every run, even with other pull requests open, and defers a repair only when an open pull request changes the same or a shared file.
 ---
 
 # Visual repair
@@ -40,33 +40,51 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
    `tessl action trigger visual-repair --request-id <stable id>`, never
    through a raw launch, which skips the action's keys.
 2. **Plan.** Run `node scripts/visual/ledger.mjs plan`. It reads the ledger
-   and `gh pr list --state all` and `gh issue list --label tessl`, reconciles
-   the loop's own pull requests first, and prints one of:
-   - `defer`: nothing to capture, findings are repairable, but there is an
-     open `tessl/` pull request other than the loop's own, or a labelled
-     issue without one. Name them and stop. Nothing is lost: owed routes and
-     unresolved findings stay in the ledger. Other open work never stops an
-     inspection: a `review` plan still captures, and when it carries
-     `deferRepair`, record the review and skip Repair, naming the reason.
-   - `monitor`: the loop's own repair pull request is still open. Do not open
-     another. Look after that one only: if its checks failed or it has
-     unanswered review, fix it on its branch, push, and answer; otherwise
-     leave it. Then stop.
-   - `nothing`: no route is owed a look and no finding is repairable. Stop.
+   and `gh pr list` with each pull request's files, reconciles the loop's own
+   pull requests first, and prints one of the actions below.
+   Other open work never stops an inspection: open pull requests, queued
+   issues and the loop's own repair awaiting review all leave `review` in
+   place, so `main` is captured every six hours. The plan also prints
+   `conflicts`: for each route, the open pull requests whose diffs a repair of
+   it would overlap, because they change a shared file (`index.html`,
+   `src/main.ts`, `src/style.css`, `src/carnival/`) or a file the route draws
+   with (its own module, its game folder, or `src/midway/` and the modules the
+   midway uses for `#/`). A pull request whose file list is missing or may be
+   cut off counts as overlapping every route. A queued issue without a pull
+   request has no diff and does not conflict; the writer key already keeps its
+   run from writing alongside this one.
    - `review`: the `batch` of routes to capture now, open findings first.
-   - `repair`: nothing to capture, but `repairable` findings remain (an earlier
-     repair failed, or a decline is older than 30 days). Go to Repair.
-     It fails, and the run stops, if a GitHub list reaches its limit, because a
-     cut-off list could hide work in flight.
-     Only same-repository pull requests count as the loop's own; a fork with the
-     same branch name is ignored.
-     Merged repairs become `merged` and their route is reviewed again on
-     `main`. A finding that no longer shows there becomes `resolved`: resolved
-     on `main` as rendered locally. That is not evidence of the live deploy;
-     never report a repair as deployed.
-     Declined repairs (closed without merging) stay declined for 30 days.
-     Leftover `tessl/visual-repair-*` branches never block a run; each repair
-     branch is named for its run, so an old one is never reused. If that name already exists on origin, take a new time.
+     When it carries `monitor`, the loop's own repair pull request is open:
+     record the review, then look after that pull request as for `monitor`
+     instead of Repair.
+   - `monitor`: nothing to capture and the loop's own repair pull request is
+     still open. Do not open another. Look after that one only: if its checks
+     failed or it has unanswered review, fix it on its branch, push, and
+     answer; otherwise leave it. Then stop. Findings it fixes stay `pr-open`
+     even when a review of `main` still sees them; new findings stay `open`
+     for the repair after it.
+   - `repair`: nothing to capture, and `targets` lists routes with
+     `repairable` findings that no open pull request overlaps (an earlier
+     repair failed, or a decline is older than 30 days). Go to Repair, with a
+     route from `targets` only.
+   - `defer`: nothing to capture, findings are repairable, but every route
+     with one is overlapped by an open pull request. Name the `reason` and
+     stop. Nothing is lost: owed routes and unresolved findings stay in the
+     ledger for a later run.
+   - `nothing`: no route is owed a look and no finding is repairable. Stop.
+
+   It fails, and the run stops, if a GitHub list reaches its limit, because a
+   cut-off list could hide work in flight.
+   Only same-repository pull requests count as the loop's own; a fork with the
+   same branch name is ignored.
+   Merged repairs become `merged` and their route is reviewed again on
+   `main`. A finding that no longer shows there becomes `resolved`: resolved
+   on `main` as rendered locally. That is not evidence of the live deploy;
+   never report a repair as deployed.
+   Declined repairs (closed without merging) stay declined for 30 days.
+   Leftover `tessl/visual-repair-*` branches never block a run; each repair
+   branch is named for its run, so an old one is never reused. If that name already exists on origin, take a new time.
+
 3. **Browser.** Capture only through `scripts/visual/run-capture.sh`, which
    sets up Chromium, loads its environment in the same shell, starts its own
    dev server for this checkout on a free port (never one already running)
@@ -115,7 +133,8 @@ the findings are kept even if the repair fails.
 ## Repair
 
 Take the findings `plan` listed as `repairable` plus the ones just recorded:
-open, and not declined in the last 30 days. Pick the one route with the most,
+open, and not declined in the last 30 days, on a route with no entry in
+`conflicts`. Pick the one route with the most,
 worst first: composition, controls and focus-contrast before the rest. Other
 routes' findings stay open in the ledger for later runs.
 

@@ -45,7 +45,7 @@ export const EXPECTED_ACTIONS = {
   },
   // The visual repair loop, from the repository's own skill. It renders changed
   // screens in a headless browser and opens at most one draft repair PR a run,
-  // inspecting even while other Tessl work is open and deferring only the repair.
+  // inspecting even while other pull requests are open and deferring only a repair whose files overlap one.
   'visual-repair': {
     skill: 'file:tessl-factory#visual-repair',
     environment: ENVIRONMENT,

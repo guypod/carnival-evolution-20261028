@@ -18,6 +18,7 @@ import {
   readLedger,
   reconcileOwnPrs,
   recordReview,
+  repairConflicts,
   repairable,
   routeModules,
   writeLedger,
@@ -27,7 +28,8 @@ const mainSource = readFileSync(new URL('../../src/main.ts', import.meta.url), '
 const games = ['water-cannon', 'ring-toss'];
 const routes = allRoutes(mainSource, games);
 const NOW = '2026-10-30T00:00:00Z';
-const base = { mainSource, routes, others: [], openPr: null, changedFiles: [], now: NOW };
+const base = { mainSource, routes, openPrs: [], openPr: null, changedFiles: [], now: NOW };
+const prWith = (number, ...files) => ({ number, files: files.map((path) => ({ path })) });
 const finding = (route, criterion, extra = {}) => ({
   route,
   state: 'desktop-clean',
@@ -108,23 +110,77 @@ test('an interrupted run leaves the ledger as it was, and the next run starts ag
   assert.deepEqual(again.batch, first.batch);
 });
 
-test('other open Tessl work still gets a visual inspection, and only the repair waits', () => {
-  const others = ['open Tessl pull request #9'];
-  const plan = planRun(emptyLedger(), { ...base, head: 'h1', others });
+test('other open pull requests never stop a visual inspection', () => {
+  const openPrs = [prWith(9, 'src/style.css'), prWith(10, 'src/snack-stand.ts')];
+  const plan = planRun(emptyLedger(), { ...base, head: 'h1', openPrs });
   assert.equal(plan.action, 'review');
-  assert.ok(plan.batch.length > 0);
-  assert.equal(plan.deferRepair, others[0]);
+  assert.equal(plan.batch.length, BATCH_SIZE);
 });
 
-test('a deferred repair keeps every unresolved finding', () => {
-  const findings = (r) => (r === '#/balloon' ? [finding(r, 'controls')] : []);
-  const { ledger } = reviewAll(emptyLedger(), 'h1', [], findings);
-  const held = repairable(ledger, NOW).length;
-  assert.ok(held > 0);
-  const plan = planRun(ledger, { ...base, head: 'h1', others: ['open Tessl pull request #9'] });
-  assert.equal(plan.action, 'defer');
-  assert.equal(repairable(plan.ledger, NOW).length, held);
-  assert.equal(planRun(ledger, { ...base, head: 'h1' }).action, 'repair');
+const withBalloonFinding = () =>
+  reviewAll(emptyLedger(), 'h1', [], (r) => (r === '#/balloon' ? [finding(r, 'controls')] : []))
+    .ledger;
+
+test('an open pull request in unrelated files does not hold up a repair', () => {
+  const openPrs = [
+    prWith(9, 'src/snack-stand.ts', 'src/games/ring-toss/game.test.ts', 'README.md'),
+  ];
+  assert.deepEqual(repairConflicts('#/balloon', openPrs, mainSource), []);
+  const plan = planRun(withBalloonFinding(), { ...base, head: 'h1', openPrs });
+  assert.deepEqual([plan.action, plan.targets], ['repair', ['#/balloon']]);
+});
+
+test('a queued issue without a pull request does not hold up a repair', () => {
+  // The plan reads only open pull requests: an issue has no files to overlap,
+  // and the shared writer key keeps its run from writing alongside this one.
+  const plan = planRun(withBalloonFinding(), { ...base, head: 'h1', openPrs: [] });
+  assert.equal(plan.action, 'repair');
+});
+
+test('a repair waits for an open pull request that changes the same or a shared file', () => {
+  for (const file of [
+    'src/wish-balloon.ts',
+    'src/style.css',
+    'src/main.ts',
+    'src/carnival/theme.ts',
+  ]) {
+    const ledger = withBalloonFinding();
+    const held = repairable(ledger, NOW).length;
+    const plan = planRun(ledger, { ...base, head: 'h1', openPrs: [prWith(9, file)] });
+    assert.equal(plan.action, 'defer', file);
+    assert.match(plan.reason, /#9/);
+    // Nothing is lost: the finding stays repairable for a later run.
+    assert.equal(repairable(plan.ledger, NOW).length, held, file);
+  }
+  // A pull request whose file list may be cut off counts as overlapping.
+  const many = prWith(9, ...Array.from({ length: 100 }, (_, i) => `docs/f${i}.md`));
+  assert.equal(repairConflicts('#/balloon', [many], mainSource).length, 1);
+  assert.equal(repairConflicts('#/balloon', [{ number: 9 }], mainSource).length, 1);
+});
+
+test('only the conflicting route waits; another repairable route is repaired', () => {
+  const ledger = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    ['#/balloon', '#/snack'].includes(r) ? [finding(r, 'controls')] : [],
+  ).ledger;
+  const plan = planRun(ledger, {
+    ...base,
+    head: 'h1',
+    openPrs: [prWith(9, 'src/wish-balloon.ts')],
+  });
+  assert.deepEqual([plan.action, plan.targets], ['repair', ['#/snack']]);
+  assert.ok(plan.conflicts['#/balloon']);
+});
+
+test('a game repair waits only for pull requests in that game or shared files', () => {
+  const route = '#/play/ring-toss';
+  assert.equal(
+    repairConflicts(route, [prWith(9, 'src/games/ring-toss/game.ts')], mainSource).length,
+    1,
+  );
+  assert.equal(
+    repairConflicts(route, [prWith(9, 'src/games/water-cannon/game.ts')], mainSource).length,
+    0,
+  );
 });
 
 test('findings on routes the repair did not touch survive later commits', () => {
@@ -182,6 +238,36 @@ test('the loop recovers its own open pull request instead of deferring on it', (
   const plan = planRun(ledger, { ...base, head: 'h2', openPr });
   assert.deepEqual([plan.action, plan.pr], ['monitor', 41]);
   assert.equal(repairable(ledger, NOW).length, 0, 'no second repair of the same finding');
+});
+
+test('main is still inspected while the loop’s own repair awaits review', () => {
+  const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [ownPr('OPEN')], NOW);
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'], openPr });
+  assert.equal(plan.action, 'review');
+  assert.equal(plan.monitor, 41);
+  assert.equal(plan.batch.length, BATCH_SIZE);
+  // The finding still shows on main until the repair merges: it stays with the repair.
+  const reviewed = [...plan.batch, '#/snack'];
+  const after = recordReview(plan.ledger, {
+    reviewed,
+    findings: [finding('#/snack', 'controls'), finding('#/balloon', 'focus-contrast')],
+    now: NOW,
+  });
+  const snack = after.findings.find((f) => f.route === '#/snack');
+  assert.deepEqual([snack.status, snack.pr], ['pr-open', 41]);
+  // New findings are kept, but no second repair opens while #41 is open.
+  assert.ok(repairable(after, NOW).some((f) => f.route === '#/balloon'));
+  let next = after;
+  for (;;) {
+    const p = planRun(next, { ...base, head: 'h2', openPr });
+    if (p.action !== 'review') {
+      assert.deepEqual([p.action, p.pr], ['monitor', 41]);
+      break;
+    }
+    assert.equal(p.monitor, 41);
+    next = recordReview(p.ledger, { reviewed: p.batch, findings: [], now: NOW });
+  }
+  assert.equal(next.reviewedThrough, 'h2', 'coverage of the newer main moved on');
 });
 
 test('a merged own pull request is recorded and its route re-checked on main', () => {
