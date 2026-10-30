@@ -1347,3 +1347,27 @@ test('a decision validated before a revision cannot accept the revised content',
   ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
   assert.equal(ledger.proposals[0].decisions.at(-1).revision, 1);
 });
+
+test('without its own exists check, validateRun still refuses a missing target', () => {
+  const missing = run({
+    learner: 'instruction-tidy',
+    slot: '2026-11-02T05:30 Europe/London',
+    startedAt: '2026-11-02T05:31:00Z',
+    finishedAt: '2026-11-02T05:35:00Z',
+    proposals: [
+      proposal({
+        kind: 'replace-with-check',
+        target: 'docs/no-such-instructions.md',
+        check: 'src/carnival/scores.test.ts',
+        netLines: -1,
+      }),
+    ],
+  });
+  const errors = validateRun(missing, opts({ now: '2026-11-02T05:36:00Z' }));
+  assert.ok(
+    errors.some((e) => /exist/.test(e)),
+    errors.join('; '),
+  );
+  const present = { ...missing, proposals: [{ ...missing.proposals[0], target: 'AGENTS.md' }] };
+  assert.deepEqual(validateRun(present, opts({ now: '2026-11-02T05:36:00Z' })), []);
+});

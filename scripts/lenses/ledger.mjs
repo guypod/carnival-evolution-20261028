@@ -38,6 +38,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const LEDGER_BRANCH = 'factory-state/review-lenses';
 export const LEDGER_FILE = 'ledger.json';
@@ -466,13 +467,17 @@ function proposalErrors(p, at, learner, { lenses, exists }) {
   return errors;
 }
 
+// Without a caller's own check, targets are looked up in this checkout.
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const inRepo = (path) => existsSync(join(REPO_ROOT, path));
+
 /**
  * Every way a finished run is malformed; empty when it can be saved. `now` is
  * the real recording time. A scheduled run's slot must be the slot its real
  * start fell in, and a run is recorded within MAX_RUN_MINUTES of starting, so
  * neither a missed slot nor a different slot can be claimed after the fact.
  */
-export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists = () => true }) {
+export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists = inRepo }) {
   if (run === null || typeof run !== 'object' || Array.isArray(run))
     return ['run must be an object'];
   const errors = [];
