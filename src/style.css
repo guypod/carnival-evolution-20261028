@@ -2245,6 +2245,64 @@ kbd {
   margin: 0 0 0.75rem;
 }
 
+/* Snack Stand: Serve is the main action; the reset pair sits apart from it
+   so a reset is never a slip of the finger. */
+.snack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 2rem;
+}
+
+.snack-reset-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--color-muted);
+}
+
+.snack-actions button {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--color-accent);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.snack-actions .snack-serve {
+  padding: 0.6rem 1.5rem;
+  background: var(--color-accent);
+  color: var(--color-background);
+  font-weight: bold;
+}
+
+.snack-actions button:hover {
+  background: var(--color-stripeA);
+}
+
+.snack-actions .snack-serve:hover {
+  background: var(--color-stripeB);
+  border-color: var(--color-stripeB);
+}
+
+.snack-actions button:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .snack-reset-group {
+    padding: 0.75rem 0 0;
+    border-left: 0;
+    border-top: 2px solid var(--color-muted);
+    flex-basis: 100%;
+  }
+}
+
 /* Wish Balloon: a lantern-lit stall. The scene and the counter sit side by
    side on wide screens and stack on narrow ones. */
 .balloon-stall {
