@@ -590,8 +590,8 @@ export function startWorkshop(
     ctx.fillRect(x + fig.mount.x, fig.mount.y, fig.mount.width, fig.mount.height);
     ctx.fillStyle = colors.background;
     ctx.fillRect(x + fig.mount.x + 3, fig.mount.y + 3, fig.mount.width - 6, fig.mount.height - 3);
-    // The rod's tip shows inside the socket while the frog sits on it; a caught frog's socket is empty.
-    if (!pose.caught) {
+    // The rod's tip shows inside the socket while it meets the seat; once it drops away below a caught frog, the socket is empty.
+    if (rig.seated) {
       ctx.fillStyle = colors.text;
       ctx.fillRect(x - 2, fig.mount.y + 3, 4, fig.mount.height - 3);
     }

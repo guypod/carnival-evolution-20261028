@@ -155,7 +155,9 @@ const FROG_EYES_TOP = 17;
  * Heights for drawing the frog, in pixels from the shaft (negative is up): the
  * follower's foot on the cam, the top of its rod, the frog's centre, and the
  * underside of the safety guard, which sits just where the frog's eyes meet it
- * at the guard's lift.
+ * at the guard's lift. `seated` says whether the rod's top meets the frog's
+ * seat: always, except once the guard holds the frog and the rod has dropped
+ * below it.
  */
 export function frogRig(pose: Pick<FrogPose, 'lift' | 'frogLift'>) {
   const foot = -(CAM_BASE + pose.lift);
@@ -165,6 +167,7 @@ export function frogRig(pose: Pick<FrogPose, 'lift' | 'frogLift'>) {
     rodTop: foot - FOLLOWER_ROD,
     frog: seat(pose.frogLift) - FROG_HALF_HEIGHT,
     guard: seat(GUARD_LIFT) - FROG_HALF_HEIGHT - FROG_EYES_TOP,
+    seated: pose.lift >= pose.frogLift - 1e-9,
   };
 }
 

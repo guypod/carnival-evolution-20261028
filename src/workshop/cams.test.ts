@@ -155,6 +155,16 @@ describe('still frames', () => {
 });
 
 describe('the crafted frog', () => {
+  it('keeps the rod in the socket while the tall cam holds a caught frog against the guard', () => {
+    const held = frogPose('tall', stillPhase('tall', false), false);
+    expect(held.caught).toBe(true);
+    expect(held.lift).toBeCloseTo(GUARD_LIFT, 9);
+    expect(frogRig(held).seated).toBe(true);
+    const dropped = frogPose('tall', 1, false);
+    expect(dropped.caught).toBe(true);
+    expect(frogRig(dropped).seated).toBe(false);
+  });
+
   it('keeps the seat on the rod, the eye tops at the guard and the legs off the bench', () => {
     for (const cam of CAMS)
       for (const phase of PHASES)
@@ -165,7 +175,9 @@ describe('the crafted frog', () => {
           const bottom = (b: { y: number; ry: number }) => b.y + b.ry;
           // The socket opens flush with the seat, where the rod's top stands unless the guard holds the frog.
           expect(fig.mount.y + fig.mount.height).toBeCloseTo(bottom(fig.body), 9);
-          if (!pose.caught) expect(rig.rodTop).toBeCloseTo(bottom(fig.body), 9);
+          if (!pose.caught) expect(rig.seated).toBe(true);
+          if (rig.seated) expect(rig.rodTop).toBeCloseTo(bottom(fig.body), 9);
+          else expect(rig.rodTop).toBeGreaterThan(bottom(fig.body));
           // Nothing else reaches below the body, so only the rod holds the frog up.
           for (const part of [...fig.haunches, ...fig.feet])
             expect(bottom(part)).toBeLessThan(bottom(fig.body));
