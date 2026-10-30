@@ -3284,9 +3284,13 @@ function renderSnack() {
         ${step('base', 'Base', 'B', BASES)}
         ${step('topping', 'Topping', 'T', TOPPINGS)}
         ${step('presentation', 'Presentation', 'P', PRESENTATIONS)}
-        <button type="submit">Serve (Enter)</button>
-        <button type="button" class="snack-reset">Start over (R)</button>
-        <button type="button" class="snack-next">Next visitor (N)</button>
+        <div class="snack-actions">
+          <button type="submit" class="snack-serve">Serve (Enter)</button>
+          <div class="snack-reset-group">
+            <button type="button" class="snack-reset">Start over (R)</button>
+            <button type="button" class="snack-next">Next visitor (N)</button>
+          </div>
+        </div>
       </form>
       <canvas class="snack-scene" aria-hidden="true"></canvas>
       <p class="snack-status" role="status" aria-live="polite"></p>
