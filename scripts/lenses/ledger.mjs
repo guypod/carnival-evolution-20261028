@@ -603,6 +603,11 @@ export function recordRun(ledger, run) {
       const cautious = JSON.stringify([known.weakens, known.standards]) !== before;
       if (known.status === 'accepted' && (cautious || revised)) {
         known.status = 'deferred';
+        // An issue opened for the old content no longer describes the work.
+        if (known.issue) {
+          known.previousIssues = [...(known.previousIssues ?? []), known.issue];
+          delete known.issue;
+        }
         known.reopened = {
           at: run.finishedAt,
           runId: run.runId,
@@ -859,6 +864,14 @@ export function ledgerErrors(ledger) {
     if (typeof p.weakens !== 'boolean') errors.push(`${at}: needs weakens`);
     for (const field of ['standards', 'evidence', 'seenIn', 'decisions']) {
       if (!Array.isArray(p[field])) errors.push(`${at}: ${field} must be a list`);
+    }
+    for (const field of ['revisions', 'previousIssues']) {
+      if (p[field] !== undefined && !Array.isArray(p[field])) {
+        errors.push(`${at}: ${field} must be a list`);
+      }
+    }
+    if (Array.isArray(p.revisions) && !p.revisions.every(isObject)) {
+      errors.push(`${at}: revisions must be objects`);
     }
     if (Array.isArray(p.evidence) && !p.evidence.every(isObject)) {
       errors.push(`${at}: evidence must be objects`);

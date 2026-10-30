@@ -1118,6 +1118,16 @@ test('a revised repeat is kept and reopens acceptance; check paths are normal an
   const saved = recordRun(emptyLedger(), run());
   const accepted = { ...saved.proposals[0], status: 'accepted', decisions: [{}] };
   assert.notDeepEqual(ledgerErrors({ ...saved, proposals: [accepted] }), []);
+  assert.notDeepEqual(
+    ledgerErrors({ ...saved, proposals: [{ ...saved.proposals[0], revisions: {} }] }),
+    [],
+  );
+  let issued = recordRun(emptyLedger(), run());
+  issued = recordDecision(issued, decision(issued), '2026-10-30T12:01Z');
+  issued = recordIssued(issued, issued.proposals[0].fingerprint, `${REPOSITORY_URL}/issues/400`);
+  issued = recordRun(issued, run({ runId: 'run-3', proposals: [proposal({ netLines: 2 })] }));
+  assert.equal(issued.proposals[0].issue, undefined);
+  assert.deepEqual(issued.proposals[0].previousIssues, [`${REPOSITORY_URL}/issues/400`]);
   const nullEvidence = { ...accepted, decisions: [{ decision: 'apply', evidence: [null] }] };
   assert.notDeepEqual(ledgerErrors({ ...saved, proposals: [nullEvidence] }), []);
 });

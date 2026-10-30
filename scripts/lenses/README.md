@@ -139,8 +139,8 @@ From a clone of `main`:
 5. For `apply`, the output carries `issue: { title, body }`. The body starts
    with the marker `<!-- factory-learning:proposal <fingerprint> -->` and the
    title ends with `[<fingerprint>]`. Before opening it, search the
-   repository's issues for that marker; if one exists, use it instead of
-   opening another. Then run
+   repository's issues for that marker; if one exists that is not in the
+   proposal's `previousIssues`, use it instead of opening another. Then run
    `node scripts/lenses/ledger.mjs issued <fingerprint> <issue url>`. The
    owner labels the issue `tessl` and the existing implement flow does the
    work under the `carnival-app-writer` key, with ordinary review. Nothing
@@ -160,7 +160,10 @@ again. `issue` and `issued` refuse a proposal that weakens a safety
 standard. A sighting with the same fingerprint but a different `change`,
 `check` or `netLines` replaces that content, keeps the old content under
 `revisions`, and reopens an accepted proposal, so the coordinator decides,
-and the issue carries, the latest content.
+and the issue carries, the latest content. An issue already recorded for
+the old content moves to `previousIssues`; after a new `apply`, open a new
+issue and close the old one, which step 5 skips because it is in
+`previousIssues`.
 
 `defer` keeps the proposal pending for the next block. `reject` closes it;
 the same proposal seen again keeps its rejection and only gains evidence.
