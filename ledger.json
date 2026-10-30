@@ -1,10 +1,8 @@
 {
   "version": 1,
-  "head": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+  "head": "a863a177a9f316800aceafd0a2590c23ae1abfee",
   "reviewedThrough": null,
   "pending": [
-    "#/coaster",
-    "#/fair",
     "#/parade",
     "#/expedition",
     "#/workshop",
@@ -17,7 +15,8 @@
     "#/play/puppet-theatre",
     "#/play/ring-toss",
     "#/play/skee-ball",
-    "#/play/water-cannon"
+    "#/play/water-cannon",
+    "#/room"
   ],
   "pendingThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
   "findings": [
@@ -62,8 +61,12 @@
       "note": "Spot grid buttons, collection buttons (Striped Rug, Paper Lantern...), Turn/Put away/Undo/Clear the room and Previous/Next spot are raw grey browser-default buttons with default font size; the Backdrop radios are default blue radio dots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T04:45:35.510Z",
+      "applied": [
+        "394:merged:2026-10-30T15:31:24Z"
+      ],
+      "pr": 394
     },
     {
       "fingerprint": "#/room:desktop-clean:composition",
@@ -73,8 +76,12 @@
       "note": "The room scene sits at left with an empty right half at 1280x800, followed by a long unframed column of controls, a clipped scrolling collection list and a plain ordered list of spots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T04:45:35.510Z",
+      "applied": [
+        "394:merged:2026-10-30T15:31:24Z"
+      ],
+      "pr": 394
     },
     {
       "fingerprint": "#/room:desktop-clean:focus-contrast",
@@ -84,8 +91,12 @@
       "note": "Locked collection buttons and the disabled Turn/Put away/Undo buttons show light grey text on a mid-grey fill, well under 4.5:1.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T04:45:35.510Z",
+      "applied": [
+        "394:merged:2026-10-30T15:31:24Z"
+      ],
+      "pr": 394
     },
     {
       "fingerprint": "#/room:desktop-clean:spacing",
@@ -95,8 +106,12 @@
       "note": "Collection, backdrop, action buttons and the walk-the-room list are loose blocks without a shared framed panel; the collection list is cut off mid-row (Tiny Mallet Keyring) against the Backdrop fieldset.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T04:45:35.510Z",
+      "applied": [
+        "394:merged:2026-10-30T15:31:24Z"
+      ],
+      "pr": 394
     },
     {
       "fingerprint": "#/room:desktop-clean:art-integration",
@@ -106,74 +121,78 @@
       "note": "The 12 spot buttons under the scene are blank grey bars labelled with a single dot, detached from the drawing they control.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T04:45:35.510Z",
+      "applied": [
+        "394:merged:2026-10-30T15:31:24Z"
+      ],
+      "pr": 394
     },
     {
       "fingerprint": "#/toy:desktop-clean:composition",
       "route": "#/toy",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "A small 360px duck scene and three buttons sit in the top-left; most of the 1280x800 screen below and to the right is empty dark background.",
+      "note": "Still at a863a17: a small 360px duck scene and three buttons sit in the top-left; most of the 1280x800 screen below and to the right is empty dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "seenOn": "2026-10-30T15:40:27.415Z"
     },
     {
       "fingerprint": "#/toy:desktop-clean:controls",
       "route": "#/toy",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Wind the key, Let it go and Reset are raw grey browser-default buttons with default small font; the disabled Let it go has grey-on-grey text.",
+      "note": "Still at a863a17: Wind the key, Let it go and Reset are raw grey browser-default buttons with small default font; the disabled Let it go is grey-on-grey.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "seenOn": "2026-10-30T15:40:27.415Z"
     },
     {
       "fingerprint": "#/toy:desktop-clean:depth",
       "route": "#/toy",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "The desk scene is a flat rounded purple box with a brown strip; no frame, shadow or counter edge, and the controls are not in the same frame as the scene.",
+      "note": "Still at a863a17: the desk scene is a flat rounded purple box with a brown strip; no frame, shadow or counter edge, and the controls are outside the scene frame.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
-      "seenOn": "2026-10-30T04:45:35.510Z"
+      "seenOn": "2026-10-30T15:40:27.415Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:controls",
       "route": "#/party",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Mode radios are browser-default blue/white radio dots and both nickname fields are small white default text boxes with grey placeholder, unlike the themed yellow Start party button; same at 390px.",
+      "note": "Still at a863a17: Player 1/2 nickname fields are default white inputs with grey placeholder and the mode radios are default blue/white dots, unlike the themed Start party button.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenOn": "2026-10-30T15:40:27.415Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:composition",
       "route": "#/party",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "A fieldset, two inputs and one button sit in a column at the top-left; the lower ~40% of the 1280x800 screen is empty dark background with no scene or stall as focal point.",
+      "note": "Still at a863a17: the form occupies the top-left and the lower ~35% of the 1280x800 screen is empty dark background with no booth scene as focal point.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenOn": "2026-10-30T15:40:27.415Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:spacing",
       "route": "#/party",
       "state": "desktop-clean",
       "criterion": "spacing",
-      "note": "The nickname fields and Start party button sit loose below the bordered mode fieldset instead of in one framed panel; the 210px inputs leave the rest of the 930px column empty.",
+      "note": "Still at a863a17: the 200px inputs sit under a full-width fieldset, with a large uneven gap between Start party and the closing note.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
       "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenOn": "2026-10-30T15:40:27.415Z"
     },
     {
       "fingerprint": "#/circuit:desktop-focus:focus-contrast",
@@ -339,23 +358,58 @@
       "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
       "status": "open",
       "seenOn": "2026-10-30T15:17:26.050Z"
+    },
+    {
+      "fingerprint": "#/coaster:desktop-clean:controls",
+      "route": "#/coaster",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "◀ Point, Point ▶, Raise, Lower, Test, Pause, Step, Undo, Reset layout and Save placard are raw grey default buttons with small default text; Ride name is a default white input and Emblem/Colours are default white selects; same at 390px.",
+      "firstSeen": "2026-10-30T15:40:27.415Z",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "status": "open",
+      "seenOn": "2026-10-30T15:40:27.415Z"
+    },
+    {
+      "fingerprint": "#/coaster:desktop-clean:depth",
+      "route": "#/coaster",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "The track canvas sits on the flat page background with only a lilac key strip under it; no frame, shadow or panel joins the track, its controls and the placard.",
+      "firstSeen": "2026-10-30T15:40:27.415Z",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "status": "open",
+      "seenOn": "2026-10-30T15:40:27.415Z"
+    },
+    {
+      "fingerprint": "#/fair:desktop-clean:art-integration",
+      "route": "#/fair",
+      "state": "desktop-clean",
+      "criterion": "art-integration",
+      "note": "Placed stall pieces on the plaza grid render as brown missing-glyph boxes (tofu) instead of drawn stalls or benches; same at 390px.",
+      "firstSeen": "2026-10-30T15:40:27.415Z",
+      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "status": "open",
+      "seenOn": "2026-10-30T15:40:27.415Z"
     }
   ],
   "reviewedAt": {
     "#/": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/prizes": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/toy": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/toy": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/trail": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/circuit": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/party": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/party": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/records": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/booths": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/postcard": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/plush": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
-    "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb"
+    "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+    "#/coaster": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+    "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee"
   },
-  "reconciledAt": "2026-10-30T15:15:28.047Z"
+  "reconciledAt": "2026-10-30T15:38:25.683Z"
 }
