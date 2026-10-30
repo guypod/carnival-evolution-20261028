@@ -2230,8 +2230,7 @@ kbd {
   box-shadow: none;
 }
 
-.snack-scene,
-.toy-scene {
+.snack-scene {
   display: block;
   width: 360px;
   max-width: 100%;
@@ -2802,8 +2801,7 @@ kbd {
   border-radius: var(--radius);
 }
 
-.coaster-controls,
-.toy-controls {
+.coaster-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -2975,4 +2973,103 @@ body[data-photo='on'] .midway > :not(.midway-map, .midway-panels, .photo-frame-o
 .midway-stones button:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
+}
+
+.toy h1:focus {
+  outline: none;
+}
+
+.toy-intro,
+.toy .note {
+  color: var(--color-muted);
+}
+
+/* Wind-up Desk Toy: a wood-framed stall. The desk scene and the counter of
+   controls sit side by side on wide screens and stack on narrow ones. */
+.toy-bench {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(16rem, 2fr);
+  margin: 1rem 0 1.5rem;
+  border: 3px solid var(--color-wood);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: 0 10px 0 var(--color-wood);
+}
+
+.toy-desk {
+  padding: 1rem;
+  background: var(--color-background);
+}
+
+.toy-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--color-wood);
+  border-radius: var(--radius);
+}
+
+.toy-counter {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1.25rem;
+  padding-top: calc(14px + 1.25rem);
+  border-left: 3px solid var(--color-wood);
+  background:
+    repeating-linear-gradient(90deg, var(--color-stripeA) 0 24px, var(--color-stripeB) 24px 48px)
+      top / 100% 14px no-repeat,
+    var(--color-surface);
+}
+
+.toy-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.toy-controls button {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--color-background);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-background);
+  font: inherit;
+  font-weight: bold;
+  box-shadow: 0 4px 0 var(--color-wood);
+  cursor: pointer;
+}
+
+.toy-controls button:disabled {
+  border-color: var(--color-muted);
+  background: var(--color-background);
+  color: var(--color-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.toy-controls button:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.toy-status {
+  min-height: 3em;
+  margin: 0;
+  color: var(--color-accent);
+}
+
+@media (max-width: 720px) {
+  .toy-bench {
+    grid-template-columns: 1fr;
+  }
+
+  .toy-counter {
+    border-left: 0;
+    border-top: 3px solid var(--color-wood);
+  }
 }
