@@ -1929,10 +1929,11 @@ function renderRoom() {
       </div>
       <p class="room-intro">Arrange the prizes you have won, and some starter decor, on two shelves and the floor. Pick an object, then pick a spot. With the room picture focused, arrow keys move the picked object, R turns it and Delete takes it back to your collection.</p>
       <div class="room-bench">
-        <div>
+        <div class="room-scene">
           <canvas class="room-canvas" tabindex="0" aria-describedby="room-keys"></canvas>
           <p id="room-keys" class="note">Room picture: arrow keys move, R turns, Delete removes the picked object.</p>
           <div class="room-slots" role="group" aria-label="Spots in the room"></div>
+          <p class="room-status" role="status" aria-live="polite"></p>
         </div>
         <div class="room-controls">
           <h2>Your collection</h2>
@@ -1949,15 +1950,16 @@ function renderRoom() {
           </div>
         </div>
       </div>
-      <p class="room-status" role="status" aria-live="polite"></p>
-      <h2>Walk the room</h2>
-      <div class="room-actions">
-        <button type="button" class="room-walk-prev">← Previous spot</button>
-        <button type="button" class="room-walk-next">Next spot →</button>
+      <div class="room-walk">
+        <h2>Walk the room</h2>
+        <div class="room-actions">
+          <button type="button" class="room-walk-prev">← Previous spot</button>
+          <button type="button" class="room-walk-next">Next spot →</button>
+        </div>
+        <p class="room-look" role="status" aria-live="polite"></p>
+        <p class="room-summary"></p>
+        <ol class="room-inspect"></ol>
       </div>
-      <p class="room-look" role="status" aria-live="polite"></p>
-      <p class="room-summary"></p>
-      <ol class="room-inspect"></ol>
       <p class="note">Your room is kept in this browser only, apart from your scores. Clearing the room never touches scores or prizes. Nothing to buy.</p>
     </section>`;
 
