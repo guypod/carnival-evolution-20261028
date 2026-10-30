@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "head": "6b03265cd61be971ca3453ff3f79e59114633829",
+  "reviewedThrough": null,
+  "pending": [
+    "#/trail",
+    "#/circuit",
+    "#/party",
+    "#/records",
+    "#/booths",
+    "#/postcard",
+    "#/plush",
+    "#/tune",
+    "#/balloon",
+    "#/snack",
+    "#/coaster",
+    "#/fair",
+    "#/parade",
+    "#/expedition",
+    "#/workshop",
+    "#/play/balloon-darts",
+    "#/play/duck-dash",
+    "#/play/high-striker",
+    "#/play/memory-menagerie",
+    "#/play/mini-putt",
+    "#/play/mole-mayhem",
+    "#/play/puppet-theatre",
+    "#/play/ring-toss",
+    "#/play/skee-ball",
+    "#/play/water-cannon"
+  ],
+  "pendingThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
+  "findings": [
+    {
+      "fingerprint": "#/:desktop-clean:controls",
+      "route": "#/",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "The Photo button in the top-right toolbar is a raw white/grey default button with small default-size text, unlike the dark rounded theme buttons (Help, Guide, Start tour) beside it; same at narrow width.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/prizes:desktop-clean:materials",
+      "route": "#/prizes",
+      "state": "desktop-clean",
+      "criterion": "materials",
+      "note": "Booth prize cards are flat purple rectangles with a yellow outline and the page is a flat dark background under the awning: generic dashboard cards, no wood, paper tags or lantern glow; the Prize Room and desk toy links are plain full-width yellow bars.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/prizes:desktop-clean:depth",
+      "route": "#/prizes",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "Cards, the Carnival Collector panel and the link bars have no shadow, frame or counter edge; everything sits flat on the full-bleed dark background.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/room:desktop-clean:controls",
+      "route": "#/room",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Spot grid buttons, collection buttons (Striped Rug, Paper Lantern...), Turn/Put away/Undo/Clear the room and Previous/Next spot are raw grey browser-default buttons with default font size; the Backdrop radios are default blue radio dots.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/room:desktop-clean:composition",
+      "route": "#/room",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "The room scene sits at left with an empty right half at 1280x800, followed by a long unframed column of controls, a clipped scrolling collection list and a plain ordered list of spots.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/room:desktop-clean:focus-contrast",
+      "route": "#/room",
+      "state": "desktop-clean",
+      "criterion": "focus-contrast",
+      "note": "Locked collection buttons and the disabled Turn/Put away/Undo buttons show light grey text on a mid-grey fill, well under 4.5:1.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/room:desktop-clean:spacing",
+      "route": "#/room",
+      "state": "desktop-clean",
+      "criterion": "spacing",
+      "note": "Collection, backdrop, action buttons and the walk-the-room list are loose blocks without a shared framed panel; the collection list is cut off mid-row (Tiny Mallet Keyring) against the Backdrop fieldset.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/room:desktop-clean:art-integration",
+      "route": "#/room",
+      "state": "desktop-clean",
+      "criterion": "art-integration",
+      "note": "The 12 spot buttons under the scene are blank grey bars labelled with a single dot, detached from the drawing they control.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/toy:desktop-clean:composition",
+      "route": "#/toy",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "A small 360px duck scene and three buttons sit in the top-left; most of the 1280x800 screen below and to the right is empty dark background.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/toy:desktop-clean:controls",
+      "route": "#/toy",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Wind the key, Let it go and Reset are raw grey browser-default buttons with default small font; the disabled Let it go has grey-on-grey text.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/toy:desktop-clean:depth",
+      "route": "#/toy",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "The desk scene is a flat rounded purple box with a brown strip; no frame, shadow or counter edge, and the controls are not in the same frame as the scene.",
+      "firstSeen": "2026-10-30T04:45:35.510Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T04:45:35.510Z"
+    }
+  ],
+  "reviewedAt": {
+    "#/": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/prizes": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/toy": "6b03265cd61be971ca3453ff3f79e59114633829"
+  },
+  "reconciledAt": "2026-10-30T04:43:47.742Z"
+}
