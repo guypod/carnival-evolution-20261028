@@ -178,3 +178,40 @@ export function stillPhase(cam: CamShape | undefined, stalled: boolean): number 
   if (stalled) return 1 / TURNS_PER_RUN;
   return (cam === 'snail' ? 0.97 : 0.5) / TURNS_PER_RUN;
 }
+
+/** A circle or an ellipse of the frog's drawing, in bench pixels. */
+export interface FrogBlob {
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+}
+
+/**
+ * The frog's crafted parts around its centre `frogY`, for drawing. The body
+ * and the eye bumps keep the frog's old outline, so its bottom is the seat on
+ * the rod and its eye tops are what meets the safety guard. The mount is a
+ * socket set into the underside of the body where the rod's top goes in, so
+ * the rod is the only thing the frog rests on. The legs and feet are folded
+ * up beside the body and stop short of its bottom, so they touch nothing.
+ */
+export function frogFigure(frogY: number) {
+  const bottom = frogY + FROG_HALF_HEIGHT;
+  const eye = (side: -1 | 1): FrogBlob => ({ x: 12 * side, y: frogY - 12, rx: 5, ry: 5 });
+  const haunch = (side: -1 | 1): FrogBlob => ({ x: 22 * side, y: frogY + 3, rx: 9, ry: 7 });
+  const foot = (side: -1 | 1): FrogBlob => ({ x: 27 * side, y: bottom - 5, rx: 7, ry: 2.5 });
+  return {
+    body: { x: 0, y: frogY, rx: 26, ry: FROG_HALF_HEIGHT },
+    eyes: [eye(-1), eye(1)],
+    pupils: [-1, 1].map((side) => ({ x: 12 * side, y: frogY - 12, rx: 2, ry: 2 })),
+    haunches: [haunch(-1), haunch(1)],
+    feet: [foot(-1), foot(1)],
+    /** The mouth: an arc across the face, between the eyes and the body's middle. */
+    mouth: { x: 0, y: frogY - 4, r: 9 },
+    /** A seam across the body and the rivets along it. */
+    seam: frogY + 2,
+    rivets: [-16, -8, 8, 16].map((dx) => ({ x: dx, y: frogY + 2, rx: 1.5, ry: 1.5 })),
+    /** The follower socket: open at the bottom, flush with the seat. */
+    mount: { x: -6, y: bottom - 8, width: 12, height: 8 },
+  };
+}
