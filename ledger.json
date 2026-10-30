@@ -3,8 +3,6 @@
   "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
   "reviewedThrough": null,
   "pending": [
-    "#/play/high-striker",
-    "#/play/memory-menagerie",
     "#/play/mini-putt",
     "#/play/mole-mayhem",
     "#/play/puppet-theatre",
@@ -20,11 +18,11 @@
       "route": "#/",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at e3dca5c: the Photo button in the top-right toolbar is a raw white/grey default button with small default text beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
+      "note": "Still at 3f87238: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:17:26.050Z"
+      "seenOn": "2026-10-30T16:27:24.786Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:materials",
@@ -312,22 +310,22 @@
       "route": "#/tune",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Play, Tune sound, Starter tune, Clear and Save my tune are raw grey default buttons and Steps/Tempo are default white select boxes, unlike the themed step grid; same at 390px.",
+      "note": "Still at 3f87238: Play, Tune sound, Starter tune, Clear and Save my tune are raw grey default buttons and Steps/Tempo are default white selects; instrument icons render as missing-glyph boxes; same at 390px.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenOn": "2026-10-30T16:27:24.786Z"
     },
     {
       "fingerprint": "#/tune:desktop-clean:composition",
       "route": "#/tune",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "The 8x4 step grid is a small block at the left under a row of controls; the right half and the lower ~30% of the 1280x800 screen are empty dark background with no carousel scene or stall as focal point.",
+      "note": "Still at 3f87238: the 8x4 step grid is a small block at the left under a row of controls; the right half and lower third of the 1280x800 screen are empty dark background.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenOn": "2026-10-30T16:27:24.786Z"
     },
     {
       "fingerprint": "#/snack:desktop-clean:controls",
@@ -526,10 +524,32 @@
       "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
       "seenOn": "2026-10-30T16:26:22.640Z"
+    },
+    {
+      "fingerprint": "#/play/high-striker:desktop-clean:typography",
+      "route": "#/play/high-striker",
+      "state": "desktop-clean",
+      "criterion": "typography",
+      "note": "The canvas instruction line is clipped at the right edge, reading 'ring the bel'; at 390px the canvas text (swings, total, zones, Start) shrinks to a few pixels and is unreadable.",
+      "firstSeen": "2026-10-30T16:27:24.786Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:27:24.786Z"
+    },
+    {
+      "fingerprint": "#/play/memory-menagerie:narrow-clean:responsive",
+      "route": "#/play/memory-menagerie",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x200 with the instructions, Moves/Pairs and Start (Space) a few pixels tall, unreadable, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:27:24.786Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:27:24.786Z"
     }
   ],
   "reviewedAt": {
-    "#/": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+    "#/": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/prizes": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/toy": "a863a177a9f316800aceafd0a2590c23ae1abfee",
@@ -540,7 +560,7 @@
     "#/booths": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/postcard": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/plush": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/tune": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/coaster": "a863a177a9f316800aceafd0a2590c23ae1abfee",
@@ -549,7 +569,9 @@
     "#/expedition": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/workshop": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/balloon-darts": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/play/duck-dash": "3f8723831a5744311b755544f6b851c9aea33dd0"
+    "#/play/duck-dash": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/high-striker": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/memory-menagerie": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T16:25:32.045Z"
+  "reconciledAt": "2026-10-30T16:26:25.316Z"
 }
