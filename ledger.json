@@ -68,6 +68,106 @@
       "fingerprints": [
         "a3060372ac14845d"
       ]
+    },
+    {
+      "runId": "01a18f2f-41ee-7348-9874-35a666dc57a8",
+      "learner": "lens-tuning",
+      "trigger": "schedule",
+      "slot": "2026-10-30T23:40 Europe/London",
+      "scheduledFor": "2026-10-30T23:40:00.000Z",
+      "delayMinutes": 0,
+      "since": "2026-10-29T17:40:00.000Z",
+      "startedAt": "2026-10-30T23:40:47Z",
+      "finishedAt": "2026-10-30T23:42:15Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#250",
+          "#257",
+          "#262",
+          "#263",
+          "#271",
+          "#272",
+          "#276",
+          "#283",
+          "#304",
+          "#375",
+          "#299",
+          "#394",
+          "#398",
+          "#405",
+          "#409",
+          "#413",
+          "#418",
+          "#419",
+          "#420",
+          "#421",
+          "#422",
+          "#423",
+          "#424"
+        ],
+        "gaps": "PR diffs were not read (only file lists for #394, #398 and #413). Inline review comments were read with each body cut to 260 characters, and review bodies only skimmed. The CI run list hit its 100-run limit (only conclusions read). Tests were not run, and no live-play notes were read. The run was short on time before the launch deadline.",
+        "sources": [
+          {
+            "source": "pull-requests",
+            "enumeration": "complete",
+            "read": "full",
+            "scope": "gh pr list --state all updated since 2026-10-29T17:40Z: 23 PRs, all merged"
+          },
+          {
+            "source": "pr-diffs",
+            "enumeration": "count-only",
+            "read": "none",
+            "scope": "diffs of the 23 PRs not read; file lists read for #394, #398, #413",
+            "gaps": "no diff content read"
+          },
+          {
+            "source": "review-comments",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "pulls/<n>/comments for all 23 PRs, 74 comments, bodies cut to 260 chars",
+            "gaps": "comment bodies truncated"
+          },
+          {
+            "source": "review-bodies",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "pulls/<n>/reviews for all 23 PRs fetched; bodies of #419-#421 skimmed at 150 chars",
+            "gaps": "most review bodies not read"
+          },
+          {
+            "source": "visual-repair",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "factory-state/visual-repair log since window start; #394, #398, #413 bodies at 700 chars",
+            "gaps": "repair bodies truncated"
+          },
+          {
+            "source": "ci-runs",
+            "enumeration": "capped",
+            "read": "truncated",
+            "scope": "gh run list --limit 100 created since window start: 100 runs, all success (conclusion only)",
+            "gaps": "list hit 100-run cap; logs not read"
+          },
+          {
+            "source": "tests",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not run",
+            "gaps": "tests not run"
+          },
+          {
+            "source": "live-play",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "no live-play notes read"
+          }
+        ]
+      },
+      "fingerprints": [
+        "12d72f039beaf6b6"
+      ]
     }
   ],
   "proposals": [
@@ -112,12 +212,24 @@
           "kind": "review-finding",
           "ref": "#263 r4417033845",
           "url": "https://github.com/guypod/carnival-evolution-20261028/pull/263#discussion_r4417033845"
+        },
+        {
+          "kind": "pr",
+          "ref": "#420",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/420"
+        },
+        {
+          "kind": "review-finding",
+          "ref": "#420 r4428372303",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/420#discussion_r4428372303",
+          "commit": "72c9e4240ce0fca59f3a76f3c4a1bb492807f5e9"
         }
       ],
       "status": "accepted",
       "firstSeen": "2026-10-30T14:47:51.000Z",
       "seenIn": [
-        "01a18d46-50da-7046-b218-76d25345238a"
+        "01a18d46-50da-7046-b218-76d25345238a",
+        "01a18f2f-41ee-7348-9874-35a666dc57a8"
       ],
       "decisions": [
         {
