@@ -28,11 +28,19 @@ export function decodePng(buffer) {
     else if (type === 'IEND') break;
     offset += 12 + length;
   }
+  if (!width || !height || !channels) throw new Error('PNG without a header');
   const raw = inflateSync(Buffer.concat(idat));
   const stride = width * channels;
+  // A payload that does not fill every row would leave pixels to invent.
+  if (raw.length !== height * (stride + 1)) {
+    throw new Error(
+      `PNG data is ${raw.length} bytes, its ${width}x${height} header needs ${height * (stride + 1)}`,
+    );
+  }
   const data = Buffer.alloc(height * stride);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)];
+    if (filter > 4) throw new Error(`PNG row ${y} has unknown filter ${filter}`);
     const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
     for (let x = 0; x < stride; x++) {
       const a = x >= channels ? data[y * stride + x - channels] : 0;

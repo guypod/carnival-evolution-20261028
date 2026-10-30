@@ -285,7 +285,13 @@ export function validateReview(review, plan, criteria) {
     if (!criteria.includes(f.criterion)) errors.push(`unknown criterion ${f.criterion}`);
     if (!STATE.test(f.state ?? '')) errors.push(`unknown state ${f.state}`);
     if (typeof f.note !== 'string' || !f.note.trim()) errors.push(`finding without a note`);
+    // Only the loop's own repair pull request, through its finding markers,
+    // takes a finding out of the repairable set; a review record cannot.
+    if (f.fixedBy !== undefined)
+      errors.push(`finding with fixedBy; repairs are read from pull requests`);
   }
+  if (review.pr !== undefined && review.pr !== null)
+    errors.push(`review names pull request ${review.pr}; repairs are read from pull requests`);
   return errors;
 }
 

@@ -394,6 +394,10 @@ test('the independent pixel check reads committed screenshots without a browser'
   };
   const flat = Buffer.concat([Buffer.from([0]), Buffer.alloc(8 * 3, 40)]);
   assert.equal(isBlank(summarise(decodePng(png(8, 8, Array(8).fill(flat))))), true);
+  // Rows missing from the payload, or an unknown filter, are refused, not invented.
+  assert.throws(() => decodePng(png(8, 16, Array(8).fill(flat))), /header needs/);
+  const badFilter = Buffer.concat([Buffer.from([9]), Buffer.alloc(8 * 3, 40)]);
+  assert.throws(() => decodePng(png(8, 8, Array(8).fill(badFilter))), /unknown filter/);
 });
 
 test('main moving between batches cannot keep refilling the backlog', () => {
@@ -590,6 +594,8 @@ test('a review outside its plan or the rubric is refused', async () => {
     { ...ok, findings: [finding('#/toy', 'controls')] },
     { ...ok, findings: [finding('#/snack', 'controls', { note: undefined })] },
     { ...ok, findings: [finding('#/snack', 'controls', { note: '  ' })] },
+    { ...ok, pr: 7 },
+    { ...ok, findings: [finding('#/snack', 'controls', { fixedBy: 7 })] },
   ]) {
     assert.notDeepEqual(validateReview(bad, plan, criteria), [], JSON.stringify(bad));
   }
