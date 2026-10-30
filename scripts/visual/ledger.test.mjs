@@ -61,9 +61,11 @@ test('a shared style change owes every route a look, not three', () => {
   assert.deepEqual(affectedRoutes(['src/style.css'], mainSource, routes), routes);
   assert.deepEqual(affectedRoutes(['src/carnival/theme.ts'], mainSource, routes), routes);
   assert.deepEqual(affectedRoutes(['src/wish-balloon.ts'], mainSource, routes), ['#/balloon']);
-  assert.deepEqual(affectedRoutes(['src/games/ring-toss/game.ts'], mainSource, routes), [
+  assert.deepEqual(affectedRoutes(['src/games/ring-toss/draw.ts'], mainSource, routes), [
     '#/play/ring-toss',
   ]);
+  // game.ts holds the name and description the midway and booth cards show.
+  assert.deepEqual(affectedRoutes(['src/games/ring-toss/game.ts'], mainSource, routes), routes);
   assert.deepEqual(
     affectedRoutes(['src/snack-stand.test.ts', 'README.md'], mainSource, routes),
     [],
@@ -119,7 +121,7 @@ test('findings on routes the repair did not touch survive later commits', () => 
   assert.equal(repairable(ledger, NOW).length, 4);
   // Four unrelated commits later, nothing about #/snack changed.
   for (const head of ['h2', 'h3', 'h4', 'h5']) {
-    ledger = reviewAll(ledger, head, ['src/games/ring-toss/game.ts'], findings).ledger;
+    ledger = reviewAll(ledger, head, ['src/games/ring-toss/draw.ts'], findings).ledger;
   }
   assert.deepEqual(
     repairable(ledger, NOW)
@@ -393,4 +395,38 @@ test('open findings on four routes cannot starve owed coverage while main moves'
     assert.ok(++runs <= routes.length, 'coverage keeps moving');
   }
   assert.equal(repairable(ledger, NOW).length, 4, 'the open findings are still kept');
+});
+
+test('a reopened, re-closed or later merged pull request applies each new outcome', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('CLOSED')], NOW);
+  ledger = reconcileOwnPrs(ledger, [ownPr('OPEN')], NOW).ledger;
+  assert.equal(ledger.findings[0].status, 'pr-open', 'reopen');
+  const again = ownPr('CLOSED', { closedAt: '2026-10-29T12:00:00Z' });
+  ledger = reconcileOwnPrs(ledger, [again], NOW).ledger;
+  assert.deepEqual(
+    [ledger.findings[0].status, ledger.findings[0].declinedAt],
+    ['declined', '2026-10-29T12:00:00Z'],
+  );
+  ledger = reconcileOwnPrs(ledger, [ownPr('OPEN')], NOW).ledger;
+  ledger = reconcileOwnPrs(
+    ledger,
+    [ownPr('MERGED', { closedAt: '2026-10-29T18:00:00Z' })],
+    NOW,
+  ).ledger;
+  assert.equal(ledger.findings[0].status, 'merged', 'merge after reopen');
+});
+
+test('a decline cooldown survives resolution and recurrence of the finding', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('CLOSED')], NOW);
+  let plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/snack-stand.ts'] });
+  ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  assert.equal(ledger.findings[0].status, 'resolved');
+  plan = planRun(ledger, { ...base, head: 'h3', changedFiles: ['src/snack-stand.ts'] });
+  ledger = recordReview(plan.ledger, {
+    reviewed: plan.batch,
+    findings: [finding('#/snack', 'controls')],
+    now: NOW,
+  });
+  assert.equal(repairable(ledger, NOW).length, 0, 'still within 30 days of the decline');
+  assert.equal(repairable(ledger, '2026-12-15T00:00:00Z').length, 1);
 });

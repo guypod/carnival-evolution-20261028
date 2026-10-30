@@ -63,7 +63,7 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
      never report a repair as deployed.
      Declined repairs (closed without merging) stay declined for 30 days.
      Leftover `tessl/visual-repair-*` branches never block a run; each repair
-     branch is named for its run, so an old one is never reused.
+     branch is named for its run, so an old one is never reused. If that name already exists on origin, take a new time.
 3. **Browser.** Capture only through `scripts/visual/run-capture.sh`, which
    sets up Chromium, loads its environment in the same shell, starts its own
    dev server for this checkout on a free port (never one already running)
@@ -113,7 +113,7 @@ open, and not declined in the last 30 days. Pick the one route with the most,
 worst first: composition, controls and focus-contrast before the rest. Other
 routes' findings stay open in the ledger for later runs.
 
-- Branch `tessl/visual-repair-<route name>-<yyyymmddhh>` from the default
+- Branch `tessl/visual-repair-<route name>-<yyyymmddhhmmss>`, with the run's UTC start time to the second, from the default
   branch.
 - Keep the change bounded: the route's markup in `src/main.ts`, its rules in
   `src/style.css`, and its own drawing module. No new route, no gameplay,
@@ -131,8 +131,10 @@ routes' findings stay open in the ledger for later runs.
   `Visual repair: <route>`. The body lists each finding with its before and
   after screenshot paths, what you ran, and one
   `<!-- tessl-visual-finding: <route>:<state>:<criterion> -->` line per
-  finding fixed. Commit the after screenshots under
-  `docs/visual-baseline/repairs/<route>/`. The next run's `plan` marks those
+  finding fixed. Commit the before screenshots (from the
+  `main` capture) and the after screenshots under
+  `docs/visual-baseline/repairs/<route>/before/` and `.../after/`, so both sides
+  of the comparison are reachable from the pull request. The next run's `plan` marks those
   findings `pr-open` from the markers.
 - Never merge, approve or enable auto-merge.
 

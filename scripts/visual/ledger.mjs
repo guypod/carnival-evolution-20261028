@@ -74,7 +74,11 @@ export function affectedRoutes(files, mainSource, routes) {
     if (!file.startsWith('src/') && !SHARED.some((p) => p.test(file))) continue;
     const game = file.match(/^src\/games\/([\w-]+)\//);
     if (SHARED.some((p) => p.test(file))) routes.forEach((r) => hit.add(r));
-    else if (game) hit.add(`#/play/${game[1]}`);
+    // A game's own module holds its name and description, which the midway,
+    // booth cards and other screens show, so it owes every route. Its other
+    // files draw only its play screen.
+    else if (game && !file.endsWith('/game.ts')) hit.add(`#/play/${game[1]}`);
+    else if (game) routes.forEach((r) => hit.add(r));
     else if (file.startsWith('src/midway/')) hit.add('#/');
     else if (modules.get(file)?.length) modules.get(file).forEach((r) => hit.add(r));
     else routes.forEach((r) => hit.add(r));
@@ -116,14 +120,17 @@ export function reconcileOwnPrs(ledger, prs, now) {
     if (status === 'pr-open') openPr ??= pr.number;
     for (const finding of next.findings.filter((f) => prints.includes(f.fingerprint))) {
       finding.applied ??= [];
-      if (finding.applied.includes(pr.number)) continue;
+      // Each distinct outcome of a pull request applies once; a reopen, a new
+      // closure or a merge after a reopen is a new outcome and applies again.
+      const outcome = `${pr.number}:${status}:${pr.closedAt ?? ''}`;
+      if (finding.applied.includes(outcome)) continue;
       // A pull request older than the one the finding follows is history,
       // even when it first shows up in a later run.
       if ((finding.pr ?? 0) > pr.number) continue;
       finding.pr = pr.number;
       finding.status = status;
       if (status === 'pr-open') continue;
-      finding.applied.push(pr.number);
+      finding.applied.push(outcome);
       if (status === 'declined') finding.declinedAt = pr.closedAt ?? now;
       // Merged is not deployed: look at the route again on main to confirm it.
       if (status === 'merged' && !next.pending.includes(finding.route)) {
@@ -212,10 +219,14 @@ export function recordReview(ledger, { reviewed, findings, pr = null, now }) {
   return next;
 }
 
-/** Findings a repair may take on: open, and not declined in the last 30 days. */
+/**
+ * Findings a repair may take on: open or declined, and not declined in the
+ * last 30 days. The decline date stays with the finding through resolution and
+ * recurrence, so the cooldown always holds.
+ */
 export function repairable(ledger, now) {
   return ledger.findings.filter(
-    (f) => f.status === 'open' || (f.status === 'declined' && isStale(f, now)),
+    (f) => ['open', 'declined'].includes(f.status) && (!f.declinedAt || isStale(f, now)),
   );
 }
 
@@ -296,7 +307,10 @@ function plan(repo, now) {
   const fields = 'number,state,headRefName,isCrossRepository,body,closedAt,files';
   // Only own pull requests updated since the last reconcile: older history is
   // already in the ledger, so a growing history never reaches the limit.
-  const since = ledger.reconciledAt ? ` updated:>=${ledger.reconciledAt.slice(0, 10)}` : '';
+  // A week of overlap covers search indexing lag, and pull requests the
+  // ledger still tracks as open are read directly below, whatever their age.
+  const overlap = ledger.reconciledAt && new Date(Date.parse(ledger.reconciledAt) - 7 * 86400e3);
+  const since = overlap ? ` updated:>=${overlap.toISOString().slice(0, 10)}` : '';
   const prs = list(
     'pr',
     'list',
@@ -333,9 +347,15 @@ function plan(repo, now) {
     '--json',
     fields,
   ).filter(isOwnPr);
+  const known = new Set([...prs, ...ownOpen].map((p) => p.number));
+  const tracked = [
+    ...new Set(ledger.findings.filter((f) => f.status === 'pr-open').map((f) => f.pr)),
+  ]
+    .filter((n) => !known.has(n))
+    .map((n) => gh('pr', 'view', String(n), '--json', fields));
   const reconciled = reconcileOwnPrs(
     ledger,
-    [...prs.filter((p) => !ownOpen.some((o) => o.number === p.number)), ...ownOpen],
+    [...prs.filter((p) => !ownOpen.some((o) => o.number === p.number)), ...ownOpen, ...tracked],
     now,
   );
   const result = planRun(reconciled.ledger, {
