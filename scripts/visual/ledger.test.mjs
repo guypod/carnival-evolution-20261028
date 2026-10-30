@@ -583,6 +583,33 @@ test('an owed route with an open finding is looked at in the first batch', () =>
   assert.equal(plan.batch.length, BATCH_SIZE);
 });
 
+test('a helper in one game’s folder that another module imports owes every route', () => {
+  const file = 'src/games/ring-toss/aim.ts';
+  const own = affectedRoutes([file], mainSource, routes, () => ['src/games/ring-toss/game.ts']);
+  assert.deepEqual(own, ['#/play/ring-toss']);
+  const shared = affectedRoutes([file], mainSource, routes, () => [
+    'src/games/water-cannon/game.ts',
+  ]);
+  assert.deepEqual(shared, routes);
+  // A folder for a game the router does not serve cannot be placed.
+  assert.deepEqual(affectedRoutes(['src/games/gone/aim.ts'], mainSource, routes), routes);
+});
+
+test('a backlog whose last route was removed completes instead of stalling', () => {
+  const ledger = {
+    ...emptyLedger(),
+    reviewedThrough: 'h0',
+    pending: ['#/gone'],
+    pendingThrough: 'h1',
+  };
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/snack-stand.ts'] });
+  assert.equal(plan.action, 'review');
+  assert.deepEqual(plan.batch, ['#/snack']);
+  const quiet = planRun(ledger, { ...base, head: 'h2', changedFiles: ['README.md'] });
+  assert.equal(quiet.action, 'nothing');
+  assert.equal(quiet.ledger.reviewedThrough, 'h2');
+});
+
 test('a module another screen imports owes every route, not just its own', () => {
   const importers = (file) =>
     ({

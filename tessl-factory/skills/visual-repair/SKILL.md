@@ -41,7 +41,9 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
    through a raw launch, which skips the action's keys.
 2. **Plan.** Run `node scripts/visual/ledger.mjs plan`. It reads the ledger
    and `gh pr list` with each pull request's files, reconciles the loop's own
-   pull requests first, and prints one of the actions below.
+   pull requests first, and prints one of the actions below. Any plan but
+   `review` saves the reconciled ledger itself, crediting no route; a
+   `review` is saved by `record`.
    Other open work never stops an inspection: open pull requests, queued
    issues and the loop's own repair awaiting review all leave `review` in
    place, so `main` is captured every six hours. The plan also prints

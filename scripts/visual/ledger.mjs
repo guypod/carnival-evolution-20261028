@@ -101,8 +101,17 @@ export function affectedRoutes(files, mainSource, routes, importers = () => []) 
     if (SHARED.some((p) => p.test(file))) routes.forEach((r) => hit.add(r));
     // A game's own module holds its name and description, which the midway,
     // booth cards and other screens show, so it owes every route. Its other
-    // files draw only its play screen.
-    else if (game && !file.endsWith('/game.ts')) hit.add(`#/play/${game[1]}`);
+    // files draw only its play screen, unless something outside its folder
+    // imports them.
+    else if (
+      game &&
+      !file.endsWith('/game.ts') &&
+      routes.includes(`#/play/${game[1]}`) &&
+      !importers(file).some(
+        (f) => !f.startsWith(`src/games/${game[1]}/`) && !f.endsWith('.test.ts'),
+      )
+    )
+      hit.add(`#/play/${game[1]}`);
     else if (game) routes.forEach((r) => hit.add(r));
     // A module counts as one route's only when nothing else in src imports
     // it; anything shared, such as src/midway/palette.ts or a module another
@@ -223,6 +232,9 @@ export function planRun(
 ) {
   const next = structuredClone(ledger);
   next.head = head;
+  // A route the router no longer serves cannot be captured: its owed look is
+  // dropped, and its findings stay in the ledger, untouched, in case it returns.
+  next.pending = next.pending.filter((r) => routes.includes(r));
   // A coverage interval runs from reviewedThrough to pendingThrough. A new one
   // opens only when the last is fully reviewed, so the backlog always shrinks
   // and a main that moves between runs cannot keep refilling it. Commits after
@@ -235,9 +247,8 @@ export function planRun(
     next.pending = [...owed];
     next.pendingThrough = head;
   }
-  // A route the router no longer serves cannot be captured: its owed look is
-  // dropped, and its findings stay in the ledger, untouched, in case it returns.
-  next.pending = next.pending.filter((r) => routes.includes(r));
+  // An interval with nothing left owed is covered, whether or not it needed a look.
+  if (!next.pending.length) next.reviewedThrough = next.pendingThrough;
   const live = repairable(next, now).filter((f) => routes.includes(f.route));
   // Open findings are looked at again once per head, so a fix on main clears them.
   const revisit = live.filter((f) => f.seenAt !== head).map((f) => f.route);
@@ -418,7 +429,8 @@ export function writeLedger(repo, ledger, base, message, remote = 'origin') {
 
 // The command line the skill runs.
 
-const gh = (...args) => JSON.parse(execFileSync('gh', args, { encoding: 'utf8' }));
+const gh = (...args) =>
+  JSON.parse(execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 }));
 
 function plan(repo, now) {
   const { ledger, base } = readLedger(repo);
@@ -497,6 +509,12 @@ function plan(repo, now) {
     importers: importersAt(repo, head),
   });
   result.ledger.reconciledAt = now;
+  // A review is saved by `record`, after its screenshots are judged. Any other
+  // plan saves now, so reconciled pull requests and a dropped or completed
+  // backlog survive a run with nothing to record. It credits no route.
+  if (result.action !== 'review') {
+    result.saved = writeLedger(repo, result.ledger, base, `visual repair: ${result.action}`);
+  }
   const live = repairable(result.ledger, now).filter((f) => routes.includes(f.route));
   return { ...result, base, head, repairable: live };
 }
