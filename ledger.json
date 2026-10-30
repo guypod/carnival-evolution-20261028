@@ -3,8 +3,6 @@
   "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
   "reviewedThrough": null,
   "pending": [
-    "#/play/puppet-theatre",
-    "#/play/ring-toss",
     "#/play/skee-ball",
     "#/play/water-cannon",
     "#/room"
@@ -124,33 +122,33 @@
       "route": "#/toy",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Still at a863a17: a small 360px duck scene and three buttons sit in the top-left; most of the 1280x800 screen below and to the right is empty dark background.",
+      "note": "Still at 3f87238: a small 360px duck scene and three buttons sit in the top-left; most of the 1280x800 screen below and to the right is empty dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:35:25.462Z"
     },
     {
       "fingerprint": "#/toy:desktop-clean:controls",
       "route": "#/toy",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at a863a17: Wind the key, Let it go and Reset are raw grey browser-default buttons with small default font; the disabled Let it go is grey-on-grey.",
+      "note": "Still at 3f87238: Wind the key, Let it go and Reset are raw grey browser-default buttons with small default font; the disabled Let it go is grey-on-grey; the heading carries a thin white box outline.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:35:25.462Z"
     },
     {
       "fingerprint": "#/toy:desktop-clean:depth",
       "route": "#/toy",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Still at a863a17: the desk scene is a flat rounded purple box with a brown strip; no frame, shadow or counter edge, and the controls are outside the scene frame.",
+      "note": "Still at 3f87238: the desk scene is a flat rounded purple box with a brown strip; no frame, shadow or counter edge, and the controls are outside the scene frame.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:35:25.462Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:controls",
@@ -363,22 +361,22 @@
       "route": "#/coaster",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "◀ Point, Point ▶, Raise, Lower, Test, Pause, Step, Undo, Reset layout and Save placard are raw grey default buttons with small default text; Ride name is a default white input and Emblem/Colours are default white selects; same at 390px.",
+      "note": "Still at 3f87238: Point, Raise, Lower, Test, Pause, Step, Undo, Reset layout and Save placard are raw grey default buttons with small default text; Ride name is a default white input and Emblem/Colours are default white selects; same at 390px.",
       "firstSeen": "2026-10-30T15:40:27.415Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:35:25.462Z"
     },
     {
       "fingerprint": "#/coaster:desktop-clean:depth",
       "route": "#/coaster",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "The track canvas sits on the flat page background with only a lilac key strip under it; no frame, shadow or panel joins the track, its controls and the placard.",
+      "note": "Still at 3f87238: the track canvas sits on the flat page background with only a lilac key strip under it; no frame, shadow or panel joins the track, its controls and the placard.",
       "firstSeen": "2026-10-30T15:40:27.415Z",
-      "seenAt": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:40:27.415Z"
+      "seenOn": "2026-10-30T16:35:25.462Z"
     },
     {
       "fingerprint": "#/fair:desktop-clean:art-integration",
@@ -577,13 +575,35 @@
       "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
       "seenOn": "2026-10-30T16:34:27.953Z"
+    },
+    {
+      "fingerprint": "#/play/puppet-theatre:narrow-clean:responsive",
+      "route": "#/play/puppet-theatre",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the stage canvas shrinks to about 360x210 with the scene line, pose buttons (stand/wave/bow/hide), Undo and Reset scene a few pixels tall, hard to read, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:35:25.462Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:35:25.462Z"
+    },
+    {
+      "fingerprint": "#/play/ring-toss:narrow-clean:responsive",
+      "route": "#/play/ring-toss",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x200 with the hint, bottle values, shelf labels and Score/Rings a few pixels tall, unreadable, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:35:25.462Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:35:25.462Z"
     }
   ],
   "reviewedAt": {
     "#/": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/prizes": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/toy": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+    "#/toy": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/trail": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/circuit": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/party": "3f8723831a5744311b755544f6b851c9aea33dd0",
@@ -594,7 +614,7 @@
     "#/tune": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/snack": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/coaster": "a863a177a9f316800aceafd0a2590c23ae1abfee",
+    "#/coaster": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/expedition": "3f8723831a5744311b755544f6b851c9aea33dd0",
@@ -604,7 +624,9 @@
     "#/play/high-striker": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/memory-menagerie": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/mini-putt": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/play/mole-mayhem": "3f8723831a5744311b755544f6b851c9aea33dd0"
+    "#/play/mole-mayhem": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/puppet-theatre": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/ring-toss": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T16:32:27.158Z"
+  "reconciledAt": "2026-10-30T16:34:33.251Z"
 }
