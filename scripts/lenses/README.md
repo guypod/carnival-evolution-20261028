@@ -54,8 +54,11 @@ unbroken covered interval below.
   run covers from its `since` to its start (complete) or its
   `coverage.through` (partial); the hour of overlap only sets where the next
   run reads, not what was covered. Only runs whose covered intervals join into
-  one unbroken interval from the earliest window attempted count, whatever
-  order they started in, so the checkpoint is the end of that interval.
+  one unbroken interval from the earliest window any scheduled run attempted
+  count, whatever order they started in, so the checkpoint is the end of that
+  interval. A later run that reads from further back and falls short or fails
+  moves that start back: runs after its coverage stop counting until a run
+  spans the gap.
 - **Retry.** A partial or failed slot stays due: a run for the same slot may
   try again while the slot is still owed (within the 180 minutes). After
   that, the next slot's `since` still reaches back to the last complete run,

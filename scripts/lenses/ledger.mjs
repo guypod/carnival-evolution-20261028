@@ -363,23 +363,22 @@ const coveredTo = (r) => {
 
 // The scheduled runs whose progress counts: those whose recorded intervals,
 // from since to coveredTo, join into one unbroken interval from the earliest
-// window attempted. A run starts that interval when its since reaches back to
-// the earliest window attempted by the time it started; any run whose since
-// falls inside the interval so far extends it, whatever order the runs
-// started in, so a later batch that bridges a gap reconnects the runs after
-// it. A correction that lowers a run reopens its interval, and a later run
-// that started reading after the reopened start does not close it: only
-// recorded coverage that spans the gap does.
+// window any scheduled run attempted, across the whole history. Only a run
+// whose since reaches back to that window starts the interval, so a later
+// attempt that reads from further back, and falls short or fails, cuts off
+// everything after its own coverage until recorded coverage spans the gap.
+// Any run whose since falls inside the interval so far extends it, whatever
+// order the runs started in, so a later batch that bridges a gap reconnects
+// the runs after it. A correction that lowers a run reopens its interval, and
+// a later run that started reading after the reopened start does not close it.
 const countedRuns = (ledger, learner) => {
   const runs = scheduledRuns(ledger, learner).sort(
     (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
   );
-  const counted = new Set();
-  let earliest = Infinity;
-  for (const r of runs) {
-    earliest = Math.min(earliest, sinceOf(r));
-    if (!Number.isNaN(coveredTo(r)) && sinceOf(r) <= earliest) counted.add(r);
-  }
+  const earliest = Math.min(...runs.map(sinceOf));
+  const counted = new Set(
+    runs.filter((r) => !Number.isNaN(coveredTo(r)) && sinceOf(r) <= earliest),
+  );
   let frontier = Math.max(-Infinity, ...[...counted].map(coveredTo));
   for (let grew = true; grew;) {
     grew = false;

@@ -30,6 +30,7 @@ import {
   recordIssued,
   recordDecision,
   recordRun,
+  retrySince,
   REPOSITORY_URL,
   SAFETY_STANDARDS,
   slotAt,
@@ -1747,6 +1748,15 @@ const scheduled = (ledger, runId, startedAt, coverage, learner = 'lens-tuning') 
   assert.deepEqual(validateRun(r, opts({ now: startedAt, ledger })), [], runId);
   return recordRun(ledger, r);
 };
+// A partial coverage whose one short source read in full up to through.
+const partialTo = (through) => ({
+  status: 'partial',
+  gaps: 'cap',
+  through,
+  sources: fullSources().map((s, i) =>
+    i ? s : { ...s, enumeration: 'capped', read: 'truncated', gaps: 'cap', through },
+  ),
+});
 
 test('a run that starts inside the covered interval connects, not only inside the retry overlap', () => {
   // A covers to 11:41; B reads 10:41 to 11:20; C reads from 11:20 and completes.
@@ -1830,4 +1840,62 @@ test('a complete run cut off by a correction leaves its weekly slot open for a r
   // Once it is covered again the slot is closed, and after 180 minutes it is missed.
   assert.equal(dueSlot(recovered, '2026-11-02T06:30:00Z', learner).due, false);
   assert.equal(dueSlot(fixed, '2026-11-02T08:31:00Z', learner).due, false);
+});
+
+test('a later attempt from further back cuts off coverage it does not join', () => {
+  // A completes at 11:41, reading from 29 October 11:40.
+  const a = scheduled(emptyLedger(), 'run-a', '2026-10-30T11:41:00Z', { status: 'complete' });
+  assert.equal(checkpoint(a), '2026-10-30T11:41:00.000Z');
+  // B reads from 28 October, which is allowed, but does not reach A's window.
+  const backward = (coverage) => {
+    const due = dueSlot(a, '2026-10-30T17:41:00Z');
+    assert.equal(due.due, true, due.reason);
+    const b = run({
+      runId: 'run-b',
+      slot: due.slot,
+      startedAt: '2026-10-30T17:41:00Z',
+      finishedAt: '2026-10-30T17:41:00Z',
+      since: '2026-10-28T00:00:00.000Z',
+      coverage: { inspected: [], sources: fullSources(), ...coverage },
+      proposals: [],
+    });
+    assert.deepEqual(validateRun(b, opts({ now: b.startedAt, ledger: a })), []);
+    return recordRun(a, b);
+  };
+  const failedSources = fullSources().map((s) => ({ ...s, read: 'none', gaps: 'not read' }));
+  const short = {
+    partial: backward(partialTo('2026-10-28T12:00:00.000Z')),
+    failed: backward({ status: 'failed', gaps: 'not read', sources: failedSources }),
+    corrected: lower(backward({ status: 'complete' }), 'run-b', 'partial'),
+  };
+  for (const [kind, ledger] of Object.entries(short)) {
+    const owed = kind === 'partial' ? '2026-10-28T12:00:00.000Z' : '2026-10-28T00:00:00.000Z';
+    // A no longer counts: the next run reads from what B left unread, not A's end.
+    assert.equal(checkpoint(ledger), kind === 'partial' ? owed : null, kind);
+    assert.equal(retrySince(ledger, '2026-10-30T23:40:00Z'), owed, kind);
+    const due = dueSlot(ledger, '2026-10-30T23:41:00Z');
+    assert.equal(due.due, true, `${kind}: ${due.reason}`);
+    assert.equal(due.since, owed, kind);
+    // B's own slot stays open for a retry while it is owed.
+    assert.equal(dueSlot(ledger, '2026-10-30T18:00:00Z').since, owed, kind);
+    // A bridge from there that reads past A's since reconnects A.
+    const bridged = scheduled(
+      ledger,
+      'bridge',
+      '2026-10-30T23:41:00Z',
+      partialTo('2026-10-29T20:00:00.000Z'),
+    );
+    assert.equal(checkpoint(bridged), '2026-10-30T11:41:00.000Z', kind);
+    assert.equal(dueSlot(bridged, '2026-10-31T05:41:00Z').since, '2026-10-30T10:41:00.000Z', kind);
+    // A bridge that stops short of A's since does not.
+    const gap = scheduled(
+      ledger,
+      'gap',
+      '2026-10-30T23:41:00Z',
+      partialTo('2026-10-29T06:00:00.000Z'),
+    );
+    assert.equal(checkpoint(gap), '2026-10-29T06:00:00.000Z', kind);
+    assert.equal(dueSlot(gap, '2026-10-31T05:41:00Z').since, '2026-10-29T06:00:00.000Z', kind);
+    assert.deepEqual(bridged.runs.slice(0, ledger.runs.length), ledger.runs, kind);
+  }
 });
