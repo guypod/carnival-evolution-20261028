@@ -126,8 +126,15 @@ export function emptyLedger() {
   };
 }
 
-/** A pull request the loop opened: its branch prefix, from this repository. */
-export const isOwnPr = (pr) => OWN_BRANCH.test(pr.headRefName) && pr.isCrossRepository === false;
+/**
+ * A pull request the loop opened: its branch prefix, from this repository,
+ * opened by the Tessl app. A branch name anyone can choose is not enough.
+ */
+export const OWN_AUTHOR = 'app/tessl-app';
+export const isOwnPr = (pr) =>
+  OWN_BRANCH.test(pr.headRefName) &&
+  pr.isCrossRepository === false &&
+  pr.author?.login === OWN_AUTHOR;
 
 /**
  * Bring the loop's own pull requests into the ledger before anything else.
@@ -174,46 +181,30 @@ export function reconcileOwnPrs(ledger, prs, now) {
 }
 
 /**
- * The other open pull requests a repair of `route` would collide with. A
- * repair writes the route's markup in src/main.ts, its rules in src/style.css
- * and its own drawing module, so a pull request conflicts when it changes a
- * shared file or one of the files that route's repair may edit. A pull
- * request whose file list is missing or may be cut off counts as conflicting.
- * Queued issues and pull requests elsewhere in the app do not: the shared
- * writer key already keeps their runs from writing at the same time.
+ * For each route, the other open pull requests a repair of it would collide
+ * with: those whose diff the route draws with, by the same mapping coverage
+ * uses. Shared files, modules other screens import and files the map cannot
+ * place reach every route, so the check errs wide. A pull request whose file
+ * list is missing or may be cut off reaches every route too. Queued issues and
+ * pull requests elsewhere in the app do not conflict: the shared writer key
+ * already keeps their runs from writing at the same time.
  */
-export function repairConflicts(route, openPrs, mainSource, modules = routeModules(mainSource)) {
-  const owns = repairTargetFiles(route, modules);
-  const reasons = [];
+export function repairConflicts(openPrs, { mainSource, routes, importers = () => [] }) {
+  const conflicts = {};
+  const add = (route, reason) => (conflicts[route] ??= []).push(reason);
   for (const pr of openPrs) {
     const files = (pr.files ?? null)?.map((f) => f.path ?? f);
     if (!files || files.length >= PR_FILES_LIMIT) {
-      reasons.push(`open pull request #${pr.number} has no complete file list`);
+      routes.forEach((r) => add(r, `open pull request #${pr.number} has no complete file list`));
       continue;
     }
     const shared = files.find((f) => SHARED.some((p) => p.test(f)));
-    const own = files.find(owns);
-    if (shared) reasons.push(`open pull request #${pr.number} changes shared file ${shared}`);
-    else if (own)
-      reasons.push(`open pull request #${pr.number} changes ${own}, which ${route} draws with`);
+    const why = shared
+      ? `open pull request #${pr.number} changes shared file ${shared}`
+      : `open pull request #${pr.number} changes files this route draws with`;
+    affectedRoutes(files, mainSource, routes, importers).forEach((r) => add(r, why));
   }
-  return reasons;
-}
-
-/** Whether a file is one a repair of `route` may edit, beyond the shared files. */
-function repairTargetFiles(route, modules) {
-  const game = route.match(/^#\/play\/([\w-]+)$/);
-  if (game) return (f) => f.startsWith(`src/games/${game[1]}/`);
-  const own = [...modules].filter(([, rs]) => rs.length === 1 && rs[0] === route).map(([f]) => f);
-  // The midway draws with src/midway/ and with every module main.ts uses
-  // outside one screen's renderer.
-  if (route === '#/') {
-    const midway = [...modules].filter(([, rs]) => !rs.length).map(([f]) => f);
-    return (f) => f.startsWith('src/midway/') || midway.includes(f);
-  }
-  // A screen the map cannot place may draw with anything in src.
-  if (!own.length) return (f) => f.startsWith('src/');
-  return (f) => own.includes(f);
+  return conflicts;
 }
 
 /**
@@ -244,10 +235,12 @@ export function planRun(
     next.pending = [...owed];
     next.pendingThrough = head;
   }
+  // A route the router no longer serves cannot be captured: its owed look is
+  // dropped, and its findings stay in the ledger, untouched, in case it returns.
+  next.pending = next.pending.filter((r) => routes.includes(r));
+  const live = repairable(next, now).filter((f) => routes.includes(f.route));
   // Open findings are looked at again once per head, so a fix on main clears them.
-  const revisit = repairable(next, now)
-    .filter((f) => f.seenAt !== head)
-    .map((f) => f.route);
+  const revisit = live.filter((f) => f.seenAt !== head).map((f) => f.route);
   // Revisits take at most half the batch, so owed coverage always progresses.
   const revisits = [...new Set(revisit)].filter((r) => !next.pending.includes(r));
   // Owed routes with open findings come first: they are owed either way, so
@@ -259,16 +252,11 @@ export function planRun(
   const owedNow = owed.slice(0, BATCH_SIZE - Math.min(revisits.length, BATCH_SIZE / 2));
   const batch = [...owedNow, ...revisits].slice(0, BATCH_SIZE);
   // Which routes a repair must leave alone this run, and why.
-  const modules = routeModules(mainSource);
-  const conflicts = Object.fromEntries(
-    routes
-      .map((r) => [r, repairConflicts(r, openPrs, mainSource, modules)])
-      .filter(([, reasons]) => reasons.length),
-  );
+  const conflicts = repairConflicts(openPrs, { mainSource, routes, importers });
   const monitor = openPr ?? null;
   if (batch.length) return { action: 'review', batch, monitor, conflicts, ledger: next };
   if (monitor) return { action: 'monitor', pr: monitor, ledger: next };
-  const waiting = [...new Set(repairable(next, now).map((f) => f.route))];
+  const waiting = [...new Set(live.map((f) => f.route))];
   if (!waiting.length) return { action: 'nothing', ledger: next };
   const targets = waiting.filter((r) => !conflicts[r]);
   if (targets.length) return { action: 'repair', targets, conflicts, ledger: next };
@@ -452,7 +440,7 @@ function plan(repo, now) {
     if (items.length >= LIST_LIMIT) throw new Error(`gh ${args.join(' ')} hit ${LIST_LIMIT} items`);
     return items;
   };
-  const fields = 'number,state,headRefName,isCrossRepository,body,closedAt,files';
+  const fields = 'number,state,headRefName,isCrossRepository,author,body,closedAt,files';
   // Only own pull requests updated since the last reconcile: older history is
   // already in the ledger, so a growing history never reaches the limit.
   // A week of overlap covers search indexing lag, and pull requests the
@@ -509,7 +497,8 @@ function plan(repo, now) {
     importers: importersAt(repo, head),
   });
   result.ledger.reconciledAt = now;
-  return { ...result, base, head, repairable: repairable(result.ledger, now) };
+  const live = repairable(result.ledger, now).filter((f) => routes.includes(f.route));
+  return { ...result, base, head, repairable: live };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

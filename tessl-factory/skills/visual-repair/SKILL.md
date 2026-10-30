@@ -46,11 +46,11 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
    issues and the loop's own repair awaiting review all leave `review` in
    place, so `main` is captured every six hours. The plan also prints
    `conflicts`: for each route, the open pull requests whose diffs a repair of
-   it would overlap, because they change a shared file (`index.html`,
-   `src/main.ts`, `src/style.css`, `src/carnival/`) or a file the route draws
-   with (its own module, its game folder, or `src/midway/` and the modules the
-   midway uses for `#/`). A pull request whose file list is missing or may be
-   cut off counts as overlapping every route. A queued issue without a pull
+   it would overlap. It uses the same mapping as Coverage below, so a shared
+   file (`index.html`, `src/main.ts`, `src/style.css`, `src/carnival/`), a
+   module other screens import or a file it cannot place overlaps every
+   route. A pull request whose file list is missing or may be cut off counts
+   as overlapping every route. A queued issue without a pull
    request has no diff and does not conflict; the writer key already keeps its
    run from writing alongside this one.
    - `review`: the `batch` of routes to capture now, open findings first.
@@ -76,7 +76,10 @@ Follow these in order. Any "stop" ends the run with the ledger unchanged.
    It fails, and the run stops, if a GitHub list reaches its limit, because a
    cut-off list could hide work in flight.
    Only same-repository pull requests count as the loop's own; a fork with the
-   same branch name is ignored.
+   same branch name is ignored, and so is any pull request not opened by
+   `app/tessl-app`, since anyone with push access can pick the branch name.
+   A route the router no longer serves is dropped from `pending`; its findings
+   stay in the ledger, untouched.
    Merged repairs become `merged` and their route is reviewed again on
    `main`. A finding that no longer shows there becomes `resolved`: resolved
    on `main` as rendered locally. That is not evidence of the live deploy;

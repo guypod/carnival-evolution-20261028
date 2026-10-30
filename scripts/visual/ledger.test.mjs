@@ -125,7 +125,7 @@ test('an open pull request in unrelated files does not hold up a repair', () => 
   const openPrs = [
     prWith(9, 'src/snack-stand.ts', 'src/games/ring-toss/game.test.ts', 'README.md'),
   ];
-  assert.deepEqual(repairConflicts('#/balloon', openPrs, mainSource), []);
+  assert.equal(repairConflicts(openPrs, { mainSource, routes })['#/balloon'], undefined);
   const plan = planRun(withBalloonFinding(), { ...base, head: 'h1', openPrs });
   assert.deepEqual([plan.action, plan.targets], ['repair', ['#/balloon']]);
 });
@@ -154,8 +154,8 @@ test('a repair waits for an open pull request that changes the same or a shared 
   }
   // A pull request whose file list may be cut off counts as overlapping.
   const many = prWith(9, ...Array.from({ length: 100 }, (_, i) => `docs/f${i}.md`));
-  assert.equal(repairConflicts('#/balloon', [many], mainSource).length, 1);
-  assert.equal(repairConflicts('#/balloon', [{ number: 9 }], mainSource).length, 1);
+  assert.equal(repairConflicts([many], { mainSource, routes })['#/balloon'].length, 1);
+  assert.equal(repairConflicts([{ number: 9 }], { mainSource, routes })['#/balloon'].length, 1);
 });
 
 test('only the conflicting route waits; another repairable route is repaired', () => {
@@ -173,14 +173,38 @@ test('only the conflicting route waits; another repairable route is repaired', (
 
 test('a game repair waits only for pull requests in that game or shared files', () => {
   const route = '#/play/ring-toss';
-  assert.equal(
-    repairConflicts(route, [prWith(9, 'src/games/ring-toss/game.ts')], mainSource).length,
-    1,
-  );
-  assert.equal(
-    repairConflicts(route, [prWith(9, 'src/games/water-cannon/game.ts')], mainSource).length,
-    0,
-  );
+  const conflicts = (file) => repairConflicts([prWith(9, file)], { mainSource, routes })[route];
+  assert.ok(conflicts('src/games/ring-toss/draw.ts'));
+  assert.equal(conflicts('src/games/water-cannon/draw.ts'), undefined);
+  // A game's own module names it on the midway, so it reaches every route.
+  assert.ok(conflicts('src/games/water-cannon/game.ts'));
+});
+
+test('a repair waits for a pull request in a module its screen reads indirectly', () => {
+  const repo = new URL('../..', import.meta.url).pathname;
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  const conflicts = repairConflicts([prWith(9, 'src/prize-pavilion.ts')], {
+    mainSource,
+    routes,
+    importers: importersAt(repo, head),
+  });
+  assert.ok(conflicts['#/room'], 'prize-room.ts draws with prize-pavilion.ts');
+});
+
+test('a route the router no longer serves is not captured again and again', () => {
+  const ledger = withBalloonFinding();
+  ledger.pending = ['#/gone'];
+  ledger.findings.push({
+    ...ledger.findings[0],
+    fingerprint: '#/gone:desktop-clean:controls',
+    route: '#/gone',
+    seenAt: 'h0',
+  });
+  const plan = planRun(ledger, { ...base, head: 'h2' });
+  assert.ok(!(plan.batch ?? []).includes('#/gone'));
+  assert.ok(!(plan.targets ?? []).includes('#/gone'));
+  // Its finding is kept, untouched, in case the route comes back.
+  assert.ok(plan.ledger.findings.some((f) => f.route === '#/gone' && f.status === 'open'));
 });
 
 test('findings on routes the repair did not touch survive later commits', () => {
@@ -224,6 +248,7 @@ const ownPr = (state, extra = {}) => ({
   state,
   headRefName: 'tessl/visual-repair-snack-20261030',
   isCrossRepository: false,
+  author: { login: 'app/tessl-app' },
   body: 'fixes\n<!-- tessl-visual-finding: #/snack:desktop-clean:controls -->',
   closedAt: state === 'OPEN' ? null : '2026-10-29T00:00:00Z',
   ...extra,
@@ -330,12 +355,16 @@ test('repeating a reconcile with the same pull requests changes nothing', () => 
 });
 
 test('other people’s and other loops’ pull requests are not the loop’s own', () => {
-  const { openPr } = reconcileOwnPrs(
-    withSnackFinding(),
-    [ownPr('OPEN', { headRefName: 'tessl/issue-303' })],
-    NOW,
-  );
-  assert.equal(openPr, null);
+  for (const pr of [
+    ownPr('OPEN', { headRefName: 'tessl/issue-303' }),
+    // Anyone with push access can choose the branch name; only the app's own count.
+    ownPr('OPEN', { author: { login: 'someone' } }),
+    ownPr('OPEN', { author: undefined }),
+  ]) {
+    const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [pr], NOW);
+    assert.equal(openPr, null);
+    assert.equal(ledger.findings[0].status, 'open');
+  }
 });
 
 function originRepo() {
