@@ -23,7 +23,9 @@ toy's mechanism, so what moves follows from where the parts are.
   Then the round cam, a disc set off the shaft, only bobs the frog gently. The
   tall cam's lobe lifts it into the safety guard, which holds it while the rod
   drops away. The snail cam's spiral lifts it slowly, then the rod drops off
-  the spiral's step: a hop.
+  the spiral's step: a hop. The frog is a crafted automaton: a riveted body
+  with its legs folded up at its sides, big eyes on top, and a socket underneath
+  that the rod's top fits into, so the rod is the only thing holding it up.
 
 ## Controls
 

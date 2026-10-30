@@ -48,7 +48,15 @@ import {
   type Tool,
   type ToyId,
 } from './workshop';
-import { camOutline, frogPose, frogRig, PEBBLE, type CamShape } from './cams';
+import {
+  camOutline,
+  frogFigure,
+  frogPose,
+  frogRig,
+  PEBBLE,
+  type CamShape,
+  type FrogBlob,
+} from './cams';
 
 const { width: WIDTH, height: HEIGHT } = BENCH;
 /** How long a test run animates, in milliseconds. */
@@ -565,15 +573,43 @@ export function startWorkshop(
     ctx.lineTo(x, y + rig.foot);
     ctx.fill();
     const frogY = y + rig.frog;
-    ctx.fillStyle = colors.accent;
+    // A crafted frog: folded legs, a riveted body with a socket the rod fits into, and big eyes.
+    const fig = frogFigure(frogY);
+    const blobs = (list: readonly FrogBlob[], fill: string) => {
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      for (const b of list) {
+        ctx.moveTo(x + b.x + b.rx, b.y);
+        ctx.ellipse(x + b.x, b.y, b.rx, b.ry, 0, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    };
+    blobs(fig.haunches, colors.accent);
+    ctx.strokeStyle = colors.wood;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    blobs(fig.feet, colors.wood);
+    blobs([fig.body], colors.accent);
     ctx.beginPath();
-    ctx.ellipse(x, frogY, 26, 14, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = colors.text;
+    ctx.moveTo(x - 24, fig.seam);
+    ctx.lineTo(x + 24, fig.seam);
+    ctx.stroke();
+    blobs(fig.rivets, colors.wood);
+    ctx.fillStyle = colors.muted;
+    ctx.fillRect(x + fig.mount.x, fig.mount.y, fig.mount.width, fig.mount.height);
+    ctx.fillStyle = colors.background;
+    ctx.fillRect(x + fig.mount.x + 3, fig.mount.y + 3, fig.mount.width - 6, fig.mount.height - 3);
+    // The rod's tip shows inside the socket while it meets the seat; once it drops away below a caught frog, the socket is empty.
+    if (rig.seated) {
+      ctx.fillStyle = colors.text;
+      ctx.fillRect(x - 2, fig.mount.y + 3, 4, fig.mount.height - 3);
+    }
+    blobs(fig.eyes, colors.text);
+    blobs(fig.pupils, colors.background);
+    ctx.strokeStyle = colors.background;
     ctx.beginPath();
-    ctx.arc(x - 12, frogY - 12, 5, 0, Math.PI * 2);
-    ctx.arc(x + 12, frogY - 12, 5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(x, fig.mouth.y - fig.mouth.r, fig.mouth.r, Math.PI * 0.25, Math.PI * 0.75);
+    ctx.stroke();
     if (bench.toy.pebble) {
       ctx.fillStyle = colors.muted;
       ctx.beginPath();
