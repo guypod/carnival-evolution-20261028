@@ -41,6 +41,14 @@
       "model": "claude-opus-5-5",
       "timeout": "30m",
       "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "review-lens-improvement": {
+      "skill": "file:tessl-factory#review-lens-improvement",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "20m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
     }
   },
   "triggers": {
@@ -364,6 +372,12 @@
       "cron": "17 */6 * * *",
       "description": "Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR",
       "action": "visual-repair"
+    },
+    "review-lens-improvement-six-hourly": {
+      "cron": "40 5,11,17,23 * * *",
+      "timezone": "Europe/London",
+      "description": "Twenty minutes before each six-hour London block ends: propose evidence-based review lens improvements to the fallback ledger",
+      "action": "review-lens-improvement"
     }
   }
 }

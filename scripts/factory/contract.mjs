@@ -54,11 +54,25 @@ export const EXPECTED_ACTIONS = {
     timeout: '30m',
     concurrency: writer,
   },
+  // The review-lens improvement loop (issue #371). It proposes lens changes to
+  // the factory-state/review-lenses ledger and never edits a lens itself; the
+  // external block coordinator decides each proposal. It holds the writer key
+  // because it pushes that ledger.
+  'review-lens-improvement': {
+    skill: 'file:tessl-factory#review-lens-improvement',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '20m',
+    concurrency: writer,
+  },
 };
 
-// Test health weekly, per WORKSHOP module 04, and visual repair every six
-// hours (issue #303). No other schedules: gameplay batching is owned outside
-// this repository.
+// Test health weekly, per WORKSHOP module 04, visual repair every six hours
+// (issue #303) and review-lens improvement twenty minutes before each London
+// block ends (issue #371), in the scheduler's own timezone so DST needs no
+// change. No other schedules: gameplay batching is owned outside this
+// repository.
 export const EXPECTED_SCHEDULES = {
   'test-health-weekly': {
     cron: '0 9 * * 1',
@@ -70,6 +84,13 @@ export const EXPECTED_SCHEDULES = {
     description:
       'Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR',
     action: 'visual-repair',
+  },
+  'review-lens-improvement-six-hourly': {
+    cron: '40 5,11,17,23 * * *',
+    timezone: 'Europe/London',
+    description:
+      'Twenty minutes before each six-hour London block ends: propose evidence-based review lens improvements to the fallback ledger',
+    action: 'review-lens-improvement',
   },
 };
 
