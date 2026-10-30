@@ -3,8 +3,6 @@
   "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
   "reviewedThrough": null,
   "pending": [
-    "#/expedition",
-    "#/workshop",
     "#/play/balloon-darts",
     "#/play/duck-dash",
     "#/play/high-striker",
@@ -241,9 +239,9 @@
       "criterion": "materials",
       "note": "Ten booth tiles are identical flat purple cards with lavender outlines in a grid, with no shadow or counter edge: a generic dashboard rather than the midway's wood and canvas.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T06:19:42.290Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:25:30.287Z"
     },
     {
       "fingerprint": "#/booths:desktop-clean:materials",
@@ -252,9 +250,9 @@
       "criterion": "materials",
       "note": "Ten booth tiles are identical flat purple cards with lavender outlines in a grid on a flat dark page: generic dashboard cards, no wood, striped canvas, paper tags or lantern glow; same at 390px.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:25:30.287Z"
     },
     {
       "fingerprint": "#/booths:desktop-clean:depth",
@@ -263,9 +261,9 @@
       "criterion": "depth",
       "note": "Booth cards, the search field and filter chips have no shadow, frame or counter edge; everything sits flat on the full-bleed dark background below the awning.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
-      "status": "open",
-      "seenOn": "2026-10-30T12:19:41.313Z"
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "resolved",
+      "seenOn": "2026-10-30T16:25:30.287Z"
     },
     {
       "fingerprint": "#/postcard:desktop-clean:composition",
@@ -453,6 +451,61 @@
       "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
       "seenOn": "2026-10-30T16:24:35.396Z"
+    },
+    {
+      "fingerprint": "#/expedition:desktop-clean:composition",
+      "route": "#/expedition",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "Only one 54px maze cell is drawn at the top-left of a large empty dark area about 320px tall; the maze does not read as the focal scene; same at 390px.",
+      "firstSeen": "2026-10-30T16:25:30.287Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:25:30.287Z"
+    },
+    {
+      "fingerprint": "#/expedition:desktop-clean:controls",
+      "route": "#/expedition",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Turn mirror, Undo last turn, Hint, Restart this seed, New expedition and the arrow pad are raw grey browser-default buttons, the disabled ones grey-on-grey, and Show whole map is a default checkbox; same at 390px.",
+      "firstSeen": "2026-10-30T16:25:30.287Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:25:30.287Z"
+    },
+    {
+      "fingerprint": "#/expedition:desktop-clean:art-integration",
+      "route": "#/expedition",
+      "state": "desktop-clean",
+      "criterion": "art-integration",
+      "note": "Landmark icons in the intro (clown, fountain, telescope, exit) render as missing-glyph boxes (tofu); same at 390px.",
+      "firstSeen": "2026-10-30T16:25:30.287Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:25:30.287Z"
+    },
+    {
+      "fingerprint": "#/workshop:desktop-clean:controls",
+      "route": "#/workshop",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Toy picker, tool buttons (1 Hand, 2 Screwdriver, 3 Tweezers) and Test/Inspect step/Undo/Reset toy are raw grey browser-default buttons with small default text; the checkbox is a default blue checkbox; same at 390px.",
+      "firstSeen": "2026-10-30T16:25:30.287Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:25:30.287Z"
+    },
+    {
+      "fingerprint": "#/workshop:desktop-clean:depth",
+      "route": "#/workshop",
+      "state": "desktop-clean",
+      "criterion": "depth",
+      "note": "The bench scene is a flat purple and brown rounded box with no frame or shadow, the controls sit outside it, and the page heading shows a thin white box outline.",
+      "firstSeen": "2026-10-30T16:25:30.287Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:25:30.287Z"
     }
   ],
   "reviewedAt": {
@@ -463,8 +516,8 @@
     "#/trail": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/circuit": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/party": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/records": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/booths": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/records": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/booths": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/postcard": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/plush": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/tune": "6b03265cd61be971ca3453ff3f79e59114633829",
@@ -472,7 +525,9 @@
     "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
     "#/coaster": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee",
-    "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0"
+    "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/expedition": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/workshop": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T16:22:46.187Z"
+  "reconciledAt": "2026-10-30T16:24:42.665Z"
 }
