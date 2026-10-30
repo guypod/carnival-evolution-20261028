@@ -146,7 +146,11 @@ export function reconcileOwnPrs(ledger, prs, now) {
     const prints = [...(pr.body ?? '').matchAll(MARKER)].map((m) => m[1]);
     const status = pr.state === 'OPEN' ? 'pr-open' : pr.state === 'MERGED' ? 'merged' : 'declined';
     if (status === 'pr-open') openPr ??= pr.number;
-    for (const finding of next.findings.filter((f) => prints.includes(f.fingerprint))) {
+    // A finding already following this pull request keeps following it, so
+    // a marker edited out of the body cannot strand the finding in pr-open.
+    const follows = (f) =>
+      prints.includes(f.fingerprint) || (f.pr === pr.number && f.status === 'pr-open');
+    for (const finding of next.findings.filter(follows)) {
       finding.applied ??= [];
       // Each distinct outcome of a pull request applies once; a reopen, a new
       // closure or a merge after a reopen is a new outcome and applies again.

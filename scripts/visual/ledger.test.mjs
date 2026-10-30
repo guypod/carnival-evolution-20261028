@@ -289,6 +289,17 @@ test('a merged own pull request is recorded and its route re-checked on main', (
   assert.equal(repairable(back, NOW).length, 1);
 });
 
+test('a marker edited out of an open repair does not strand its finding', () => {
+  const ledger = reconcileOwnPrs(withSnackFinding(), [ownPr('OPEN')], NOW).ledger;
+  for (const [state, status] of [
+    ['MERGED', 'merged'],
+    ['CLOSED', 'declined'],
+  ]) {
+    const after = reconcileOwnPrs(ledger, [ownPr(state, { body: 'fixes' })], NOW).ledger;
+    assert.equal(after.findings[0].status, status, state);
+  }
+});
+
 test('a retained branch from a merged or declined pull request never blocks a run', () => {
   for (const state of ['MERGED', 'CLOSED']) {
     const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [ownPr(state)], NOW);

@@ -32,15 +32,30 @@ if [ "$(node -p "require('$ROOT/pw/node_modules/playwright/package.json').versio
 fi
 (cd "$ROOT/pw" && npx playwright install chromium >/dev/null)
 
-if command -v apt-get >/dev/null && command -v dpkg-deb >/dev/null; then
+launches() {
+  (cd "$ROOT/pw" && node -e "require('playwright').chromium.launch().then((b) => b.close())") >/dev/null 2>&1
+}
+
+# A machine that already has Chromium's libraries, such as the dev container,
+# needs nothing unpacked.
+if ! launches && command -v apt-get >/dev/null && command -v dpkg-deb >/dev/null; then
   # The marker is written only after every package downloaded, so an
   # interrupted download is retried instead of reused.
   if [ ! -f "$LIBS/debs/.complete" ]; then
     rm -f "$LIBS"/debs/*.deb
     # shellcheck disable=SC2086
     apt-get $APT update >/dev/null 2>&1 || true
+    # Debian Bookworm names the same libraries without Ubuntu's t64 suffix.
+    names=""
+    for pkg in $PACKAGES; do
+      # shellcheck disable=SC2086
+      if ! apt-cache $APT show "$pkg" >/dev/null 2>&1 && apt-cache $APT show "${pkg%t64}" >/dev/null 2>&1; then
+        pkg=${pkg%t64}
+      fi
+      names="$names $pkg"
+    done
     # shellcheck disable=SC2086
-    (cd "$LIBS/debs" && apt-get $APT download $PACKAGES >/dev/null)
+    (cd "$LIBS/debs" && apt-get $APT download $names >/dev/null)
     touch "$LIBS/debs/.complete"
   fi
   for deb in "$LIBS"/debs/*.deb; do dpkg-deb -x "$deb" "$LIBS/root"; done

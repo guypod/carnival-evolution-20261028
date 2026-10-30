@@ -54,7 +54,9 @@ state, the rubric criterion and what in the image shows it, and say the fix.
 7. **Off-theme colour or font** in styles or drawing code: a hex, `rgb(`,
    `hsl(` or named colour, or a font string, that does not come from
    `theme`/`canvasFont` or a `--color-*` property (`materials`). Standalone
-   fixtures under `review-lenses/visual-design/fixtures/` are exempt.
+   fixtures under `review-lenses/visual-design/fixtures/` are exempt, and so is
+   the midway's own scenery palette in `src/midway/palette.ts` and drawing
+   that uses it: that palette is the reference look.
 
 Keep native semantics: a fix restyles a control, it never swaps a `<button>`,
 `<input>` or `<label>` for a `<div>`.
