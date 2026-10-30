@@ -3,8 +3,6 @@
   "head": "3f8723831a5744311b755544f6b851c9aea33dd0",
   "reviewedThrough": null,
   "pending": [
-    "#/play/mini-putt",
-    "#/play/mole-mayhem",
     "#/play/puppet-theatre",
     "#/play/ring-toss",
     "#/play/skee-ball",
@@ -29,22 +27,22 @@
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "materials",
-      "note": "Still at e3dca5c: booth prize cards are flat purple rectangles with a yellow outline on a flat dark page; the Prize Room and desk toy links are plain full-width yellow bars; no wood, paper tags or lantern glow.",
+      "note": "Still at 3f87238: booth prize cards are flat purple rectangles with a yellow outline on a flat dark page; the Prize Room and desk toy links are plain full-width yellow bars; no wood, paper tags or lantern glow.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:17:26.050Z"
+      "seenOn": "2026-10-30T16:34:27.953Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:depth",
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Still at e3dca5c: cards, the dashed Carnival Collector panel and the link bars have no shadow, frame or counter edge on the full-bleed dark background.",
+      "note": "Still at 3f87238: cards, the dashed Carnival Collector panel and the link bars have no shadow, frame or counter edge on the full-bleed dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:17:26.050Z"
+      "seenOn": "2026-10-30T16:34:27.953Z"
     },
     {
       "fingerprint": "#/room:desktop-clean:controls",
@@ -332,33 +330,33 @@
       "route": "#/snack",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Serve/Start over/Next visitor are raw grey default buttons with small default text and Base/Topping/Presentation use default white radio dots; same at 390px.",
+      "note": "Still at 3f87238: Serve/Start over/Next visitor are raw grey default buttons with small default text and Base/Topping/Presentation use default white radio dots; same at 390px.",
       "firstSeen": "2026-10-30T15:17:26.050Z",
-      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:17:26.050Z"
+      "seenOn": "2026-10-30T16:34:27.953Z"
     },
     {
       "fingerprint": "#/snack:desktop-clean:composition",
       "route": "#/snack",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Fieldsets run full width at the top, then a small visitor face floats in a large empty area above a 360px brown strip at the left; most of the 1280x800 screen is blank background with no stall as focal point.",
+      "note": "Still at 3f87238: fieldsets run full width at the top, then a small visitor face floats in a large empty area above a 360px brown strip at the left; most of the screen is blank background with no stall as focal point.",
       "firstSeen": "2026-10-30T15:17:26.050Z",
-      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:17:26.050Z"
+      "seenOn": "2026-10-30T16:34:27.953Z"
     },
     {
       "fingerprint": "#/snack:desktop-clean:depth",
       "route": "#/snack",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "The visitor sits on flat background and the counter is a flat brown bar with no frame, shadow or awning; the controls are not in a framed panel with the scene.",
+      "note": "Still at 3f87238: the visitor sits on flat background and the counter is a flat brown bar with no frame, shadow or awning; the controls are not in a framed panel with the scene; the page heading carries a thin white box outline.",
       "firstSeen": "2026-10-30T15:17:26.050Z",
-      "seenAt": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
-      "seenOn": "2026-10-30T15:17:26.050Z"
+      "seenOn": "2026-10-30T16:34:27.953Z"
     },
     {
       "fingerprint": "#/coaster:desktop-clean:controls",
@@ -546,11 +544,44 @@
       "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
       "status": "open",
       "seenOn": "2026-10-30T16:27:24.786Z"
+    },
+    {
+      "fingerprint": "#/play/mini-putt:narrow-clean:responsive",
+      "route": "#/play/mini-putt",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x200 with the instructions, hole/strokes/score row and Start (Space) a few pixels tall, unreadable, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:34:27.953Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:34:27.953Z"
+    },
+    {
+      "fingerprint": "#/play/mole-mayhem:narrow-clean:responsive",
+      "route": "#/play/mole-mayhem",
+      "state": "narrow-clean",
+      "criterion": "responsive",
+      "note": "At 390px the game canvas shrinks to about 360x190 with the instructions, hole numbers and Start (Space) a few pixels tall, unreadable, and the lower half of the screen is empty dark background.",
+      "firstSeen": "2026-10-30T16:34:27.953Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:34:27.953Z"
+    },
+    {
+      "fingerprint": "#/prizes:desktop-clean:art-integration",
+      "route": "#/prizes",
+      "state": "desktop-clean",
+      "criterion": "art-integration",
+      "note": "The Carnival Collector badge and the icons before Arrange your Prize Room and Wind up a desk toy render as missing-glyph boxes (tofu).",
+      "firstSeen": "2026-10-30T16:34:27.953Z",
+      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "status": "open",
+      "seenOn": "2026-10-30T16:34:27.953Z"
     }
   ],
   "reviewedAt": {
     "#/": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/prizes": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+    "#/prizes": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/toy": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/trail": "3f8723831a5744311b755544f6b851c9aea33dd0",
@@ -562,7 +593,7 @@
     "#/plush": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/tune": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/balloon": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
-    "#/snack": "e3dca5c93671c33ac71aca4d4b343a50c8437fcb",
+    "#/snack": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/coaster": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/fair": "a863a177a9f316800aceafd0a2590c23ae1abfee",
     "#/parade": "3f8723831a5744311b755544f6b851c9aea33dd0",
@@ -571,7 +602,9 @@
     "#/play/balloon-darts": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/duck-dash": "3f8723831a5744311b755544f6b851c9aea33dd0",
     "#/play/high-striker": "3f8723831a5744311b755544f6b851c9aea33dd0",
-    "#/play/memory-menagerie": "3f8723831a5744311b755544f6b851c9aea33dd0"
+    "#/play/memory-menagerie": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/mini-putt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+    "#/play/mole-mayhem": "3f8723831a5744311b755544f6b851c9aea33dd0"
   },
-  "reconciledAt": "2026-10-30T16:26:25.316Z"
+  "reconciledAt": "2026-10-30T16:32:27.158Z"
 }
