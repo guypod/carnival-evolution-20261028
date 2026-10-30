@@ -246,7 +246,13 @@ export function planRun(
     .map((f) => f.route);
   // Revisits take at most half the batch, so owed coverage always progresses.
   const revisits = [...new Set(revisit)].filter((r) => !next.pending.includes(r));
-  const owedNow = next.pending.slice(0, BATCH_SIZE - Math.min(revisits.length, BATCH_SIZE / 2));
+  // Owed routes with open findings come first: they are owed either way, so
+  // looking at them first costs owed coverage nothing.
+  const owed = [
+    ...next.pending.filter((r) => revisit.includes(r)),
+    ...next.pending.filter((r) => !revisit.includes(r)),
+  ];
+  const owedNow = owed.slice(0, BATCH_SIZE - Math.min(revisits.length, BATCH_SIZE / 2));
   const batch = [...owedNow, ...revisits].slice(0, BATCH_SIZE);
   // Which routes a repair must leave alone this run, and why.
   const modules = routeModules(mainSource);

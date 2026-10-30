@@ -530,6 +530,15 @@ test('a decline cooldown survives resolution and recurrence of the finding', () 
   assert.equal(repairable(ledger, '2026-12-15T00:00:00Z').length, 1);
 });
 
+test('an owed route with an open finding is looked at in the first batch', () => {
+  const { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    r === routes.at(-1) ? [finding(r, 'controls')] : [],
+  );
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  assert.equal(plan.batch[0], routes.at(-1));
+  assert.equal(plan.batch.length, BATCH_SIZE);
+});
+
 test('a module another screen imports owes every route, not just its own', () => {
   const importers = (file) =>
     ({
