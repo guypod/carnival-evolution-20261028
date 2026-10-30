@@ -46,17 +46,20 @@ refuses a slot already covered completely.
   180 minutes after its slot finds it missed: missed slots are never run,
   back-filled or recorded as run.
 - **Owed interval.** `due` prints `since`: the start of the last complete
-  scheduled run less one hour of overlap or, before any, the window of the
-  first scheduled attempt. `record` refuses a scheduled run whose `since` is
+  scheduled run less one hour of overlap (never before that run's own
+  `since`), or a partial run's `coverage.through`, whichever is later or,
+  before any, the window of the first scheduled attempt. `record` refuses a scheduled run whose `since` is
   missing or later than that, so a run cannot cover less than it owes.
 - **Retry.** A partial or failed slot stays due: a run for the same slot may
   try again while the slot is still owed (within the 180 minutes). After
   that, the next slot's `since` still reaches back to the last complete run,
   so the uncovered interval is read then. Partial, failed and manual runs
   never move that checkpoint, except that a partial scheduled run may
-  record `coverage.through`, a time up to which it read every source in
-  full (oldest first), so a backlog over a list limit is worked through instead
-  of hitting the same limit every run.
+  record `coverage.through`, a time after its `since` and no later than its
+  start up to which it read every source in full (oldest first). The next run
+  resumes exactly there, so a backlog over a list limit moves forward every
+  run instead of hitting the same limit again. A ledger whose `through` falls
+  outside its run's window is refused on read and write.
 - `record` also refuses a slot its real start did not follow, and a run
   recorded more than 30 minutes after its real start.
 
@@ -158,10 +161,12 @@ If a later sighting of an accepted proposal declares more caution (it now
 weakens something, or names more standards), the ledger moves it back to
 `deferred` with a `reopened` note, so it leaves `unissued` and comes back to
 the coordinator, whose next decision checks the safety and two-PR rules
-again. `issue` and `issued` refuse a proposal that weakens a safety
+again. The caution it replaces is kept under `revisions` too, so the issue
+marker's `r<n>` moves on and an issue opened for the earlier acceptance, even
+one never recorded, is not adopted. `issue` and `issued` refuse a proposal that weakens a safety
 standard. A sighting with the same fingerprint but a different `change`,
-`check` or `netLines` replaces that content, keeps the old content under
-`revisions`, and reopens an accepted proposal, so the coordinator decides,
+`check` or `netLines` replaces that content and its `rationale`, keeps the
+old content, rationale and caution under `revisions`, and reopens an accepted proposal, so the coordinator decides,
 and the issue carries, the latest content. An issue already recorded for
 the old content moves to `previousIssues`; after a new `apply`, open a new
 issue and close the old one, which step 5 skips because it is in

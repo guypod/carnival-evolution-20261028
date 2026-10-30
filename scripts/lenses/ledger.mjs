@@ -222,8 +222,26 @@ export function emptyLedger() {
 
 const learnerOf = (run) => run.learner ?? DEFAULT_LEARNER;
 
-// How far before the last checkpoint the next scheduled run starts reading.
+// How far before a complete run's start the next scheduled run starts reading.
 export const RETRY_OVERLAP_MINUTES = 60;
+
+// Where the next scheduled run may resume after this one, or NaN. A complete
+// run resumes an overlap before its start, but never before its own since. A
+// partial run resumes exactly at its through, which already lies after its
+// since, so a backlog read in batches only ever moves forward.
+const resumeAt = (r) => {
+  if (r.coverage.status === 'complete') {
+    const start = Date.parse(r.startedAt) - RETRY_OVERLAP_MINUTES * 60_000;
+    return isTime(r.since) ? Math.max(start, Date.parse(r.since)) : start;
+  }
+  if (r.coverage.status === 'partial' && isTime(r.coverage.through)) {
+    return Date.parse(r.coverage.through);
+  }
+  return NaN;
+};
+
+const scheduledRuns = (ledger, learner) =>
+  ledger.runs.filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner);
 
 /**
  * A learner's last successful coverage checkpoint: the start of its latest
@@ -233,8 +251,7 @@ export const RETRY_OVERLAP_MINUTES = 60;
  * inspection, whose bounded window may skip an older interval.
  */
 export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
-  const done = ledger.runs
-    .filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner)
+  const done = scheduledRuns(ledger, learner)
     .map((r) => {
       if (r.coverage.status === 'complete') return Date.parse(r.startedAt);
       if (r.coverage.status === 'partial' && isTime(r.coverage.through)) {
@@ -248,18 +265,20 @@ export function checkpoint(ledger, learner = DEFAULT_LEARNER) {
 
 /**
  * Where a scheduled run for the slot due at `scheduledFor` starts reading: the
- * checkpoint less an overlap, so no gap is skipped. Before any complete
- * scheduled run, it stays anchored at the first scheduled attempt's window, so
- * failed first runs never move it on. It depends on the slot, not on the
- * clock, so `due` and `record` agree on the owed interval.
+ * furthest resume point of any complete or checkpointed partial scheduled run,
+ * so no gap is skipped and progress never goes backwards. Before any, it stays
+ * anchored at the first scheduled attempt's window, so failed first runs never
+ * move it on. It depends on the slot, not on the clock, so `due` and `record`
+ * agree on the owed interval.
  */
 export function retrySince(ledger, scheduledFor, learner = DEFAULT_LEARNER) {
-  const mark = checkpoint(ledger, learner);
-  if (mark) return new Date(Date.parse(mark) - RETRY_OVERLAP_MINUTES * 60_000).toISOString();
+  const runs = scheduledRuns(ledger, learner);
+  const resumes = runs.map(resumeAt).filter((t) => !Number.isNaN(t));
+  if (resumes.length) return new Date(Math.max(...resumes)).toISOString();
   const lookback = MANUAL_LOOKBACK_HOURS * 3600_000;
-  const starts = ledger.runs
-    .filter((r) => r.trigger !== 'manual' && learnerOf(r) === learner)
-    .map((r) => (r.since ? Date.parse(r.since) : Date.parse(r.startedAt) - lookback));
+  const starts = runs.map((r) =>
+    r.since ? Date.parse(r.since) : Date.parse(r.startedAt) - lookback,
+  );
   return new Date(Math.min(Date.parse(scheduledFor) - lookback, ...starts)).toISOString();
 }
 
@@ -535,8 +554,9 @@ export function validateRun(run, { lenses, now, ledger = emptyLedger(), exists =
       errors.push('only a partial scheduled run records coverage.through');
     } else if (!isTime(run.coverage.through) || !isTime(run.since) || !isTime(run.startedAt)) {
       errors.push('coverage.through must be a time');
-    } else if (through < Date.parse(run.since) || through > Date.parse(run.startedAt)) {
-      errors.push('coverage.through must fall between since and startedAt');
+    } else if (through <= Date.parse(run.since) || through > Date.parse(run.startedAt)) {
+      // A through at since records no progress: leave it out instead.
+      errors.push('coverage.through must fall after since and no later than startedAt');
     }
   }
   const proposals = run.proposals ?? [];
@@ -579,33 +599,39 @@ export function recordRun(ledger, run) {
     if (known) {
       known.evidence = mergeEvidence(known.evidence, p.evidence);
       known.seenIn = [...known.seenIn, run.runId];
-      // A later sighting can only make it more cautious, never less.
-      const before = JSON.stringify([known.weakens, known.standards ?? []]);
+      const prior = {
+        change: known.change,
+        check: known.check,
+        netLines: known.netLines,
+        rationale: known.rationale,
+        weakens: known.weakens,
+        standards: known.standards ?? [],
+      };
       // A sighting with different content becomes the proposal the
-      // coordinator decides and the issue carries. The content it replaces is
-      // kept under revisions, and an accepted proposal goes back to the
-      // coordinator.
+      // coordinator decides and the issue carries, rationale included.
       const revised = ['change', 'check', 'netLines'].some((f) => p[f] !== known[f]);
       if (revised) {
-        known.revisions = [
-          ...(known.revisions ?? []),
-          {
-            replacedBy: run.runId,
-            change: known.change,
-            check: known.check,
-            netLines: known.netLines,
-          },
-        ];
         known.change = p.change;
         known.netLines = p.netLines;
+        known.rationale = p.rationale;
         if (p.check === undefined) delete known.check;
         else known.check = p.check;
       }
+      // A later sighting can only make it more cautious, never less.
       known.weakens = known.weakens || p.weakens;
-      known.standards = [...new Set([...(known.standards ?? []), ...p.standards])];
-      // An acceptance decided under less caution goes back to the coordinator,
-      // so the safety and two-PR rules are checked again before any issue.
-      const cautious = JSON.stringify([known.weakens, known.standards]) !== before;
+      known.standards = [...new Set([...prior.standards, ...p.standards])];
+      const cautious =
+        JSON.stringify([known.weakens, known.standards]) !==
+        JSON.stringify([prior.weakens, prior.standards]);
+      // The content and caution it replaces are kept under revisions. Their
+      // count is the issue marker's revision, so an issue opened for either,
+      // even one never recorded, no longer matches.
+      if (revised || cautious) {
+        known.revisions = [...(known.revisions ?? []), { replacedBy: run.runId, ...prior }];
+      }
+      // An acceptance decided under less caution, or for other content, goes
+      // back to the coordinator, so the safety and two-PR rules are checked
+      // again before any issue.
       if (known.status === 'accepted' && (cautious || revised)) {
         known.status = 'deferred';
         // An issue opened for the old content no longer describes the work.
@@ -857,6 +883,18 @@ export function ledgerErrors(ledger) {
     }
     if (!isTime(r.startedAt) || !isTime(r.finishedAt)) errors.push(`${at}: needs real times`);
     if (r.since !== undefined && !isTime(r.since)) errors.push(`${at}: since must be a time`);
+    // A checkpoint outside its own run's window would move the next since
+    // into the future or into an interval the run never read.
+    if (isObject(r.coverage) && r.coverage.through !== undefined) {
+      const through = Date.parse(r.coverage.through);
+      if (r.coverage.status !== 'partial' || r.trigger === 'manual') {
+        errors.push(`${at}: only a partial scheduled run records coverage.through`);
+      } else if (!isTime(r.coverage.through) || !isTime(r.since) || !isTime(r.startedAt)) {
+        errors.push(`${at}: coverage.through needs since and startedAt and must be a time`);
+      } else if (through <= Date.parse(r.since) || through > Date.parse(r.startedAt)) {
+        errors.push(`${at}: coverage.through must fall after since and no later than startedAt`);
+      }
+    }
     if (!isObject(r.coverage) || !COVERAGE.includes(r.coverage.status)) {
       errors.push(`${at}: needs coverage.status`);
     }

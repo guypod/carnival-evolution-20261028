@@ -98,10 +98,10 @@ missed. Never describe evidence you did not read. Read oldest first
 (`sort:updated-asc` in the search), so that when a list hits its limit
 everything up to some time was read. A partial scheduled run then records
 `coverage.through`: a time up to which **every** source for this learner
-was read in full, between `since` and the real start. With several sources,
+was read in full, after `since` and no later than the real start. With several sources,
 that is the earliest of their points; if any source could not be read at all,
-leave `through` out. The next run resumes from there, less the
-overlap, instead of meeting the same limit again. Leave `through` out when
+leave `through` out. The next run resumes exactly there instead of
+meeting the same limit again. Leave `through` out when
 you cannot name such a time.
 
 Read the current target before proposing to change it. Propose only when the

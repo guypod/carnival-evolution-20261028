@@ -1027,7 +1027,7 @@ test('a partial run that read oldest first moves the checkpoint to how far it go
     runs: [partial('a', '2026-10-30T05:41:00.000Z', '2026-10-29T03:00:00.000Z')],
   };
   assert.equal(checkpoint(ledger, 'lens-tuning'), '2026-10-29T03:00:00.000Z');
-  assert.equal(dueSlot(ledger, '2026-10-30T11:41:00Z').since, '2026-10-29T02:00:00.000Z');
+  assert.equal(dueSlot(ledger, '2026-10-30T11:41:00Z').since, '2026-10-29T03:00:00.000Z');
   // Without through, a partial run does not move it.
   const none = { ...emptyLedger(), runs: [partial('a', '2026-10-30T05:41:00.000Z')] };
   assert.equal(checkpoint(none, 'lens-tuning'), null);
@@ -1143,4 +1143,189 @@ test('inherited names are not learners, and a revision changes the issue marker'
   ledger = recordRun(ledger, run({ runId: 'run-2', proposals: [proposal({ netLines: 3 })] }));
   ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
   assert.notEqual(implementationIssue(ledger.proposals[0]).body.split('\n')[0], first);
+});
+
+test('a revision updates the rationale and keeps the replaced one in its history', () => {
+  let ledger = recordRun(emptyLedger(), run());
+  ledger = recordRun(
+    ledger,
+    run({
+      runId: 'run-2',
+      proposals: [proposal({ change: 'Something else.', rationale: 'A newer reason.' })],
+    }),
+  );
+  const [p] = ledger.proposals;
+  assert.equal(p.rationale, 'A newer reason.');
+  assert.equal(p.revisions.length, 1);
+  assert.equal(p.revisions[0].rationale, proposal().rationale);
+  assert.equal(p.revisions[0].change, proposal().change);
+  assert.equal(p.revisions[0].netLines, proposal().netLines);
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
+  assert.match(implementationIssue(ledger.proposals[0]).body, /Why: A newer reason\./);
+  // A same-content repeat neither revises nor rewrites the rationale.
+  const again = recordRun(
+    ledger,
+    run({
+      runId: 'run-3',
+      proposals: [proposal({ change: 'Something else.', rationale: 'Another wording.' })],
+    }),
+  );
+  assert.equal(again.proposals[0].rationale, 'A newer reason.');
+  assert.equal(again.proposals[0].revisions.length, 1);
+  assert.equal(again.proposals[0].status, 'accepted');
+});
+
+test('30-minute partial batches resume forward and never regress', () => {
+  // Each run reads oldest first and gets 30 minutes further than its since.
+  let ledger = emptyLedger();
+  const slots = [
+    '2026-10-30T05:41:00Z',
+    '2026-10-30T11:41:00Z',
+    '2026-10-30T17:41:00Z',
+    '2026-10-30T23:41:00Z',
+  ];
+  const sinces = [];
+  for (const [i, startedAt] of slots.entries()) {
+    const due = dueSlot(ledger, startedAt);
+    assert.equal(due.due, true);
+    sinces.push(due.since);
+    const through = new Date(Date.parse(due.since) + 30 * 60_000).toISOString();
+    const r = run({
+      runId: `batch-${i}`,
+      slot: owedSlot(startedAt).slot,
+      startedAt,
+      finishedAt: startedAt,
+      since: due.since,
+      coverage: { status: 'partial', inspected: [], gaps: 'list limit', through },
+      proposals: [],
+    });
+    assert.deepEqual(validateRun(r, opts({ now: startedAt })), []);
+    ledger = recordRun(ledger, r);
+  }
+  for (let i = 1; i < sinces.length; i++) {
+    assert.equal(Date.parse(sinces[i]) - Date.parse(sinces[i - 1]), 30 * 60_000);
+  }
+  // An interrupted retry (failed, or partial without through) does not move it back.
+  const failed = run({
+    runId: 'batch-failed',
+    slot: '2026-10-31T05:40 Europe/London',
+    startedAt: '2026-10-31T05:41:00Z',
+    finishedAt: '2026-10-31T05:42:00Z',
+    since: dueSlot(ledger, '2026-10-31T05:41:00Z').since,
+    coverage: { status: 'failed', inspected: [], gaps: 'API down' },
+    proposals: [],
+  });
+  const before = dueSlot(ledger, '2026-10-31T05:41:00Z').since;
+  ledger = recordRun(ledger, failed);
+  assert.equal(dueSlot(ledger, '2026-10-31T05:51:00Z').since, before);
+  // A through equal to since records no progress and is refused.
+  const stuck = run({
+    coverage: { status: 'partial', inspected: [], gaps: 'x', through: '2026-10-01T00:00:00.000Z' },
+  });
+  assert.notDeepEqual(validateRun(stuck, opts()), []);
+  // A complete run still overlaps its start, but never reaches back before its own since.
+  const complete = recordRun(
+    emptyLedger(),
+    run({ since: '2026-10-30T11:00:00.000Z', proposals: [] }),
+  );
+  assert.equal(dueSlot(complete, '2026-10-30T17:41:00Z').since, '2026-10-30T11:00:00.000Z');
+  const old = recordRun(emptyLedger(), run({ proposals: [] }));
+  assert.equal(dueSlot(old, '2026-10-30T17:41:00Z').since, '2026-10-30T10:41:02.000Z');
+});
+
+test('a caution-only repeat bumps the revision so an unrecorded issue cannot be adopted', () => {
+  let ledger = recordRun(emptyLedger(), run());
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T12:01Z');
+  // The coordinator opens the issue but is interrupted before `issued`.
+  const stale = implementationIssue(ledger.proposals[0]).body.split('\n')[0];
+  ledger = recordRun(
+    ledger,
+    run({ runId: 'run-2', proposals: [proposal({ standards: ['evidence-standards'] })] }),
+  );
+  const [p] = ledger.proposals;
+  assert.equal(p.status, 'deferred');
+  assert.equal(p.revisions.length, 1);
+  assert.deepEqual(p.revisions[0].standards, []);
+  assert.equal(p.revisions[0].weakens, false);
+  assert.equal(p.change, proposal().change);
+  ledger = recordDecision(ledger, decision(ledger), '2026-10-30T13:01Z');
+  const fresh = implementationIssue(ledger.proposals[0]).body.split('\n')[0];
+  assert.notEqual(fresh, stale);
+  assert.equal(fresh, issueMarker(p.fingerprint, 1));
+  // Repeating the same caution again changes nothing.
+  const same = recordRun(
+    ledger,
+    run({ runId: 'run-3', proposals: [proposal({ standards: ['evidence-standards'] })] }),
+  );
+  assert.equal(same.proposals[0].revisions.length, 1);
+  assert.equal(same.proposals[0].status, 'accepted');
+});
+
+test('a persisted partial checkpoint must lie inside its own run window', () => {
+  const at = (through, extra = {}) => {
+    const saved = recordRun(
+      emptyLedger(),
+      run({
+        coverage: { status: 'partial', inspected: [], gaps: 'list limit', through },
+        proposals: [],
+        ...extra,
+      }),
+    );
+    return ledgerErrors(saved);
+  };
+  assert.deepEqual(at('2026-10-29T00:00:00.000Z'), []);
+  // Future, after startedAt, at or before since, or not a time.
+  assert.notDeepEqual(at('2027-01-01T00:00:00.000Z'), []);
+  assert.notDeepEqual(at('2026-10-30T11:42:00.000Z'), []);
+  assert.notDeepEqual(at('2026-10-01T00:00:00.000Z'), []);
+  assert.notDeepEqual(at('2026-09-01T00:00:00.000Z'), []);
+  assert.notDeepEqual(at('soon'), []);
+  // On a complete run, or one without since.
+  const saved = recordRun(emptyLedger(), run({ proposals: [] }));
+  const complete = {
+    ...saved,
+    runs: [
+      {
+        ...saved.runs[0],
+        coverage: { ...saved.runs[0].coverage, through: '2026-10-29T00:00:00.000Z' },
+      },
+    ],
+  };
+  assert.notDeepEqual(ledgerErrors(complete), []);
+  const noSince = recordRun(
+    emptyLedger(),
+    run({
+      coverage: {
+        status: 'partial',
+        inspected: [],
+        gaps: 'x',
+        through: '2026-10-29T00:00:00.000Z',
+      },
+      proposals: [],
+    }),
+  );
+  delete noSince.runs[0].since;
+  assert.notDeepEqual(ledgerErrors(noSince), []);
+  // A future checkpoint is refused before it can move the next since.
+  assert.throws(
+    () =>
+      writeLedger(
+        '.',
+        recordRun(
+          emptyLedger(),
+          run({
+            coverage: {
+              status: 'partial',
+              inspected: [],
+              gaps: 'x',
+              through: '2027-01-01T00:00:00Z',
+            },
+            proposals: [],
+          }),
+        ),
+        null,
+        'x',
+      ),
+    /malformed/,
+  );
 });
