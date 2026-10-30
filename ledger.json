@@ -3,10 +3,6 @@
   "head": "6b03265cd61be971ca3453ff3f79e59114633829",
   "reviewedThrough": null,
   "pending": [
-    "#/trail",
-    "#/circuit",
-    "#/party",
-    "#/records",
     "#/booths",
     "#/postcard",
     "#/plush",
@@ -151,13 +147,94 @@
       "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
       "status": "open",
       "seenOn": "2026-10-30T04:45:35.510Z"
+    },
+    {
+      "fingerprint": "#/party:desktop-clean:controls",
+      "route": "#/party",
+      "state": "desktop-clean",
+      "criterion": "controls",
+      "note": "Mode radios are browser-default blue/white radio dots and both nickname fields are small white default text boxes with grey placeholder, unlike the themed yellow Start party button; same at 390px.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/party:desktop-clean:composition",
+      "route": "#/party",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "A fieldset, two inputs and one button sit in a column at the top-left; the lower ~40% of the 1280x800 screen is empty dark background with no scene or stall as focal point.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/party:desktop-clean:spacing",
+      "route": "#/party",
+      "state": "desktop-clean",
+      "criterion": "spacing",
+      "note": "The nickname fields and Start party button sit loose below the bordered mode fieldset instead of in one framed panel; the 210px inputs leave the rest of the 930px column empty.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/circuit:desktop-focus:focus-contrast",
+      "route": "#/circuit",
+      "state": "desktop-focus",
+      "criterion": "focus-contrast",
+      "note": "After two Tab presses the desktop and narrow focus screenshots are pixel-identical to the clean ones: no focus ring is visible on any element.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/circuit:desktop-clean:materials",
+      "route": "#/circuit",
+      "state": "desktop-clean",
+      "criterion": "materials",
+      "note": "Legs are flat purple cards with dashed lavender borders and dashed circle placeholders on a flat dark page: generic dashboard cards, no wood, paper tags or lantern glow.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/trail:desktop-clean:materials",
+      "route": "#/trail",
+      "state": "desktop-clean",
+      "criterion": "materials",
+      "note": "The four missions are flat purple cards with dashed lavender borders on a full-bleed dark background; no wood frame, shadow, paper tag or lantern glow like the midway.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
+    },
+    {
+      "fingerprint": "#/records:desktop-clean:materials",
+      "route": "#/records",
+      "state": "desktop-clean",
+      "criterion": "materials",
+      "note": "Ten booth tiles are identical flat purple cards with lavender outlines in a grid, with no shadow or counter edge: a generic dashboard rather than the midway's wood and canvas.",
+      "firstSeen": "2026-10-30T06:19:42.290Z",
+      "seenAt": "6b03265cd61be971ca3453ff3f79e59114633829",
+      "status": "open",
+      "seenOn": "2026-10-30T06:19:42.290Z"
     }
   ],
   "reviewedAt": {
     "#/": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/prizes": "6b03265cd61be971ca3453ff3f79e59114633829",
     "#/room": "6b03265cd61be971ca3453ff3f79e59114633829",
-    "#/toy": "6b03265cd61be971ca3453ff3f79e59114633829"
+    "#/toy": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/trail": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/circuit": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/party": "6b03265cd61be971ca3453ff3f79e59114633829",
+    "#/records": "6b03265cd61be971ca3453ff3f79e59114633829"
   },
-  "reconciledAt": "2026-10-30T04:43:47.742Z"
+  "reconciledAt": "2026-10-30T06:17:46.648Z"
 }
