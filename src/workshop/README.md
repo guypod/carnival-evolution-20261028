@@ -37,7 +37,7 @@ toy's mechanism, so what moves follows from where the parts are.
   picks up that gear.
 - Keyboard: focus the bench, then the arrow keys step through parts, fixtures
   and empty spots, and Enter or Space acts on the ringed one. 1, 2 and 3 choose
-  the hand, screwdriver and tweezers. T tests, U undoes, R resets the toy to the
+  the hand, screwdriver and tweezers. T tests, I inspects (see below), U undoes, R resets the toy to the
   faults it came in with (Undo brings the work back), and Escape puts a held
   part down or goes back to the midway.
 - With Quiet midway or the system's reduced motion, a test shows one still
@@ -48,6 +48,36 @@ toy's mechanism, so what moves follows from where the parts are.
 - The bench's holes and the rod ride the bell lever as it turns, and clicks,
   drops and the keyboard ring follow them to wherever they are drawn, during a
   test run and in the still frame.
+
+## Inspecting a toy
+
+Inspect step (I) is a slow, untimed crank. The first press stops any test that
+is animating and holds the same run the Test button uses at its first step: the
+crank a sixteenth of the way through the run (an eighth of a turn, or a little
+way into the lever's pull), not at rest. Each press after that turns the crank
+(or pulls the lever) one step further, in 8 even steps that wrap round, so
+gears, lever, rod, cam and frog stand where a test would carry them, Quiet or
+not. A frog shaft that will stall on the pebble shows as turning until the cam
+actually meets the pebble, and stalled from that step on. Clicks and the keyboard ring
+follow the parts to where they are drawn at that step.
+
+On the bench, every part along the drive gets a numbered arrow with words:
+"turns with crank", "turns against crank", "swings", "stops here" (with a cross
+on the part where the motion stops) or "still" for the parts past it. Turning
+gears also get a curved arrow showing which way they turn. Nothing rests on
+colour alone. The words under the bench sum it up, for example "Inspect step 1
+of 8: motion passes the crank gear, medium gear and stops at the bear gear."
+The bench's accessible name adds what the rig says about the ringed part.
+
+A loose bell shows the lever and the rod's end in its hole moving, while the
+hammer stays still: the rod slides on the loose pivot pin, so its push never
+reaches the hammer.
+
+Press Test to leave the inspection and run the toy normally. Any move, tool use,
+Undo (even one with nothing to undo), Reset or toy switch clears the inspection
+or a running test, even one that puts the toy back as it was, such as picking a
+part up and putting it back in its own spot, so the next press starts at step 1. Inspecting changes nothing and
+never records a repair; only Test does.
 
 ## Repairs and the midway
 

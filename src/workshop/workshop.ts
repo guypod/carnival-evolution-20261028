@@ -8,7 +8,16 @@
 
 import { createSaveSlot, type SaveStorage } from '../carnival';
 import type { RepairedToyId } from '../midway/repaired-toys';
-import { CAM_REACH, PEBBLE, camOutline, frogPose, type CamShape } from './cams';
+import {
+  CAM_REACH,
+  PEBBLE,
+  camOutline,
+  frogPose,
+  frogRig,
+  stallTurn,
+  stillPhase,
+  type CamShape,
+} from './cams';
 
 export type ToyId = RepairedToyId;
 export type Tool = 'hand' | 'screwdriver' | 'tweezers';
@@ -115,6 +124,23 @@ export function onLever(p: { x: number; y: number }, phase: number): { x: number
     x: LEVER_PIN.x + dx * Math.cos(a) - dy * Math.sin(a),
     y: LEVER_PIN.y + dx * Math.sin(a) + dy * Math.cos(a),
   };
+}
+
+/** The lever's angle at rest: it rises from left to right. */
+export const LEVER_REST = -0.46;
+/** The hammer's own pivot, and the bell a full swing meets. */
+export const HAMMER_PIVOT = { x: 520, y: 220 };
+export const BELL_AT = { x: 650, y: 120 };
+
+/** The hammer's angle about its pivot for a run with `travel` at `phase`: a full swing meets the bell. */
+export function hammerAngle(travel: number, phase: number): number {
+  return -Math.PI / 2 - 0.8 + travel * bellPull(phase) * 1.69;
+}
+
+/** A point `reach` pixels along the hammer from its pivot at `phase` of a run. */
+export function onHammer(travel: number, phase: number, reach: number): { x: number; y: number } {
+  const a = hammerAngle(travel, phase);
+  return { x: HAMMER_PIVOT.x + Math.cos(a) * reach, y: HAMMER_PIVOT.y + Math.sin(a) * reach };
 }
 
 // The hopping frog: a shaft, three cams to choose from, and a pebble.
@@ -640,4 +666,287 @@ export function createRepairsStore(storage: SaveStorage | undefined) {
     load: (): Repairs => slot.load() ?? NO_REPAIRS,
     save: (repairs: Repairs) => slot.save(repairs),
   };
+}
+
+// The inspection rig: the same test run, cranked by hand one still step at a time.
+
+/** How many presses of Inspect step take the toy through one crank turn (one full pull for the bell). */
+export const INSPECT_STEPS = 8;
+
+/** The run phase an inspection step shows: the same phase a test run passes through, in even steps. */
+export function inspectPhase(step: number): number {
+  const at = ((step % INSPECT_STEPS) + INSPECT_STEPS) % INSPECT_STEPS;
+  return (at + 1) / (INSPECT_STEPS * 2);
+}
+
+/**
+ * What the bench shows: a test animating from `startedAt`, or an inspection held
+ * at `step`. Both carry the one run of the toy's model, so drawing, clicks and
+ * the keyboard ring read the same pose whichever is on.
+ */
+export type BenchRun = { result: Run } & (
+  { mode: 'test'; startedAt: number } | { mode: 'inspect'; step: number }
+);
+
+/** Test starts a timed run, and leaves any inspection. */
+export function startTest(toy: ToyState, now: number): BenchRun {
+  return { result: runToy(toy), mode: 'test', startedAt: now };
+}
+
+/**
+ * Putting a held part down on `slot`. Back in its own slot nothing moves, but it
+ * is still an edit, so like every edit it clears any test or inspection.
+ */
+export function putDown(
+  bench: Bench,
+  part: string,
+  slot: string,
+): { bench: Bench; run: BenchRun | undefined; moved: boolean; message: string } {
+  if (slot === bench.toy.parts[part])
+    return {
+      bench,
+      run: undefined,
+      moved: false,
+      message: `Put the ${partLabel(part)} back down.`,
+    };
+  const result = movePart(bench.toy, part, slot);
+  return { bench: commit(bench, result), run: undefined, moved: true, message: result.message };
+}
+
+/** One press of Inspect step: the next step of an inspection, or the first one, which stops any test. */
+export function stepInspection(current: BenchRun | undefined, toy: ToyState): BenchRun {
+  const step = current?.mode === 'inspect' ? current.step + 1 : 0;
+  return { result: runToy(toy), mode: 'inspect', step };
+}
+
+/** How far through its run the bench is, 0 to 1. Quiet tests show one still frame that explains the result. */
+export function benchPhase(run: BenchRun | undefined, now: number, quiet: boolean, runMs: number) {
+  if (!run) return 0;
+  if (run.mode === 'inspect') return inspectPhase(run.step);
+  if (quiet)
+    return run.result.kind === 'cam' ? stillPhase(run.result.cam, run.result.stalled) : 0.25;
+  return Math.min(1, (now - run.startedAt) / runMs);
+}
+
+export interface Stage {
+  /** The part's id on the bench, such as `crank`, `small` or `hammer`. */
+  id: string;
+  /** The part this stage looks at, as the player reads it. */
+  part: string;
+  moving: boolean;
+  note: string;
+}
+
+export interface Inspection {
+  stages: Stage[];
+  /** The first stage that does not move, where the motion stops; undefined when it all moves. */
+  stopsAt: number | undefined;
+}
+
+const turnWord = (spin: number) =>
+  spin > 0 ? 'turns with the crank' : spin < 0 ? 'turns against the crank' : 'stays still';
+
+/**
+ * Walks the same run the Test button uses, from input to output, so the rig never
+ * disagrees with a test. Given the `phase` an inspection holds, a shaft that will
+ * stall only stalls once its pose has turned the cam onto the pebble.
+ */
+export function inspectToy(toy: ToyState, run: Run = runToy(toy), phase?: number): Inspection {
+  const stages: Stage[] = [];
+  if (run.kind === 'gears') {
+    const gears = gearsOf(toy).sort((a, b) => a.x - b.x);
+    for (const g of gears) {
+      const name = g.id === 'crank' || g.id === 'bear' ? `${g.id} gear` : partLabel(g.id);
+      stages.push(
+        run.jammed
+          ? {
+              id: g.id,
+              part: name,
+              moving: false,
+              note: `The ${name} is jammed: two gears overlap.`,
+            }
+          : {
+              id: g.id,
+              part: name,
+              moving: run.spin[g.id] !== 0,
+              note: `The ${name} ${turnWord(run.spin[g.id])}.`,
+            },
+      );
+    }
+  } else if (run.kind === 'bell') {
+    stages.push({ id: 'lever', part: 'lever', moving: true, note: 'The lever swings.' });
+    const hole = toy.parts.rod.slice(5);
+    stages.push({
+      id: 'rod',
+      part: 'link rod',
+      moving: true,
+      note: `The rod's end in hole ${hole} rides the lever.`,
+    });
+    if (!toy.pinTight) {
+      stages.push({
+        id: 'hammer',
+        part: 'hammer',
+        moving: false,
+        note: 'The rod slides on the loose pivot pin, so its push never reaches the hammer, which stays still.',
+      });
+    } else {
+      stages.push({
+        id: 'hammer',
+        part: 'hammer',
+        moving: true,
+        note: 'The tight pin passes the push down the rod, and the hammer swings.',
+      });
+      stages.push({
+        id: 'bell',
+        part: 'bell',
+        moving: run.working,
+        note: run.working
+          ? 'The hammer strikes the bell squarely.'
+          : run.travel < 1
+            ? 'The hammer swings short and never reaches the bell.'
+            : 'The hammer swings past the bell into the rubber stop.',
+      });
+    }
+  } else {
+    const stalls =
+      run.stalled &&
+      (phase === undefined || frogPose(run.cam, phase, true).turns >= stallTurn(run.cam));
+    stages.push(
+      stalls
+        ? {
+            id: 'shaft',
+            part: 'shaft',
+            moving: false,
+            note: 'The shaft stalls: the cam is wedged on a pebble.',
+          }
+        : {
+            id: 'shaft',
+            part: 'shaft',
+            moving: true,
+            note: run.stalled
+              ? 'The shaft turns with the crank, and the cam is closing on a pebble.'
+              : 'The shaft turns with the crank.',
+          },
+    );
+    if (!stalls) {
+      stages.push(
+        run.cam
+          ? {
+              id: run.cam,
+              part: `${run.cam} cam`,
+              moving: true,
+              note: `The ${run.cam} cam turns under the rod.`,
+            }
+          : {
+              id: 'cam',
+              part: 'cam',
+              moving: false,
+              note: 'There is no cam on the shaft, so nothing lifts the rod.',
+            },
+      );
+      if (run.cam)
+        stages.push({
+          id: 'frog',
+          part: 'frog',
+          moving: true,
+          note: run.stalled ? 'The follower lifts the frog.' : run.message,
+        });
+    }
+  }
+  // A stall upstream means nothing after it moves either.
+  const first = stages.findIndex((s) => !s.moving);
+  return { stages, stopsAt: first < 0 ? undefined : first };
+}
+
+/** What the rig says at a step: which parts carry the motion, and where and why it stops. */
+export function inspectionLine(inspection: Inspection, step: number): string {
+  const { stages, stopsAt } = inspection;
+  const at = ((step % INSPECT_STEPS) + INSPECT_STEPS) % INSPECT_STEPS;
+  const head = `Inspect step ${at + 1} of ${INSPECT_STEPS}:`;
+  if (stopsAt === undefined)
+    return `${head} motion reaches the ${stages.at(-1)!.part}. ${stages.at(-1)!.note}`;
+  const moving = stages.slice(0, stopsAt).map((s) => s.part);
+  const passes = moving.length ? `motion passes the ${moving.join(', ')} and ` : 'motion ';
+  return `${head} ${passes}stops at the ${stages[stopsAt].part}. ${stages[stopsAt].note}`;
+}
+
+/** One labelled arrow the rig draws on the bench, beside a part where it is drawn now. */
+export interface InspectionMark {
+  id: string;
+  /** The words beside the arrow, such as "2 large gear: turns": never colour alone. */
+  label: string;
+  /** Where the part is drawn at this step, in bench pixels. */
+  x: number;
+  y: number;
+  /** Moves: the motion reaches it. Stops: the first still part. Still: past the stop. */
+  state: 'moves' | 'stops' | 'still';
+  /** For a turning part, its direction against the crank's: 1 with it, -1 against. */
+  turn?: number;
+}
+
+/**
+ * Where the rig's arrows go at `phase` of `run`: on each stage's part, read from
+ * the same targets the bench draws, clicks and rings, so a mark sits on its part.
+ */
+export function inspectionMarks(toy: ToyState, run: Run, phase: number): InspectionMark[] {
+  const { stages, stopsAt } = inspectToy(toy, run, phase);
+  const at = new Map(targets(toy, phase, run).map((t) => [t.id, t]));
+  const fixed: Record<string, { x: number; y: number }> = {
+    crank: { x: GEAR_LEFT + CRANK.x * GEAR_UNIT, y: GEAR_Y },
+    bear: { x: GEAR_LEFT + BEAR.x * GEAR_UNIT, y: GEAR_Y },
+    lever: onLever(
+      { x: LEVER_PIN.x + 100 * Math.cos(LEVER_REST), y: LEVER_PIN.y + 100 * Math.sin(LEVER_REST) },
+      phase,
+    ),
+    hammer: onHammer(run.kind === 'bell' ? run.travel : 0, phase, 130),
+    bell: BELL_AT,
+    shaft: SHAFT,
+    cam: SHAFT,
+    frog: { x: SHAFT.x, y: SHAFT.y + frogRig(frogPose(undefined, 0, false)).frog },
+  };
+  const caught = run.kind === 'cam' && frogPose(run.cam, phase, run.stalled).caught;
+  if (run.kind === 'cam') {
+    const pose = frogPose(run.cam, phase, run.stalled);
+    fixed.frog = { x: SHAFT.x, y: SHAFT.y + frogRig(pose).frog };
+  }
+  return stages.map((s, i) => {
+    const where = at.get(s.id) ?? fixed[s.id];
+    // Past the catch, the guard holds the frog still while the follower drops.
+    const held = caught && s.id === 'frog';
+    const state = held
+      ? 'stops'
+      : stopsAt === undefined || i < stopsAt
+        ? 'moves'
+        : i === stopsAt
+          ? 'stops'
+          : 'still';
+    const word = held
+      ? 'held still by the guard'
+      : state === 'stops'
+        ? 'stops here'
+        : state === 'still'
+          ? 'still'
+          : motionWord(run, s.id);
+    const turn = run.kind === 'gears' && state === 'moves' ? Math.sign(run.spin[s.id]) : undefined;
+    return { id: s.id, label: `${i + 1} ${s.part}: ${word}`, x: where.x, y: where.y, state, turn };
+  });
+}
+
+function motionWord(run: Run, id: string): string {
+  if (run.kind === 'gears') return run.spin[id] > 0 ? 'turns with crank' : 'turns against crank';
+  if (run.kind === 'bell') return id === 'bell' ? 'rings' : id === 'hammer' ? 'swings' : 'moves';
+  return id === 'frog' ? 'rises and falls' : 'turns';
+}
+
+/** The bench's accessible name for the ringed target, with what the rig says about it while inspecting. */
+export function benchLabel(
+  focus: Target | undefined,
+  tool: Tool,
+  marks?: readonly InspectionMark[],
+): string {
+  const keys = 'Left and right arrows pick a part or spot, Enter or Space acts on it';
+  if (!focus) return `Repair bench. ${keys}.`;
+  const mark = marks?.find((m) => m.id === focus.id);
+  const inspected = mark ? `, inspecting: ${mark.label.replace(/^\d+ /, '')}` : '';
+  return `Repair bench, ${focus.label} picked${inspected}. ${keys} with the ${tool}.`;
 }
