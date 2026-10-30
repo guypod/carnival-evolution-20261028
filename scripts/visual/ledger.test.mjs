@@ -430,3 +430,41 @@ test('a decline cooldown survives resolution and recurrence of the finding', () 
   assert.equal(repairable(ledger, NOW).length, 0, 'still within 30 days of the decline');
   assert.equal(repairable(ledger, '2026-12-15T00:00:00Z').length, 1);
 });
+
+test('a module another screen imports owes every route, not just its own', () => {
+  const importers = (file) =>
+    ({
+      'src/prize-pavilion.ts': ['src/main.ts', 'src/prize-room.ts'],
+      'src/midway/palette.ts': ['src/postcard.ts'],
+    })[file] ?? ['src/main.ts'];
+  assert.deepEqual(
+    affectedRoutes(['src/prize-pavilion.ts'], mainSource, routes, importers),
+    routes,
+  );
+  assert.deepEqual(
+    affectedRoutes(['src/midway/palette.ts'], mainSource, routes, importers),
+    routes,
+  );
+  assert.deepEqual(affectedRoutes(['src/wish-balloon.ts'], mainSource, routes, importers), [
+    '#/balloon',
+  ]);
+});
+
+test('a review outside its plan or the rubric is refused', async () => {
+  const { validateReview } = await import('./ledger.mjs');
+  const criteria = JSON.parse(
+    readFileSync(new URL('../../review-lenses/visual-design/rubric.json', import.meta.url)),
+  ).criteria;
+  const plan = { head: 'h1', batch: ['#/snack'] };
+  const ok = { head: 'h1', reviewed: ['#/snack'], findings: [finding('#/snack', 'controls')] };
+  assert.deepEqual(validateReview(ok, plan, criteria), []);
+  for (const bad of [
+    { ...ok, head: 'h0' },
+    { ...ok, reviewed: ['#/snack', '#/toy'] },
+    { ...ok, findings: [finding('#/snack', 'control')] },
+    { ...ok, findings: [finding('#/snack', 'controls', { state: 'wide' })] },
+    { ...ok, findings: [finding('#/toy', 'controls')] },
+  ]) {
+    assert.notDeepEqual(validateReview(bad, plan, criteria), [], JSON.stringify(bad));
+  }
+});

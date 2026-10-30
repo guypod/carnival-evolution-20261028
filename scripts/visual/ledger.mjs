@@ -20,6 +20,7 @@ export const OWN_BRANCH = /^tessl\/visual-repair-/;
 export const BATCH_SIZE = 4;
 export const LIST_LIMIT = 1000;
 export const DECLINE_DAYS = 30;
+const STATE = /^(desktop|narrow)(-quiet)?-(clean|focus|interaction)$/;
 const MARKER = /<!-- tessl-visual-finding: (\S+) -->/g;
 
 // Files that every screen draws with: a change to one affects every route.
@@ -66,8 +67,10 @@ export function routeModules(mainSource) {
  * The routes a set of changed files can look different on. Shared files and
  * files the map cannot place affect every route, so coverage errs wide.
  */
-export function affectedRoutes(files, mainSource, routes) {
+export function affectedRoutes(files, mainSource, routes, importers = () => []) {
   const modules = routeModules(mainSource);
+  const importedElsewhere = (file) =>
+    importers(file).some((f) => f !== 'src/main.ts' && !f.endsWith('.test.ts'));
   const hit = new Set();
   for (const file of files) {
     if (IGNORED.some((p) => p.test(file))) continue;
@@ -79,9 +82,12 @@ export function affectedRoutes(files, mainSource, routes) {
     // files draw only its play screen.
     else if (game && !file.endsWith('/game.ts')) hit.add(`#/play/${game[1]}`);
     else if (game) routes.forEach((r) => hit.add(r));
-    else if (file.startsWith('src/midway/')) hit.add('#/');
-    else if (modules.get(file)?.length) modules.get(file).forEach((r) => hit.add(r));
-    else routes.forEach((r) => hit.add(r));
+    // A module counts as one route's only when nothing else in src imports
+    // it; anything shared, such as src/midway/palette.ts or a module another
+    // screen's module reads, owes every route.
+    else if (modules.get(file)?.length && !importedElsewhere(file)) {
+      modules.get(file).forEach((r) => hit.add(r));
+    } else routes.forEach((r) => hit.add(r));
   }
   return routes.filter((r) => hit.has(r));
 }
@@ -148,7 +154,10 @@ export function reconcileOwnPrs(ledger, prs, now) {
  * routes still owed a look. With nothing to capture but findings still
  * repairable, repair. Only with neither is there nothing to do.
  */
-export function planRun(ledger, { head, changedFiles, mainSource, routes, others, openPr, now }) {
+export function planRun(
+  ledger,
+  { head, changedFiles, mainSource, routes, others, openPr, now, importers },
+) {
   if (others.length) return { action: 'defer', reason: others.join('; '), ledger };
   if (openPr) return { action: 'monitor', pr: openPr, ledger };
   const next = structuredClone(ledger);
@@ -159,7 +168,9 @@ export function planRun(ledger, { head, changedFiles, mainSource, routes, others
   // pendingThrough are owed in the next interval.
   if (!next.pending.length && next.pendingThrough !== head) {
     const owed =
-      next.reviewedThrough === null ? routes : affectedRoutes(changedFiles, mainSource, routes);
+      next.reviewedThrough === null
+        ? routes
+        : affectedRoutes(changedFiles, mainSource, routes, importers);
     next.pending = [...owed];
     next.pendingThrough = head;
   }
@@ -174,6 +185,22 @@ export function planRun(ledger, { head, changedFiles, mainSource, routes, others
   if (batch.length) return { action: 'review', batch, ledger: next };
   if (repairable(next, now).length) return { action: 'repair', ledger: next };
   return { action: 'nothing', ledger: next };
+}
+
+/** Reject a review that does not match its plan or the rubric. */
+export function validateReview(review, plan, criteria) {
+  const errors = [];
+  if (review.head !== plan.head)
+    errors.push(`review is of ${review.head}, the plan is for ${plan.head}`);
+  for (const route of review.reviewed ?? []) {
+    if (!(plan.batch ?? []).includes(route)) errors.push(`${route} was not in the planned batch`);
+  }
+  for (const f of review.findings ?? []) {
+    if (!(review.reviewed ?? []).includes(f.route)) errors.push(`finding on unreviewed ${f.route}`);
+    if (!criteria.includes(f.criterion)) errors.push(`unknown criterion ${f.criterion}`);
+    if (!STATE.test(f.state ?? '')) errors.push(`unknown state ${f.state}`);
+  }
+  return errors;
 }
 
 /**
@@ -332,7 +359,7 @@ function plan(repo, now) {
       .filter((p) => (p.files ?? []).some((f) => SHARED.some((s) => s.test(f.path))))
       .map((p) => `open pull request #${p.number} changes shared UI files`),
     ...issues
-      .filter((i) => !open.some((p) => (p.body ?? '').includes(`Closes #${i.number}`)))
+      .filter((i) => !open.some((p) => new RegExp(`Closes #${i.number}\\b`).test(p.body ?? '')))
       .map((i) => `labelled issue #${i.number} has no pull request yet`),
   ];
   // The open list is complete, so an own open PR is never missed even when
@@ -366,6 +393,22 @@ function plan(repo, now) {
     others,
     openPr: reconciled.openPr,
     now,
+    // Which src files import a module, at the planned head.
+    importers: (file) => {
+      const name = file
+        .replace(/^src\//, '')
+        .replace(/\.ts$/, '')
+        .split('/')
+        .pop();
+      try {
+        return git(repo, 'grep', '-l', '-E', `from '[./]+(.*/)?${name}'`, head, '--', 'src')
+          .split('\n')
+          .map((line) => line.slice(head.length + 1))
+          .filter((f) => f && f !== file);
+      } catch {
+        return [];
+      }
+    },
   });
   result.ledger.reconciledAt = now;
   return { ...result, base, head, repairable: repairable(result.ledger, now) };
@@ -384,10 +427,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     // supplies the ledger and the commit it was read from.
     const planned = JSON.parse(readFileSync('/tmp/visual-repair-plan.json', 'utf8'));
     const review = JSON.parse(readFileSync(file, 'utf8'));
-    // Coverage is credited to the planned main commit, so the screenshots
-    // must have been taken from it.
-    if (review.head !== planned.head) {
-      console.error(`review is of ${review.head}, the plan is for ${planned.head}`);
+    // Coverage is credited to the planned main commit and batch, and findings
+    // use the rubric's own names, so a malformed record is refused, not saved.
+    const { criteria } = JSON.parse(
+      readFileSync(new URL('../../review-lenses/visual-design/rubric.json', import.meta.url)),
+    );
+    const errors = validateReview(review, planned, criteria);
+    if (errors.length) {
+      console.error(errors.join('\n'));
       process.exit(1);
     }
     const next = recordReview(planned.ledger, { ...review, now });

@@ -321,9 +321,12 @@ export function drawBalloonScene(
   // The wish hangs on a paper tag under the balloon.
   ctx.font = canvasFont('small', 'bold');
   ctx.textAlign = 'center';
-  const tagWidth = Math.min(width - 24, ctx.measureText(balloon.wish).width + 24);
+  // The tag is centred on the balloon, which drifts right on its way up, so
+  // it is capped by the room on its nearer side to stay inside the scene.
+  const room = 2 * Math.min(at.x, width - at.x);
+  const tagWidth = Math.min(room - 24, ctx.measureText(balloon.wish).width + 24);
   ctx.fillStyle = theme.colors.stripeB;
   ctx.fillRect(at.x - tagWidth / 2, at.y + 82, tagWidth, 26);
   ctx.fillStyle = theme.colors.background;
-  ctx.fillText(balloon.wish, at.x, at.y + 100, width - 36);
+  ctx.fillText(balloon.wish, at.x, at.y + 100, tagWidth - 12);
 }
