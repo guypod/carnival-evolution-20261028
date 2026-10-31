@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { attemptProblems } from './isolated-record.mjs';
 import { resolveUnder } from './static-serve.mjs';
+// The trusted publisher's tests run with these; package.json stays identical to
+// the capture pin's snapshot so this head can still be captured.
+import './trusted-publish.test.mjs';
 
 const SHA = 'a'.repeat(40);
 const RUNNER = 'b'.repeat(40);
