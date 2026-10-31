@@ -9,7 +9,13 @@
 #
 # With --live <merge sha> it plays the flow on the deployed site instead and
 # reports it as the browser-flow-live check run on the merge commit, which
-# `native.mjs deploy` needs before it calls a merge shipped.
+# `native.mjs deploy` needs before it calls a merge shipped. The checkout must
+# be the merge commit: it builds it, and plays only if the live index.html and
+# every asset match that build byte for byte, before and after the flow.
+#
+# Each attempt writes into a fresh directory made with mktemp inside <out
+# dir>, so a report from an earlier attempt is never read. Nothing in <out
+# dir> is ever removed.
 #
 #   scripts/visual/run-flow.sh <out dir> <flow> [--publish | --live <merge sha>]
 set -euo pipefail
@@ -24,6 +30,7 @@ REPO=guypod/carnival-evolution-20261028
 BRANCH=factory-state/browser-evidence
 
 HEAD=$(git -C "$CHECKOUT" rev-parse HEAD)
+CHECKED_OUT=$HEAD
 LIVE=
 export FLOW_CHECK_NAME=browser-flow
 if [ "$PUBLISH" = --live ]; then
@@ -32,9 +39,16 @@ if [ "$PUBLISH" = --live ]; then
   FLOW_CHECK_NAME=browser-flow-live
   PUBLISH=--publish
 fi
-# A report or screenshot left by an earlier run must never be published.
-rm -rf "$OUT"
+# A report or screenshot left by an earlier run must never be published: each
+# attempt gets its own new directory, and the caller's directory is never
+# emptied.
+if [ -L "$OUT" ] || { [ -e "$OUT" ] && [ ! -d "$OUT" ]; }; then
+  echo "$OUT is not a plain directory" >&2
+  exit 2
+fi
 mkdir -p "$OUT"
+OUT=$(mktemp -d "$OUT/attempt.XXXXXX")
+echo "attempt directory $OUT" >&2
 CHECK=
 STEP=start
 SERVER=
@@ -60,13 +74,16 @@ if [ "$PUBLISH" = --publish ]; then
 fi
 
 STEP=checkout
-[ -n "$LIVE" ] || {
 # Evidence is for a commit, so the working tree must be that commit.
 if [ -n "$(git -C "$CHECKOUT" status --porcelain -- index.html src public package.json vite.config.ts scripts/visual)" ]; then
   echo "uncommitted app changes: evidence would not be for $HEAD" >&2
   exit 1
 fi
-}
+if [ -n "$LIVE" ]; then
+  [ "$CHECKED_OUT" = "$HEAD" ] || { echo "checkout is $CHECKED_OUT, not the merge $HEAD" >&2; exit 1; }
+  STEP=build
+  (cd "$CHECKOUT" && node_modules/.bin/vite build --outDir "$OUT/dist" --emptyOutDir) >&2
+fi
 
 STEP=browser-setup
 "$HERE/setup-browser.sh" >&2
@@ -75,7 +92,9 @@ STEP=browser-setup
 STEP=serve
 if [ -n "$LIVE" ]; then
   BASE=$LIVE
-  curl -fs "$BASE" >/dev/null || { echo "live site $BASE did not answer" >&2; exit 1; }
+  STEP=live-identity
+  node "$HERE/live-identity.mjs" "$OUT/dist" "$BASE" >"$OUT/identity-before.json" ||
+    { echo "live site is not the build of $HEAD" >&2; cat "$OUT/identity-before.json" >&2; exit 1; }
 else
 PORT=$(node -e "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})")
 BASE="http://127.0.0.1:$PORT/"
@@ -91,10 +110,19 @@ done
 fi
 STEP=flow
 STATUS=0
+CAPTURED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 node "$HERE/flow.mjs" "$BASE" "$OUT" "$FLOW" || STATUS=$?
 [ "$PUBLISH" = --publish ] || exit "$STATUS"
-# A failed flow publishes its report as a failure; a crash publishes nothing.
-[ "$STATUS" = 0 ] || [ "$STATUS" = 1 ] || { echo "flow exited $STATUS" >&2; exit "$STATUS"; }
+# Any non-zero flow exit publishes nothing: the attempt concludes as a failure.
+[ "$STATUS" = 0 ] || { echo "flow exited $STATUS" >&2; exit "$STATUS"; }
+if [ -n "$LIVE" ]; then
+  STEP=live-identity
+  node "$HERE/live-identity.mjs" "$OUT/dist" "$BASE" >"$OUT/identity-after.json" ||
+    { echo "live site changed during the flow" >&2; exit 1; }
+  node -e 'const f=(p)=>JSON.parse(require("fs").readFileSync(p));const b=f(process.argv[1]),a=f(process.argv[2]);console.log(JSON.stringify({buildDigest:b.buildDigest,before:b,after:a}))' \
+    "$OUT/identity-before.json" "$OUT/identity-after.json" >"$OUT/identity.json"
+  export FLOW_LIVE_IDENTITY="$OUT/identity.json" FLOW_LIVE_DEPLOYED="$HEAD" FLOW_CAPTURED_AT="$CAPTURED_AT"
+fi
 [ -s "$OUT/flow.json" ] || { echo "flow wrote no report" >&2; exit 1; }
 ls "$OUT"/*.png >/dev/null 2>&1 || { echo "flow wrote no screenshot" >&2; exit 1; }
 
@@ -112,6 +140,7 @@ else
 fi
 mkdir -p "$WORK/$DIR"
 cp "$OUT"/*.png "$OUT/flow.json" "$WORK/$DIR/"
+[ -z "$LIVE" ] || cp "$OUT/identity.json" "$WORK/$DIR/"
 git -C "$WORK" add "$DIR"
 git -C "$WORK" commit --quiet -m "Browser evidence: $FLOW on $HEAD"
 EVIDENCE=$(git -C "$WORK" rev-parse HEAD)

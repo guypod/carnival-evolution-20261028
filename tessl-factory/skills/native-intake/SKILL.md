@@ -63,8 +63,10 @@ credentials or anything from outside this repository's public record.
    `node scripts/native/native.mjs flows <pr>`. It derives the flows from
    every changed path, old and new, and lists in `owed` whatever no flow
    covers. If `owed` is not empty, the PR cannot merge: report each entry as
-   a repair (add the flow to `scripts/visual/flow.mjs` and `GAME_FLOWS` in
-   `scripts/native/native.mjs`, in its own change). Do not substitute another
+   a repair: the PR's own implementation or shepherd run may add the missing
+   flow to `scripts/visual/flow.mjs`, `KNOWN_FLOWS` and `GAME_FLOWS` in
+   `scripts/native/native.mjs` on the same branch, and the flow then gates
+   that head. Do not substitute another
    game's flow or claim the change was played. Otherwise check out the PR's
    exact head in a detached worktree, confirm `HEAD` is that head, run
    `npm ci`, then `scripts/visual/run-flow.sh <dir> <flow> --publish` for each
@@ -87,8 +89,12 @@ credentials or anything from outside this repository's public record.
    checkout of the merge commit. That plays the flow on the live site and
    records a `browser-flow-live` check run on the merge commit, then run
    `deploy` again. Owed entries no flow covers stay owed, and you report
-   them. A 200 response, the page title or premerge evidence is never app
-   QA. Never say merged means live.
+   them. The live run plays only when the site serves that merge's own build,
+   so it fails once a newer merge has deployed. Also run
+   `node scripts/native/native.mjs owed` and report every merge it lists,
+   including `superseded-verification-owed` ones, as browser QA still owed:
+   never as shipped. A 200 response, the page title or premerge evidence is
+   never app QA. Never say merged means live.
 4. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs dispatch`.
    It claims one eligible backlog issue for the slot and adds `tessl` as
    `tessl-app[bot]`. That label starts no implementation by itself: it fires

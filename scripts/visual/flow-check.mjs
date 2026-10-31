@@ -13,9 +13,11 @@ const idOf = (flow) => (NAME === BROWSER_CHECK ? flowExternalId(flow) : `${NAME}
 
 /**
  * The check run for a flow report: success only when every check passed and
- * the flow process itself exited 0 (status, when given).
+ * the flow process itself exited 0 (status, when given). A live run adds
+ * `live`: { mergeSha, deployedSha, url, capturedAt, identity }, which
+ * shipState checks against the deployment.
  */
-export function flowCheckRun(report, head, evidenceCommit, dir, status = 0) {
+export function flowCheckRun(report, head, evidenceCommit, dir, status = 0, live = {}) {
   const pass =
     Number(status) === 0 &&
     report.result === 'pass' &&
@@ -27,6 +29,7 @@ export function flowCheckRun(report, head, evidenceCommit, dir, status = 0) {
     evidenceCommit,
     flows: report.checks.map((c) => ({ name: `${report.flow}: ${c.check}`, result: c.result })),
     screenshots: report.screenshots.map((s) => ({ path: `${dir}/${s.file}`, sha256: s.sha256 })),
+    ...live,
   };
   const lines = report.checks.map((c) => `- ${c.result}: ${c.check}`);
   return {
@@ -75,7 +78,17 @@ if (process.argv[1]?.endsWith('flow-check.mjs')) {
     const [head, commit, dir] = rest;
     const report = JSON.parse(readFileSync(first, 'utf8'));
     // The body concludes the attempt's own check run, so it carries no head.
-    const body = flowCheckRun(report, head, commit, dir);
+    // run-flow.sh --live passes the identity checks it made around the flow.
+    const live = process.env.FLOW_LIVE_IDENTITY
+      ? {
+          mergeSha: head,
+          deployedSha: process.env.FLOW_LIVE_DEPLOYED,
+          url: report.base,
+          capturedAt: process.env.FLOW_CAPTURED_AT,
+          identity: JSON.parse(readFileSync(process.env.FLOW_LIVE_IDENTITY, 'utf8')),
+        }
+      : {};
+    const body = flowCheckRun(report, head, commit, dir, 0, live);
     delete body.head_sha;
     console.log(JSON.stringify(body));
   }

@@ -30,7 +30,7 @@
 // helper and is not used or changed here.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 export const REPOSITORY = 'guypod/carnival-evolution-20261028';
 export const REPOSITORY_ID = 1437265009;
@@ -1149,36 +1149,86 @@ export function needsBrowserEvidence(files) {
  * through on another game's evidence.
  */
 export const GAME_FLOWS = { 'mini-putt': ['mini-putt-hole-next'] };
+/** Every flow flow.mjs implements. A required flow outside it is missing. */
+export const KNOWN_FLOWS = ['mini-putt-hole-next'];
 // The flow scripts themselves: a change to them must replay every flow.
 const FLOW_TOOLING = /^scripts\/visual\//;
 
 /**
+ * What a shared path reaches, as a finite registry: `games` means every game
+ * folder, `flows` names extra flows (such as the midway) that must exist and
+ * pass. A shared path clears once every flow it requires is known and passes;
+ * a path in no entry stays owed. The repair for an owed entry is to add the
+ * missing flow to flow.mjs, KNOWN_FLOWS and GAME_FLOWS in the same PR.
+ */
+export const SHARED_COVERAGE = [
+  { match: /^src\/carnival\//, games: true, flows: [] },
+  { match: /^src\/games\/[^/]+\.ts$/, games: true, flows: [] },
+  { match: /^(src\/main\.ts|src\/midway\/|index\.html)/, games: false, flows: ['midway-booth'] },
+  {
+    match: /^(package\.json|vite\.config\.ts|tsconfig\.json|public\/)/,
+    games: true,
+    flows: ['midway-booth'],
+  },
+];
+
+/** The game folders under src/games, read from this checkout. */
+function gameIds() {
+  try {
+    const dir = new URL('../../src/games/', import.meta.url);
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The flows the changed files need, and what no registered flow covers:
  * { flows, owed }. Every path, old and new, counts. An incomplete listing
- * owes everything. `owed` is the repair list: each entry needs a flow added
- * to flow.mjs and GAME_FLOWS before the pull request can merge.
+ * owes everything. `owed` is the repair list.
  */
-export function requiredFlows(files) {
-  const all = [...new Set(Object.values(GAME_FLOWS).flat())].sort();
+export function requiredFlows(
+  files,
+  reg = { gameFlows: GAME_FLOWS, known: KNOWN_FLOWS, games: gameIds() },
+) {
+  const all = [...new Set(Object.values(reg.gameFlows).flat())].sort();
   if (!files?.complete || !files.items.length)
     return { flows: all, owed: ['changed-file listing incomplete'] };
   const flows = new Set();
   const owed = new Set();
+  const need = (flow, why) => {
+    if (reg.known.includes(flow)) flows.add(flow);
+    else owed.add(`missing browser flow ${flow} for ${why}`);
+  };
+  const game = (g, why) => {
+    if (Object.hasOwn(reg.gameFlows, g)) reg.gameFlows[g].forEach((x) => need(x, why));
+    else owed.add(`no browser flow for src/games/${g}/${why === g ? '' : ` (reached by ${why})`}`);
+  };
   for (const f of files.items)
     for (const p of pathsOf(f)) {
       if (INFRA_ONLY.some((re) => re.test(p))) continue;
-      const game = /^src\/games\/([^/]+)\//.exec(p)?.[1];
-      if (game) {
-        if (Object.hasOwn(GAME_FLOWS, game)) GAME_FLOWS[game].forEach((x) => flows.add(x));
-        else owed.add(`no browser flow for src/games/${game}/`);
-      } else if (FLOW_TOOLING.test(p)) all.forEach((x) => flows.add(x));
-      else {
-        // Shared app code (the midway, src/carnival/, index.html, package.json)
-        // reaches games and screens no flow plays yet: every registered flow
-        // runs, and the rest is owed.
-        all.forEach((x) => flows.add(x));
-        owed.add(`no browser flow covers every screen ${p} reaches`);
+      const own = /^src\/games\/([^/]+)\//.exec(p)?.[1];
+      if (own) {
+        game(own, own);
+        continue;
       }
+      if (FLOW_TOOLING.test(p)) {
+        all.forEach((x) => flows.add(x));
+        continue;
+      }
+      const entry = SHARED_COVERAGE.find((e) => e.match.test(p));
+      if (!entry) {
+        owed.add(`no browser coverage registered for ${p}`);
+        continue;
+      }
+      if (entry.games) {
+        if (!reg.games?.length) owed.add(`game folders not read for ${p}`);
+        else reg.games.forEach((g) => game(g, p));
+      }
+      entry.flows.forEach((x) => need(x, p));
     }
   return { flows: [...flows].sort(), owed: [...owed].sort() };
 }
@@ -1220,7 +1270,7 @@ export function browserEvidence(head, checks, shots, required = { flows: [], owe
   const mine = (checks ?? [])
     .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
     .sort((a, b) => a.id - b.id);
-  const known = new Set(Object.values(GAME_FLOWS).flat().map(flowExternalId));
+  const known = new Set(KNOWN_FLOWS.map(flowExternalId));
   for (const c of mine)
     if (!known.has(c.external_id) && (c.status !== 'completed' || c.conclusion !== 'success'))
       reasons.push(`browser-flow attempt ${c.id} for an unknown flow did not pass`);
@@ -1240,12 +1290,14 @@ export function browserEvidence(head, checks, shots, required = { flows: [], owe
       reasons.push(`browser-flow evidence for ${flow} ${run.conclusion}`);
       continue;
     }
-    reasons.push(...recordReasons(head, flow, readRecord(run), shots?.[run.id]));
+    reasons.push(
+      ...recordReasons(head, flow, readRecord(run), shots?.[run.id], `evidence/${head}/${flow}/`),
+    );
   }
   return reasons;
 }
 
-function recordReasons(head, flow, record, shots) {
+function recordReasons(head, flow, record, shots, dir) {
   if (!record) return [`browser-flow evidence for ${flow} has no record`];
   const reasons = [];
   if (record.head !== head) reasons.push(`browser-flow evidence for ${flow} is for another head`);
@@ -1263,7 +1315,6 @@ function recordReasons(head, flow, record, shots) {
     reasons.push(`browser-flow evidence commit for ${flow} is not on ${EVIDENCE_BRANCH}`);
   else
     for (const sh of list) {
-      const dir = `evidence/${head}/${flow}/`;
       if (!String(sh?.path ?? '').startsWith(dir) || /[?#]|\.\./.test(sh.path)) {
         reasons.push(`screenshot ${sh?.path} is not under ${dir}`);
         continue;
@@ -1442,14 +1493,47 @@ export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
 /** The check run, on the merge commit, that records a flow played on the live site. */
 export const LIVE_CHECK = 'browser-flow-live';
 
+/** Where the live check runs' screenshots are retained, per merge and flow. */
+export const liveDir = (mergeSha, flow) => `evidence/live/${mergeSha}/${flow}/`;
+/** The stable key of one merged-but-unverified obligation. */
+export const obligationKey = (mergeSha, flow) => `${mergeSha}:${flow}`;
+
+/**
+ * Why a live record does not prove `flow` was played on the deployment of
+ * `mergeSha`. Beyond the premerge checks (head, flow, passes, retained
+ * screenshots under evidence/live/<merge>/<flow>/ with matching digests) it
+ * must name the merge as deployed, show that the served index.html and assets
+ * matched a local build of the merge byte for byte both before and after the
+ * flow, and have been captured after the deploy finished.
+ */
+function liveReasons(mergeSha, flow, record, shots, deployedAt) {
+  const reasons = recordReasons(mergeSha, flow, record, shots, liveDir(mergeSha, flow));
+  if (!record) return reasons;
+  if (record.mergeSha !== mergeSha || record.deployedSha !== mergeSha)
+    reasons.push(`live evidence for ${flow} does not name ${mergeSha} as deployed`);
+  const id = record.identity;
+  if (!(id?.before?.matched && id?.after?.matched) || !/^[0-9a-f]{64}$/.test(id?.buildDigest ?? ''))
+    reasons.push(`live evidence for ${flow} does not show the served build is ${mergeSha}`);
+  if (!/^https:\/\//.test(record.url ?? '')) reasons.push(`live evidence for ${flow} names no url`);
+  const at = Date.parse(record.capturedAt ?? '');
+  const since = Date.parse(deployedAt ?? '');
+  if (Number.isNaN(since)) reasons.push(`deploy time for ${mergeSha} unknown`);
+  else if (Number.isNaN(at) || at <= since)
+    reasons.push(`live evidence for ${flow} was captured before the deploy`);
+  return reasons;
+}
+
 /**
  * Whether a merge has shipped: { state, owed }. A deploy alone is never
- * shipped, and neither is premerge evidence. Every flow the merge's changed
- * files need must also have the factory's own newest browser-flow-live run on
- * the merge commit, concluded success. Until then each is owed, and anything
- * no flow covers stays owed for good, so it ships only with a person's QA.
+ * shipped, and neither is premerge evidence or a bare successful live run.
+ * Every flow the merge's changed files need must have the factory's own
+ * newest browser-flow-live run on the merge commit, concluded success, whose
+ * retained record passes liveReasons. Until then each is owed, keyed by
+ * obligationKey. A merge whose deployment a newer one replaced before it was
+ * verified is `superseded-verification-owed`: never shipped, and its owed
+ * flows stay listed. `ctx` is { deployedAt, supersededBy, shots }.
  */
-export function shipState(mergeSha, deploy, files, checks) {
+export function shipState(mergeSha, deploy, files, checks, ctx = {}) {
   if (deploy !== 'deployed-needs-sanity') return { state: deploy, owed: [] };
   const required = needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] };
   const owed = [...required.owed];
@@ -1461,9 +1545,50 @@ export function shipState(mergeSha, deploy, files, checks) {
     if (!run) owed.push(`live flow ${flow} not played`);
     else if (run.status !== 'completed') owed.push(`live flow ${flow} still running`);
     else if (run.conclusion !== 'success') owed.push(`live flow ${flow} ${run.conclusion}`);
+    else
+      owed.push(
+        ...liveReasons(mergeSha, flow, readRecord(run), ctx.shots?.[run.id], ctx.deployedAt),
+      );
   }
-  return { state: owed.length ? 'deployed-verification-owed' : 'shipped', owed };
+  if (!owed.length) return { state: 'shipped', owed };
+  return {
+    state: ctx.supersededBy ? 'superseded-verification-owed' : 'deployed-verification-owed',
+    ...(ctx.supersededBy ? { supersededBy: ctx.supersededBy } : {}),
+    owed,
+    keys: required.flows.map((f) => obligationKey(mergeSha, f)),
+  };
 }
+
+/**
+ * When the merge's deploy finished, and the newest later commit whose Pages
+ * run also deployed: { deployedAt, supersededBy }.
+ */
+export function deployContext(mergeSha, pagesRuns) {
+  const done = (pagesRuns ?? []).filter(
+    (r) => r.status === 'completed' && r.conclusion === 'success',
+  );
+  const own = done.find((r) => r.head_sha === mergeSha);
+  if (!own) return {};
+  const later = done
+    .filter((r) => r.head_sha !== mergeSha && Date.parse(r.updated_at) > Date.parse(own.updated_at))
+    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+  return { deployedAt: own.updated_at, supersededBy: later?.head_sha };
+}
+
+/**
+ * Every merge on main since the gate began that is not shipped, oldest
+ * first: [{ sha, state, owed, keys }]. Main's own history is the persistent
+ * ledger, so an obligation is never forgotten when its PR leaves the open
+ * list, and a newer deployment never discharges an older one.
+ */
+export function owedMerges(merges) {
+  return merges
+    .filter((m) => m.state !== 'shipped')
+    .map((m) => ({ sha: m.sha, state: m.state, owed: m.owed ?? [], keys: m.keys ?? [] }));
+}
+
+/** When the browser gate began: merges before it are not owed live flows. */
+export const LIVE_GATE_SINCE = '2026-10-31T00:00:00Z';
 
 // ---------- gh and tessl adapter ----------
 
@@ -1492,10 +1617,10 @@ function pages(path) {
  * run of each flow on `head` names, read from its retained evidence commit,
  * by check run id. Any failed read is incomplete.
  */
-function retainedShots(checks, head) {
+function retainedShots(checks, head, name = BROWSER_CHECK) {
   const newest = new Map();
   for (const c of checks)
-    if (c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
+    if (c.name === name && c.head_sha === head && c.app?.id === BOT_APP_ID)
       if (!newest.has(c.external_id) || c.id > newest.get(c.external_id).id)
         newest.set(c.external_id, c);
   const out = {};
@@ -1738,6 +1863,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
 //   node scripts/native/native.mjs merge                    gate and merge open tessl PRs
 //   node scripts/native/native.mjs flows <pr>               the browser flows a PR owes
 //   node scripts/native/native.mjs deploy <sha>             merged, deployed or shipped
+//   node scripts/native/native.mjs owed                     merges still owed live flows
 //
 // backlog, dispatch and merge write to GitHub. Run them only inside the
 // native-intake action, which holds the carnival-app-writer key.
@@ -1750,7 +1876,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const adapter = ghAdapter({ writerKeyHeld: held });
   if (command === 'slot') {
     print({ backlog: backlogSlot(now), dispatch: dispatchSlot(now), london: londonParts(now) });
-  } else if (!held && command !== 'deploy' && command !== 'flows') {
+  } else if (!held && !['deploy', 'flows', 'owed'].includes(command)) {
     console.error('refusing: set CARNIVAL_APP_WRITER_HELD=1 only inside the native-intake action');
     process.exit(3);
   } else if (command === 'backlog') {
@@ -1791,6 +1917,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       pr.changed_files,
     );
     print(needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] });
+  } else if (command === 'owed') {
+    // Every merge on main since the live gate began that is not shipped.
+    const commits = pages(
+      `repos/${REPOSITORY}/commits?sha=main&since=${LIVE_GATE_SINCE}&per_page=100`,
+    );
+    if (!commits.complete) print({ status: 'unknown', reason: 'commit listing incomplete' });
+    else {
+      const merges = [];
+      for (const c of commits.items.flat().reverse()) {
+        const out = execFileSync(
+          process.execPath,
+          [new URL(import.meta.url).pathname, 'deploy', c.sha],
+          {
+            encoding: 'utf8',
+          },
+        );
+        merges.push({ sha: c.sha, ...JSON.parse(out) });
+      }
+      print(owedMerges(merges));
+    }
   } else if (command === 'deploy') {
     const runs = pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`);
     if (!runs.complete) print({ status: 'unknown', reason: 'runs listing incomplete' });
@@ -1813,13 +1959,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         // stays incomplete
       }
       const checks = pages(`repos/${REPOSITORY}/commits/${arg}/check-runs?filter=all&per_page=100`);
+      const items = checks.items.flatMap((p) => p.check_runs ?? p);
+      const ctx = {
+        ...deployContext(
+          arg,
+          runs.items.flatMap((p) => p.workflow_runs ?? p),
+        ),
+        shots: checks.complete ? retainedShots(items, arg, LIVE_CHECK) : {},
+      };
       const live = checks.complete
-        ? shipState(
-            arg,
-            deploy,
-            files,
-            checks.items.flatMap((p) => p.check_runs ?? p),
-          )
+        ? shipState(arg, deploy, files, items, ctx)
         : {
             state: deploy === 'deployed-needs-sanity' ? 'deployed-verification-owed' : deploy,
             owed: ['check listing incomplete'],
@@ -1828,7 +1977,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   } else {
     console.error(
-      'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | flows <pr> | deploy <sha>',
+      'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | flows <pr> | deploy <sha> | owed',
     );
     process.exit(2);
   }

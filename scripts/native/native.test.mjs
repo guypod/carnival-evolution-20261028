@@ -4,6 +4,10 @@
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { liveIdentity } from '../visual/live-identity.mjs';
 import {
   BACKLOG_LABEL,
   BATCH_SIZE,
@@ -26,6 +30,9 @@ import {
   requiredFlows,
   changedFiles,
   shipState,
+  deployContext,
+  liveDir,
+  owedMerges,
   evidenceMarker,
   mergeOne,
   produceBacklog,
@@ -2293,11 +2300,37 @@ test('coverage: every changed game needs its own flow', () => {
   );
 });
 
-test('coverage: shared app changes run every flow and stay owed', () => {
+test('coverage: shared paths follow the registry, and only registered coverage clears', () => {
+  const reg = (gameFlows, known, games = ['mini-putt']) => ({ gameFlows, known, games });
+  const one = reg({ 'mini-putt': [FLOW] }, [FLOW]);
+  // A theme change reaches every game: it clears once every game has a flow.
+  assert.deepEqual(requiredFlows(changed('src/carnival/theme.ts'), one), {
+    flows: [FLOW],
+    owed: [],
+  });
+  // With a game that has no flow, a MiniPutt pass never clears it.
+  const two = reg({ 'mini-putt': [FLOW] }, [FLOW], ['mini-putt', 'skee-ball']);
+  assert.deepEqual(requiredFlows(changed('src/carnival/theme.ts'), two).owed, [
+    'no browser flow for src/games/skee-ball/ (reached by src/carnival/theme.ts)',
+  ]);
+  // The midway needs its own flow; adding it to the registry clears it.
+  assert.deepEqual(requiredFlows(changed('src/main.ts'), one).owed, [
+    'missing browser flow midway-booth for src/main.ts',
+  ]);
+  assert.deepEqual(requiredFlows(changed('src/main.ts'), reg({}, [FLOW, 'midway-booth'])), {
+    flows: ['midway-booth'],
+    owed: [],
+  });
+  // A path in no registry entry stays owed; unread game folders owe too.
+  assert.deepEqual(requiredFlows(changed('src/unknown.ts'), one).owed, [
+    'no browser coverage registered for src/unknown.ts',
+  ]);
+  assert.deepEqual(requiredFlows(changed('src/carnival/x.ts'), reg({}, [], [])).owed, [
+    'game folders not read for src/carnival/x.ts',
+  ]);
+  // On this checkout every game but Mini Putt is still owed for a shared change.
   for (const p of ['src/main.ts', 'src/carnival/theme.ts', 'index.html', 'package.json']) {
-    const r = requiredFlows(changed(p));
-    assert.deepEqual(r.flows, [FLOW]);
-    assert.equal(r.owed.length, 1, p);
+    assert.ok(requiredFlows(changed(p)).owed.length > 0, p);
     assert.equal(mergeGate(snapshot({ files: changed(p) })).merge, false, p);
   }
   // The flow scripts replay every flow but owe nothing more.
@@ -2384,10 +2417,24 @@ test('attempts: an opened attempt refuses until it concludes, and a setup failur
 
 // ---------- shipped ----------
 
-test('shipped: a deploy alone, or premerge evidence, never ships', () => {
+test('shipped: a deploy alone, premerge evidence or a bare live pass never ships', () => {
   const MERGE = 'c'.repeat(40);
+  const EV = 'e'.repeat(40);
+  const DIR = liveDir(MERGE, FLOW);
   const files = changed('src/games/mini-putt/game.ts');
-  const live = (extra = {}) => ({
+  const good = {
+    head: MERGE,
+    flow: FLOW,
+    evidenceCommit: EV,
+    flows: [{ name: `${FLOW}: x`, result: 'pass' }],
+    screenshots: [{ path: `${DIR}a.png`, sha256: 'f'.repeat(64) }],
+    mergeSha: MERGE,
+    deployedSha: MERGE,
+    url: 'https://example.github.io/c/',
+    capturedAt: '2026-10-31T10:00:00Z',
+    identity: { buildDigest: 'd'.repeat(64), before: { matched: true }, after: { matched: true } },
+  };
+  const live = (rec = {}, extra = {}) => ({
     id: 90,
     name: 'browser-flow-live',
     external_id: `browser-flow-live:${FLOW}`,
@@ -2395,44 +2442,127 @@ test('shipped: a deploy alone, or premerge evidence, never ships', () => {
     head_sha: MERGE,
     status: 'completed',
     conclusion: 'success',
+    output: { text: evidenceMarker({ ...good, ...rec }) },
     ...extra,
   });
+  const retained = {
+    complete: true,
+    onEvidenceBranch: true,
+    digests: { [`${DIR}a.png`]: 'f'.repeat(64) },
+  };
+  const ctx = { deployedAt: '2026-10-31T09:00:00Z', shots: { 90: retained } };
+  const ship = (checks, c = ctx, f = files) =>
+    shipState(MERGE, 'deployed-needs-sanity', f, checks, c);
   assert.deepEqual(shipState(MERGE, 'deploying', files, []), { state: 'deploying', owed: [] });
-  assert.deepEqual(shipState(MERGE, 'deployed-needs-sanity', files, []), {
-    state: 'deployed-verification-owed',
-    owed: [`live flow ${FLOW} not played`],
+  assert.deepEqual(ship([]).owed, [`live flow ${FLOW} not played`]);
+  assert.deepEqual(ship([]).keys, [`${MERGE}:${FLOW}`]);
+  assert.equal(ship([browserRun({ head_sha: MERGE })]).state, 'deployed-verification-owed');
+  assert.deepEqual(ship([live()]), { state: 'shipped', owed: [] });
+  const owedBy = (checks, c) => ship(checks, c).owed.join('|');
+  // A bare success with no record, as the previous gate accepted, is owed.
+  assert.match(owedBy([live({}, { output: { text: '' } })]), /has no record/);
+  assert.match(
+    owedBy([live()], { deployedAt: ctx.deployedAt }),
+    /retained screenshots .* not read/,
+  );
+  assert.match(owedBy([live({ head: 'b'.repeat(40) })]), /another head/);
+  assert.match(owedBy([live({ flow: 'other' })]), /is not for/);
+  assert.match(owedBy([live({ deployedSha: 'b'.repeat(40) })]), /does not name .* as deployed/);
+  assert.match(owedBy([live({ identity: undefined })]), /served build/);
+  assert.match(
+    owedBy([live({ identity: { ...good.identity, after: { matched: false } } })]),
+    /served build/,
+  );
+  assert.match(owedBy([live({ capturedAt: '2026-10-31T08:00:00Z' })]), /before the deploy/);
+  assert.match(owedBy([live()], { ...ctx, deployedAt: undefined }), /deploy time .* unknown/);
+  assert.match(
+    owedBy([live({ screenshots: [{ path: `evidence/${MERGE}/${FLOW}/a.png`, sha256: 'f' }] })]),
+    /is not under evidence\/live\//,
+  );
+  assert.match(
+    owedBy([live()], { ...ctx, shots: { 90: { ...retained, digests: {} } } }),
+    /not retained/,
+  );
+  assert.deepEqual(ship([live(), live({}, { id: 91, conclusion: 'failure' })]).owed, [
+    `live flow ${FLOW} failure`,
+  ]);
+  assert.equal(ship([live({}, { app: { id: 1 } })]).state, 'deployed-verification-owed');
+  // A newer deployment never discharges an older unverified merge.
+  const old = ship([], { ...ctx, supersededBy: 'b'.repeat(40) });
+  assert.equal(old.state, 'superseded-verification-owed');
+  assert.deepEqual(old.keys, [`${MERGE}:${FLOW}`]);
+  assert.deepEqual(ship([live()], { ...ctx, supersededBy: 'b'.repeat(40) }).state, 'shipped');
+  assert.deepEqual(ship([live()], ctx, changed('src/games/skee-ball/game.ts')).owed, [
+    'no browser flow for src/games/skee-ball/',
+  ]);
+  assert.deepEqual(ship([], ctx, changed('scripts/native/x.mjs')), { state: 'shipped', owed: [] });
+});
+
+test('shipped: deploy context and the owed ledger keep older gaps', () => {
+  const runs = [
+    {
+      head_sha: 'a',
+      status: 'completed',
+      conclusion: 'success',
+      updated_at: '2026-10-31T01:00:00Z',
+    },
+    {
+      head_sha: 'b',
+      status: 'completed',
+      conclusion: 'success',
+      updated_at: '2026-10-31T02:00:00Z',
+    },
+    {
+      head_sha: 'c',
+      status: 'completed',
+      conclusion: 'failure',
+      updated_at: '2026-10-31T03:00:00Z',
+    },
+  ];
+  assert.deepEqual(deployContext('a', runs), {
+    deployedAt: '2026-10-31T01:00:00Z',
+    supersededBy: 'b',
   });
-  // The premerge browser-flow run on the merge commit is not live evidence.
-  const premerge = browserRun({ head_sha: MERGE });
-  assert.equal(
-    shipState(MERGE, 'deployed-needs-sanity', files, [premerge]).state,
-    'deployed-verification-owed',
-  );
-  assert.deepEqual(shipState(MERGE, 'deployed-needs-sanity', files, [live()]), {
-    state: 'shipped',
-    owed: [],
+  assert.deepEqual(deployContext('b', runs), {
+    deployedAt: '2026-10-31T02:00:00Z',
+    supersededBy: undefined,
   });
-  assert.deepEqual(
-    shipState(MERGE, 'deployed-needs-sanity', files, [
-      live(),
-      live({ id: 91, conclusion: 'failure' }),
-    ]).owed,
-    [`live flow ${FLOW} failure`],
+  assert.deepEqual(deployContext('z', runs), {});
+  const merges = [
+    { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
+    { sha: 'b', state: 'shipped', owed: [] },
+    { sha: 'c', state: 'deploy-failed', owed: [] },
+  ];
+  assert.deepEqual(owedMerges(merges), [
+    { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
+    { sha: 'c', state: 'deploy-failed', owed: [], keys: [] },
+  ]);
+});
+
+test('live identity: only a byte-for-byte match of the merge build counts', async () => {
+  const dist = mkdtempSync(join(tmpdir(), 'dist-'));
+  mkdirSync(join(dist, 'assets'));
+  writeFileSync(join(dist, 'index.html'), 'index-v2');
+  writeFileSync(join(dist, 'assets', 'app-abc.js'), 'code-v2');
+  const serve = (map) => async (u) => {
+    const body = map[new URL(u).pathname];
+    return body === undefined
+      ? { ok: false, status: 404 }
+      : { ok: true, arrayBuffer: async () => new TextEncoder().encode(body) };
+  };
+  const same = { '/c/': 'index-v2', '/c/assets/app-abc.js': 'code-v2' };
+  const r = await liveIdentity(dist, 'https://x.io/c/', serve(same));
+  assert.equal(r.matched, true);
+  assert.match(r.buildDigest, /^[0-9a-f]{64}$/);
+  // An older deployment, even one that answers 200 with the same title, misses.
+  const stale = await liveIdentity(
+    dist,
+    'https://x.io/c/',
+    serve({ ...same, '/c/assets/app-abc.js': 'code-v1' }),
   );
-  assert.equal(
-    shipState(MERGE, 'deployed-needs-sanity', files, [live({ app: { id: 1 } })]).state,
-    'deployed-verification-owed',
-  );
-  // A game with no flow stays owed after deployment.
-  assert.deepEqual(
-    shipState(MERGE, 'deployed-needs-sanity', changed('src/games/skee-ball/game.ts'), [live()])
-      .owed,
-    ['no browser flow for src/games/skee-ball/'],
-  );
-  assert.deepEqual(shipState(MERGE, 'deployed-needs-sanity', changed('scripts/native/x.mjs'), []), {
-    state: 'shipped',
-    owed: [],
-  });
+  assert.deepEqual(stale.mismatches, ['assets/app-abc.js']);
+  const gone = await liveIdentity(dist, 'https://x.io/c/', serve({ '/c/': 'index-v2' }));
+  assert.equal(gone.matched, false);
 });
 
 test('live attempts carry the live check name', () => {

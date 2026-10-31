@@ -254,11 +254,17 @@ A reviewer's `approved=true` and comments on the issue or PR are not browser
 evidence. `requiredFlows` reads every changed path, the new name and, for a
 rename, the old one. A change in `src/games/<game>/` needs that game's flows
 from `GAME_FLOWS`, and a game with none is owed a flow: the gate refuses, and
-the repair is to add the flow to `scripts/visual/flow.mjs` and `GAME_FLOWS`.
-One game's pass never stands in for another's. A change to the flow scripts
-replays every flow. Other app code (`src/` outside the games, `index.html`,
-`package.json`) also replays every flow, and stays owed because no flow plays
-every screen it reaches. An unread file listing owes everything.
+the repair is to add the flow to `scripts/visual/flow.mjs`, `KNOWN_FLOWS` and
+`GAME_FLOWS`, in the same pull request. One game's pass never stands in for
+another's. A change to the flow scripts replays every flow. Other app code
+follows `SHARED_COVERAGE`, a finite registry of what each shared path reaches:
+`src/carnival/` and `src/games/*.ts` reach every game folder, `src/main.ts`,
+`src/midway/` and `index.html` need a `midway-booth` flow, and `package.json`,
+`vite.config.ts`, `tsconfig.json` and `public/` need both. A shared change
+clears once every flow it reaches exists and passes; until then each missing
+game or flow is owed by name, and a path in no entry stays owed. Today only
+Mini Putt has a flow, so shared changes are owed until the other games and
+the midway get theirs. An unread file listing owes everything.
 `node scripts/native/native.mjs flows <pr>` prints `{ flows, owed }`.
 
 For each required flow, the gate reads the newest `browser-flow` check run
@@ -291,8 +297,11 @@ checkout, plays the flow from `scripts/visual/flow.mjs` (for example
 `mini-putt-hole-next`, which finishes a hole and presses Next), pushes the
 screenshots to the evidence branch and concludes the check run. Any exit
 before that, such as a browser setup failure, an unknown flow, a missing
-screenshot or a failed upload, concludes it as a failure. It empties the
-output folder first, and a flow that exits non-zero never publishes a pass.
+screenshot or a failed upload, concludes it as a failure. Each attempt writes
+into a new `attempt.XXXXXX` directory made inside the output folder, so an
+earlier report is never read and nothing the caller left there is removed. A
+symlink or a file as the output folder is refused. A flow that exits non-zero
+publishes nothing.
 The file listing counts as complete only when it holds every file the pull
 request reports. The dispatch
 mode of `tessl-factory/skills/native-intake` runs it for every required flow
@@ -309,12 +318,32 @@ A merge is not shipped. `deploy <sha>` prints `deploy`, the Pages state
 (`deployed-needs-sanity` only when the Pages run's `deploy` job succeeded for
 that commit), and `state` with `owed`. `state` is `shipped` only when every
 flow the merge commit's files need has the factory's newest
-`browser-flow-live` check run on the merge commit concluded `success`.
-`scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` records that run
-by playing the flow on the live site. Until then the state is
-`deployed-verification-owed` and lists what is owed. A 200 response, the page
-title and premerge evidence never count, and anything no flow covers stays
-owed.
+`browser-flow-live` check run on the merge commit concluded `success`, with a
+record that passes the same checks as premerge evidence (merge as head, the
+flow, every check passed, screenshots under `evidence/live/<merge>/<flow>/`
+retained on the evidence branch with matching sha256) and also names the merge
+as `mergeSha` and `deployedSha`, the live `url`, a `capturedAt` after the
+merge's Pages deploy finished, and an `identity` that matched before and after
+the flow.
+
+`scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` records that run.
+It must run on a clean checkout of the merge commit. It builds that commit and
+plays the flow only if the live `index.html` and every file under `assets/`
+match the build byte for byte (`scripts/visual/live-identity.mjs`), and checks
+again after the flow. Vite names assets by content hash, so this is the
+deployment identity: it relies on the build being reproducible from the
+commit and `package-lock.json`, not on any GitHub API. If it does not match,
+the attempt fails and the flow stays owed. A 200 response, the page title and
+premerge evidence never count, and anything no flow covers stays owed.
+
+Owed live work is never forgotten. `node scripts/native/native.mjs owed`
+walks every commit on `main` since the live gate began (`LIVE_GATE_SINCE`)
+and lists each merge that is not `shipped`, with its owed reasons and stable
+`<merge sha>:<flow>` keys. Main's history is the ledger, so a merge stays
+listed after its pull request leaves the open list. Once a newer deployment
+replaces a merge, the live site can no longer match that merge's build, so it
+cannot be verified any more. It is reported as `superseded-verification-owed`,
+never `shipped`, and stays listed until a person signs it off.
 
 ## Activation and limits
 
