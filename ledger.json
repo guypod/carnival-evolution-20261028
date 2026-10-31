@@ -515,6 +515,89 @@
         ]
       },
       "fingerprints": []
+    },
+    {
+      "runId": "01a1930c-0687-7016-996e-620cdc2b8318",
+      "learner": "lens-tuning",
+      "trigger": "schedule",
+      "slot": "2026-10-31T17:40 Europe/London",
+      "scheduledFor": "2026-10-31T17:40:00.000Z",
+      "delayMinutes": 1,
+      "since": "2026-10-29T17:40:00.000Z",
+      "startedAt": "2026-10-31T17:41:12.000Z",
+      "finishedAt": "2026-10-31T17:41:55.000Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#474",
+          "#481",
+          "#503",
+          "#506",
+          "#511",
+          "#449",
+          "#420",
+          "#299"
+        ],
+        "gaps": "Run started 1 minute late with under 20 minutes before its deadline. The PR list (52 PRs, under the 100 limit) was enumerated in full; inline review comments and review bodies were fetched for all 52 but only the latest few inline comments of 8 PRs were read, cut to 350 characters. PR diffs, review bodies, factory-state/visual-repair, CI runs, tests and live-play notes were not read. No proposal: every finding read (#474 CSS specificity, #481 and #511 Puppet Theatre caption overlaps, #503 one-sided test bounds, #506 Ring Toss label jump, #420 socket state, #299 inspection restart) was caught by the existing lenses and fixed or answered; no lens miss or false alarm was shown by the evidence read.",
+        "sources": [
+          {
+            "source": "pull-requests",
+            "enumeration": "complete",
+            "read": "full",
+            "scope": "gh pr list --state all updated since 2026-10-29T17:40Z, oldest first: 52 PRs (number, state, title, branch)"
+          },
+          {
+            "source": "pr-diffs",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "no time before the deadline"
+          },
+          {
+            "source": "review-comments",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "inline comments fetched for all 52 PRs; last 4 comments of #474, #481, #503, #506, #511, #449, #420, #299 read to 350 characters",
+            "gaps": "other PRs' comments and full bodies unread"
+          },
+          {
+            "source": "review-bodies",
+            "enumeration": "count-only",
+            "read": "none",
+            "scope": "review counts fetched for all 52 PRs; bodies not read",
+            "gaps": "bodies unread"
+          },
+          {
+            "source": "visual-repair",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "factory-state/visual-repair not read; visual repair PRs #394, #398, #413, #427 seen only in the PR list",
+            "gaps": "not read"
+          },
+          {
+            "source": "ci-runs",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "not read"
+          },
+          {
+            "source": "tests",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "not read"
+          },
+          {
+            "source": "live-play",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "not read"
+          }
+        ]
+      },
+      "fingerprints": []
     }
   ],
   "proposals": [
