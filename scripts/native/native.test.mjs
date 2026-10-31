@@ -24,6 +24,7 @@ import {
   browserEvidence,
   needsBrowserEvidence,
   requiredFlows,
+  changedFiles,
   shipState,
   evidenceMarker,
   mergeOne,
@@ -2440,4 +2441,30 @@ test('live attempts carry the live check name', () => {
     env: { ...process.env, FLOW_CHECK_NAME: 'browser-flow-live' },
   });
   assert.deepEqual(JSON.parse(out).external_id, `browser-flow-live:${FLOW}`);
+});
+
+test('advisory: a cut-short file listing, and inherited names, fail closed', () => {
+  const two = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
+  assert.equal(changedFiles(two, 3001).complete, false);
+  assert.equal(changedFiles(two, 1).complete, true);
+  assert.deepEqual(requiredFlows(changed('src/games/constructor/game.ts')).owed, [
+    'no browser flow for src/games/constructor/',
+  ]);
+});
+
+test('advisory: a flow that exited non-zero never publishes a pass', async () => {
+  const { flowCheckRun } = await import('../visual/flow-check.mjs');
+  const report = {
+    flow: FLOW,
+    result: 'pass',
+    errors: [],
+    checks: [{ check: 'x', result: 'pass' }],
+    screenshots: [{ file: 'a.png', sha256: SHOT }],
+  };
+  assert.equal(flowCheckRun(report, HEAD, EVIDENCE, 'd', 0).conclusion, 'success');
+  assert.equal(flowCheckRun(report, HEAD, EVIDENCE, 'd', 1).conclusion, 'failure');
+  assert.equal(
+    flowCheckRun({ ...report, checks: [] }, HEAD, EVIDENCE, 'd', 0).conclusion,
+    'failure',
+  );
 });

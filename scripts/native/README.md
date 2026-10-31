@@ -291,7 +291,10 @@ checkout, plays the flow from `scripts/visual/flow.mjs` (for example
 `mini-putt-hole-next`, which finishes a hole and presses Next), pushes the
 screenshots to the evidence branch and concludes the check run. Any exit
 before that, such as a browser setup failure, an unknown flow, a missing
-screenshot or a failed upload, concludes it as a failure. The dispatch
+screenshot or a failed upload, concludes it as a failure. It empties the
+output folder first, and a flow that exits non-zero never publishes a pass.
+The file listing counts as complete only when it holds every file the pull
+request reports. The dispatch
 mode of `tessl-factory/skills/native-intake` runs it for every required flow
 before the merge sweep.
 

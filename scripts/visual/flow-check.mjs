@@ -1,7 +1,7 @@
 // Turns a flow.json from flow.mjs into the browser-flow check run body, with
 // the record the native merge gate reads (evidenceMarker in native.mjs).
 //
-//   node scripts/visual/flow-check.mjs <flow.json> <head> <evidence commit> <dir>
+//   node scripts/visual/flow-check.mjs <flow.json> <head> <evidence commit> <dir> <flow exit status>
 //   node scripts/visual/flow-check.mjs --start <flow> <head>
 //   node scripts/visual/flow-check.mjs --fail <flow> <step> <exit status>
 import { readFileSync } from 'node:fs';
@@ -11,9 +11,16 @@ import { BROWSER_CHECK, evidenceMarker, flowExternalId } from '../native/native.
 const NAME = process.env.FLOW_CHECK_NAME ?? BROWSER_CHECK;
 const idOf = (flow) => (NAME === BROWSER_CHECK ? flowExternalId(flow) : `${NAME}:${flow}`);
 
-/** The check run for a flow report: success only when every check passed. */
-export function flowCheckRun(report, head, evidenceCommit, dir) {
-  const pass = report.result === 'pass';
+/**
+ * The check run for a flow report: success only when every check passed and
+ * the flow process itself exited 0 (status, when given).
+ */
+export function flowCheckRun(report, head, evidenceCommit, dir, status = 0) {
+  const pass =
+    Number(status) === 0 &&
+    report.result === 'pass' &&
+    report.checks?.length > 0 &&
+    report.checks.every((c) => c.result === 'pass');
   const record = {
     head,
     flow: report.flow,

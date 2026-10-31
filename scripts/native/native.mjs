@@ -1169,7 +1169,7 @@ export function requiredFlows(files) {
       if (INFRA_ONLY.some((re) => re.test(p))) continue;
       const game = /^src\/games\/([^/]+)\//.exec(p)?.[1];
       if (game) {
-        if (GAME_FLOWS[game]) GAME_FLOWS[game].forEach((x) => flows.add(x));
+        if (Object.hasOwn(GAME_FLOWS, game)) GAME_FLOWS[game].forEach((x) => flows.add(x));
         else owed.add(`no browser flow for src/games/${game}/`);
       } else if (FLOW_TOOLING.test(p)) all.forEach((x) => flows.add(x));
       else {
@@ -1181,6 +1181,15 @@ export function requiredFlows(files) {
       }
     }
   return { flows: [...flows].sort(), owed: [...owed].sort() };
+}
+
+/**
+ * A pull request's file listing, complete only when it holds every file the
+ * pull request reports: GitHub stops the listing at 3000 files.
+ */
+export function changedFiles(listing, count) {
+  const items = (listing?.items ?? []).flat();
+  return { complete: !!listing?.complete && items.length === count, items };
 }
 
 /** The check run external_id that ties a browser-flow attempt to its flow. */
@@ -1203,8 +1212,8 @@ function readRecord(run) {
  * record must name the head and the flow, every check as passed, and
  * screenshots whose retained bytes hash to the recorded digests. A factory
  * attempt on the head with no known flow that did not succeed also refuses.
- * Reviews and comments never count. `required` defaults to the one flow
- * registered, for callers that predate coverage.
+ * Reviews and comments never count. With no `required` flows and nothing
+ * owed, it refuses: there is nothing to accept.
  */
 export function browserEvidence(head, checks, shots, required = { flows: [], owed: [] }) {
   const reasons = [...(required.owed ?? [])];
@@ -1689,7 +1698,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
           return { ...r, items: r.items.flatMap((p) => p.workflow_runs ?? p) };
         })(),
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
-        files: pages(`${base}/pulls/${n}/files?per_page=100`),
+        files: changedFiles(pages(`${base}/pulls/${n}/files?per_page=100`), pr.changed_files),
         browserShots: retainedShots(
           checks.items.flatMap((p) => p.check_runs ?? p),
           sha,
@@ -1776,7 +1785,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   } else if (command === 'flows') {
     // The flows a pull request's head needs, and what no flow covers yet.
-    const files = pages(`repos/${REPOSITORY}/pulls/${arg}/files?per_page=100`);
+    const pr = JSON.parse(gh(['api', `repos/${REPOSITORY}/pulls/${arg}`]));
+    const files = changedFiles(
+      pages(`repos/${REPOSITORY}/pulls/${arg}/files?per_page=100`),
+      pr.changed_files,
+    );
     print(needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] });
   } else if (command === 'deploy') {
     const runs = pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`);

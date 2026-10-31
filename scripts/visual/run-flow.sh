@@ -32,6 +32,8 @@ if [ "$PUBLISH" = --live ]; then
   FLOW_CHECK_NAME=browser-flow-live
   PUBLISH=--publish
 fi
+# A report or screenshot left by an earlier run must never be published.
+rm -rf "$OUT"
 mkdir -p "$OUT"
 CHECK=
 STEP=start
@@ -91,6 +93,8 @@ STEP=flow
 STATUS=0
 node "$HERE/flow.mjs" "$BASE" "$OUT" "$FLOW" || STATUS=$?
 [ "$PUBLISH" = --publish ] || exit "$STATUS"
+# A failed flow publishes its report as a failure; a crash publishes nothing.
+[ "$STATUS" = 0 ] || [ "$STATUS" = 1 ] || { echo "flow exited $STATUS" >&2; exit "$STATUS"; }
 [ -s "$OUT/flow.json" ] || { echo "flow wrote no report" >&2; exit 1; }
 ls "$OUT"/*.png >/dev/null 2>&1 || { echo "flow wrote no screenshot" >&2; exit 1; }
 
@@ -114,7 +118,7 @@ EVIDENCE=$(git -C "$WORK" rev-parse HEAD)
 git -C "$WORK" push --quiet origin "HEAD:refs/heads/$BRANCH"
 
 STEP=conclude
-node "$HERE/flow-check.mjs" "$OUT/flow.json" "$HEAD" "$EVIDENCE" "$DIR" >"$OUT/check-run.json"
+node "$HERE/flow-check.mjs" "$OUT/flow.json" "$HEAD" "$EVIDENCE" "$DIR" "$STATUS" >"$OUT/check-run.json"
 gh api -X PATCH "repos/$REPO/check-runs/$CHECK" --input "$OUT/check-run.json" --jq '.html_url'
 STEP=published
 exit "$STATUS"
