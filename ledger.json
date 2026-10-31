@@ -168,6 +168,62 @@
       "fingerprints": [
         "12d72f039beaf6b6"
       ]
+    },
+    {
+      "runId": "01a1905d-606f-7537-819a-ca184a8a17e7",
+      "learner": "review-feedback",
+      "trigger": "schedule",
+      "slot": "2026-10-31T05:10 Europe/London",
+      "scheduledFor": "2026-10-31T05:10:00.000Z",
+      "delayMinutes": 1,
+      "since": "2026-10-30T05:10:00.000Z",
+      "startedAt": "2026-10-31T05:11:14.000Z",
+      "finishedAt": "2026-10-31T05:13:51.000Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#375",
+          "#299",
+          "#394",
+          "#398",
+          "#405",
+          "#409",
+          "#413",
+          "#418",
+          "#419",
+          "#420",
+          "#421",
+          "#422",
+          "#423",
+          "#424",
+          "#427",
+          "#426",
+          "#447"
+        ],
+        "gaps": "Follow-up commits: every PR's commit list was fetched, but only the last 8 commit headlines of #420, #426, #447, #418 and #375 were printed, and file changes were read only for the fix commits 0a25b83, fa7c406 and ea9496f; other commits' diffs were not read. PR conversation comments by the factory bot were read only as 300-character excerpts (owner comments on #447 read in full). No coverage.through is claimed.",
+        "sources": [
+          {
+            "source": "review-comments",
+            "enumeration": "complete",
+            "read": "full",
+            "scope": "All inline review comments (pulls/<n>/comments, paginated) on the 17 PRs updated since 2026-10-30T05:10Z (list of 17 under the 100 limit): 7 tessl-reviewer findings (#299 x1, #420 x1, #426 x5) and every reply; each was answered as fixed, none refuted or declined as out of scope; #299's was reconciled as addressed."
+          },
+          {
+            "source": "review-bodies",
+            "enumeration": "complete",
+            "read": "full",
+            "scope": "All PR reviews (pulls/<n>/reviews, paginated) submitted in the window on the 17 PRs: tessl-reviewer summaries on #299, #418, #419, #420, #421, #426, #447 and tessl-app reply reviews, read in full."
+          },
+          {
+            "source": "follow-up-commits",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "Commit lists for all 17 PRs fetched; headlines shown for the last 8 commits of #420, #426, #447, #418, #375; file lists read for the fix commits 0a25b83 (#426), fa7c406 (#420), ea9496f (#447).",
+            "gaps": "Commit diffs other than those three fix commits were not read; earlier commit headlines of the larger PRs were not printed."
+          }
+        ]
+      },
+      "fingerprints": []
     }
   ],
   "proposals": [
