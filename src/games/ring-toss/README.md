@@ -10,6 +10,8 @@ Ring the bottles as they slide along three shelves. You have ten rings.
   A ring lands where it was aimed, half a second after you throw it, so lead the
   moving bottles. The line under the awning says so: lead moving bottles by half
   a second, and gold bottles score double.
+- The aim stops just below that line, so a ring always lands on the playfield.
+  Aim above the top shelf's zones and the ring lands there as a red `Miss`.
 - The bottom right shows how many rings you have left. The round ends when the
   last ring lands.
 - On the end screen, click, tap or press Space to play another round.

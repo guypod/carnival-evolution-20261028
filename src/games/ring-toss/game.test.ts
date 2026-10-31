@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AIM_TOP,
   FLIGHT_TIME,
+  PLAYFIELD_TOP,
   GOLDEN_MULTIPLIER,
   RINGER_RADIUS,
   RINGS_PER_ROUND,
@@ -9,6 +11,7 @@ import {
   createState,
   goldenIndex,
   step,
+  steerAim,
   takeFinalScore,
   toss,
   type RingTossState,
@@ -179,5 +182,22 @@ describe('ring toss', () => {
     expect(goldenIndex(0, 0)).not.toBe(goldenIndex(0, 1));
     const goldenXs = (s: RingTossState) => s.bottles.filter((b) => b.golden).map((b) => b.x);
     expect(goldenXs(next)).not.toEqual(goldenXs(createState(0)));
+  });
+
+  it('lands a ring thrown at the awning inside the playfield, as a miss', () => {
+    const state = createState();
+    toss(state, 20, 0);
+    expect(state.rings[0].y).toBe(AIM_TOP);
+    expect(AIM_TOP - RINGER_RADIUS).toBeGreaterThanOrEqual(PLAYFIELD_TOP);
+    step(state, FLIGHT_TIME);
+    expect(state.landings[0]).toMatchObject({ y: AIM_TOP, points: 0 });
+    expect(state.score).toBe(0);
+  });
+
+  it('keeps the steered aim below the awning, and the top shelf still in reach', () => {
+    const aim = { x: 400, y: 200 };
+    steerAim(aim, 0, -1, 10);
+    expect(aim.y).toBe(AIM_TOP);
+    expect(AIM_TOP).toBeLessThanOrEqual(SHELVES[0].y - RINGER_RADIUS);
   });
 });

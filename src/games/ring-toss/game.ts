@@ -10,6 +10,10 @@ export const RINGER_RADIUS = 18;
 export const THROWER = { x: WIDTH / 2, y: HEIGHT - 30 } as const;
 /** Pixels per second the aim moves when steered with the arrow keys. */
 export const AIM_SPEED = 360;
+/** The playfield starts below the awning and the hint line. Nothing in flight draws above it. */
+export const PLAYFIELD_TOP = 72;
+/** The highest a ring can land: a whole ring's width below the playfield's top edge. */
+export const AIM_TOP = PLAYFIELD_TOP + RINGER_RADIUS;
 
 export const SHELVES = [
   { y: 120, speed: 150, points: 30 },
@@ -114,7 +118,7 @@ export function toss(state: RingTossState, aimX: number, aimY: number): boolean 
   if (state.phase !== 'playing' || state.ringsLeft === 0) return false;
   state.rings.push({
     x: Math.min(Math.max(aimX, 0), WIDTH),
-    y: Math.min(Math.max(aimY, 0), THROWER.y - 40),
+    y: Math.min(Math.max(aimY, AIM_TOP), THROWER.y - 40),
     age: 0,
   });
   state.ringsLeft -= 1;
@@ -168,7 +172,7 @@ export function takeFinalScore(state: RingTossState): number | undefined {
 /** Moves the aim by the arrow keys held, kept inside the throwing area. */
 export function steerAim(aim: { x: number; y: number }, dx: number, dy: number, dt: number): void {
   aim.x = Math.min(Math.max(aim.x + dx * AIM_SPEED * dt, 0), WIDTH);
-  aim.y = Math.min(Math.max(aim.y + dy * AIM_SPEED * dt, 0), THROWER.y - 40);
+  aim.y = Math.min(Math.max(aim.y + dy * AIM_SPEED * dt, AIM_TOP), THROWER.y - 40);
 }
 
 function drawRing(ctx: CanvasRenderingContext2D, x: number, y: number, scale: number) {
@@ -228,6 +232,12 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
     ctx.fillText(String(bottle.points), bottle.x, bottle.y + 26);
   }
 
+  // Arcs, rings and landings stay inside the playfield, never over the awning.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, PLAYFIELD_TOP, WIDTH, HEIGHT - PLAYFIELD_TOP);
+  ctx.clip();
+
   // Aim preview: the arc the ring will fly and where it will land.
   ctx.strokeStyle = colors.muted;
   ctx.lineWidth = 2;
@@ -264,17 +274,21 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
     drawRing(ctx, landing.x, landing.y, 1);
     ctx.fillStyle = landing.points > 0 ? colors.accent : colors.danger;
     if (landing.golden) ctx.fillStyle = colors.stripeB;
+    // Near the top edge the label drifts down under the ring instead of up.
+    const rise = 24 + landing.age * 30;
+    const labelY = landing.y - rise < PLAYFIELD_TOP + 20 ? landing.y + rise + 12 : landing.y - rise;
     ctx.fillText(
       landing.golden
         ? `Golden! +${landing.points}`
         : landing.points > 0
           ? `+${landing.points}`
           : 'Miss',
-      landing.x,
-      landing.y - 24 - landing.age * 30,
+      Math.min(Math.max(landing.x, 48), WIDTH - 48),
+      labelY,
     );
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
   ctx.fillStyle = colors.surface;
   ctx.beginPath();
