@@ -1,10 +1,8 @@
 {
   "version": 1,
-  "head": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+  "head": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
   "reviewedThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
   "pending": [
-    "#/trail",
-    "#/circuit",
     "#/party",
     "#/records",
     "#/booths",
@@ -27,7 +25,8 @@
     "#/play/puppet-theatre",
     "#/play/ring-toss",
     "#/play/skee-ball",
-    "#/play/water-cannon"
+    "#/play/water-cannon",
+    "#/toy"
   ],
   "pendingThrough": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
   "findings": [
@@ -36,33 +35,33 @@
       "route": "#/",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at 0cf60d3: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon, beside the dark rounded Help/Guide/Start tour buttons.",
+      "note": "Still at 5f4ba10: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon, beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:materials",
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "materials",
-      "note": "Still at 0cf60d3: booth prize cards are flat purple rectangles with a yellow outline on a flat dark page; the Prize Room and desk toy links are plain full-width yellow bars; no wood, paper tags or lantern glow.",
+      "note": "Still at 5f4ba10: booth prize cards are flat purple rectangles with a yellow outline on a flat dark page; the Prize Room and desk toy links are plain full-width yellow bars; no wood, paper tags or lantern glow.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:depth",
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Still at 0cf60d3: cards, the dashed Carnival Collector panel and the link bars have no shadow, frame or counter edge on the full-bleed dark background.",
+      "note": "Still at 5f4ba10: cards, the dashed Carnival Collector panel and the link bars have no shadow, frame or counter edge on the full-bleed dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/room:desktop-clean:controls",
@@ -147,8 +146,12 @@
       "note": "Still at 0cf60d3: a small 360px duck scene and three buttons sit in the top-left; most of the 1280x800 screen below and to the right is empty dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
-      "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T18:19:26.239Z",
+      "applied": [
+        "413:merged:2026-10-30T18:39:06Z"
+      ],
+      "pr": 413
     },
     {
       "fingerprint": "#/toy:desktop-clean:controls",
@@ -158,8 +161,12 @@
       "note": "Still at 0cf60d3: Wind the key, Let it go and Reset are raw grey browser-default buttons with small default font; the disabled Let it go is grey-on-grey; the heading carries a thin white box outline.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
-      "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T18:19:26.239Z",
+      "applied": [
+        "413:merged:2026-10-30T18:39:06Z"
+      ],
+      "pr": 413
     },
     {
       "fingerprint": "#/toy:desktop-clean:depth",
@@ -169,8 +176,12 @@
       "note": "Still at 0cf60d3: the desk scene is a flat rounded purple box with a brown strip; no frame, shadow or counter edge, and the controls sit outside the scene frame.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
-      "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "status": "merged",
+      "seenOn": "2026-10-30T18:19:26.239Z",
+      "applied": [
+        "413:merged:2026-10-30T18:39:06Z"
+      ],
+      "pr": 413
     },
     {
       "fingerprint": "#/party:desktop-clean:controls",
@@ -218,11 +229,11 @@
       "route": "#/circuit",
       "state": "desktop-focus",
       "criterion": "focus-contrast",
-      "note": "After two Tab presses the desktop and narrow focus screenshots are pixel-identical to the clean ones: no focus ring is visible on any element.",
+      "note": "At 5f4ba10 the desktop and narrow focus screenshots are pixel-identical to the clean ones: after Tab no focus ring is visible on any element.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
-      "status": "resolved",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+      "status": "open",
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/circuit:desktop-clean:materials",
@@ -231,9 +242,9 @@
       "criterion": "materials",
       "note": "Legs are flat purple cards with dashed lavender borders and dashed circle placeholders on a flat dark page: generic dashboard cards, no wood, paper tags or lantern glow.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "resolved",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/trail:desktop-clean:materials",
@@ -242,9 +253,9 @@
       "criterion": "materials",
       "note": "The four missions are flat purple cards with dashed lavender borders on a full-bleed dark background; no wood frame, shadow, paper tag or lantern glow like the midway.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "resolved",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/records:desktop-clean:materials",
@@ -449,22 +460,22 @@
       "route": "#/circuit",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Status box and the three dashed leg cards are flat purple rectangles on the flat dark page with no frame, shadow or counter edge.",
+      "note": "Still at 5f4ba10: the status box and the three dashed leg cards are flat purple rectangles on the flat dark page with no frame, shadow or counter edge.",
       "firstSeen": "2026-10-30T16:24:35.396Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/trail:desktop-clean:depth",
       "route": "#/trail",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "The four dashed mission cards and the Next up box are flat purple rectangles on the flat dark page with no frame, shadow or counter edge; same at 390px.",
+      "note": "Still at 5f4ba10: the four dashed mission cards and the Next up box are flat purple rectangles on the flat dark page with no frame, shadow or counter edge; same at 390px.",
       "firstSeen": "2026-10-30T16:24:35.396Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/expedition:desktop-clean:composition",
@@ -592,11 +603,11 @@
       "route": "#/prizes",
       "state": "desktop-clean",
       "criterion": "art-integration",
-      "note": "Still at 0cf60d3: the Carnival Collector badge and the icons before Arrange your Prize Room and Wind up a desk toy render as missing-glyph boxes.",
+      "note": "Still at 5f4ba10: the Carnival Collector badge and the icons before Arrange your Prize Room and Wind up a desk toy render as missing-glyph boxes.",
       "firstSeen": "2026-10-30T16:34:27.953Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
       "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "seenOn": "2026-10-31T00:34:48.501Z"
     },
     {
       "fingerprint": "#/play/puppet-theatre:narrow-clean:responsive",
@@ -655,10 +666,12 @@
     }
   ],
   "reviewedAt": {
-    "#/": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
-    "#/prizes": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+    "#/": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+    "#/prizes": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
     "#/room": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
-    "#/toy": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a"
+    "#/toy": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+    "#/trail": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+    "#/circuit": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7"
   },
-  "reconciledAt": "2026-10-30T18:17:46.932Z"
+  "reconciledAt": "2026-10-31T00:32:13.952Z"
 }
