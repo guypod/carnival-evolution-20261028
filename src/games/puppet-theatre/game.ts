@@ -56,6 +56,35 @@ export const REACTIONS: Record<AudienceEvent, { mood: Mood; caption: string }> =
 };
 export const PATIENT_CAPTION = 'The audience waits patiently.';
 export const PRACTICE_CAPTION = 'Rehearsal: the curtain is down and the audience is away.';
+/** The label on the front row, so it reads as the audience rather than decoration. */
+export const AUDIENCE_LABEL = 'Audience:';
+
+/** How each mood's face is drawn. Every mood differs in shape, not only colour. */
+export interface FaceShape {
+  eyes: 'dots' | 'wide' | 'arcs';
+  mouth: 'flat' | 'o' | 'grin';
+  brows: boolean;
+  /** How far the spectators rise in their seats, in pixels. */
+  lift: number;
+}
+export const FACES: Record<Mood, FaceShape> = {
+  patient: { eyes: 'dots', mouth: 'flat', brows: false, lift: 0 },
+  surprised: { eyes: 'wide', mouth: 'o', brows: true, lift: 4 },
+  amused: { eyes: 'arcs', mouth: 'grin', brows: false, lift: 0 },
+};
+
+/**
+ * The audience row at the bottom left: its label, the mood caption beside it,
+ * and whether the spectators are in their seats (they are away in rehearsal).
+ */
+export function audienceRow(theatre: Pick<Theatre, 'stage' | 'live'>) {
+  const rehearsing = theatre.live !== null;
+  return {
+    label: AUDIENCE_LABEL,
+    caption: rehearsing ? PRACTICE_CAPTION : theatre.stage.audience.caption,
+    seated: !rehearsing,
+  };
+}
 export const HOLD_CAPTION = 'Rehearsal: that would finish the scene. Go live to perform it.';
 export const CONFIRM_CAPTION =
   'Reset this scene to how it began? Enter, Y or Yes resets. N or No cancels.';
@@ -720,21 +749,34 @@ function drawProp(ctx: CanvasRenderingContext2D, stage: StageState, id: PropId) 
 /** Three small spectators in the front row, all wearing the audience's mood. Never animated. */
 function drawAudience(ctx: CanvasRenderingContext2D, audience: Audience) {
   const { colors } = theme;
-  const lift = audience.mood === 'surprised' ? 6 : 0;
+  const face = FACES[audience.mood];
   for (const [i, x] of [30, 70, 110].entries()) {
-    const y = 418 - lift;
+    const y = 422 - face.lift;
     ctx.fillStyle = i % 2 ? colors.muted : colors.stripeB;
     ctx.beginPath();
     ctx.arc(x, y, 14, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = colors.background;
-    ctx.fillRect(x - 6, y - 5, 3, audience.mood === 'surprised' ? 5 : 3);
-    ctx.fillRect(x + 3, y - 5, 3, audience.mood === 'surprised' ? 5 : 3);
     ctx.strokeStyle = colors.background;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    if (audience.mood === 'amused') ctx.arc(x, y + 2, 6, 0.2, Math.PI - 0.2);
-    else if (audience.mood === 'surprised') ctx.arc(x, y + 6, 3, 0, Math.PI * 2);
+    for (const ex of [x - 5, x + 5]) {
+      if (face.eyes === 'dots') ctx.fillRect(ex - 1.5, y - 5, 3, 3);
+      else if (face.eyes === 'wide') ctx.fillRect(ex - 1.5, y - 6, 3, 6);
+      else {
+        ctx.moveTo(ex - 3, y - 3);
+        ctx.lineTo(ex, y - 6);
+        ctx.lineTo(ex + 3, y - 3);
+      }
+      if (face.brows) {
+        ctx.moveTo(ex - 3, y - 10);
+        ctx.lineTo(ex + 3, y - 11);
+      }
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    if (face.mouth === 'grin') ctx.arc(x, y + 2, 6, 0.2, Math.PI - 0.2);
+    else if (face.mouth === 'o') ctx.arc(x, y + 6, 3, 0, Math.PI * 2);
     else {
       ctx.moveTo(x - 5, y + 6);
       ctx.lineTo(x + 5, y + 6);
@@ -827,10 +869,18 @@ function draw(ctx: CanvasRenderingContext2D, theatre: Theatre) {
   ctx.textAlign = 'left';
   const label = stage.scene === 'curtain' ? 'Curtain' : `Scene ${stage.scene} of 3`;
   ctx.fillText(`${label}  ·  Endings found ${stage.endingsSeen.length}/2`, 16, 24);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = colors.text;
-  ctx.fillText(theatre.live ? PRACTICE_CAPTION : stage.audience.caption, WIDTH - 16, 24);
-  if (!theatre.live) drawAudience(ctx, stage.audience);
+  const row = audienceRow(theatre);
+  // The failed-save message uses this line, so the row's words give way to it.
+  if (!scoreFailed) {
+    ctx.fillStyle = colors.accent;
+    ctx.font = canvasFont('small', 'bold');
+    ctx.fillText(row.label, 16, 398);
+    const labelWidth = ctx.measureText(row.label).width;
+    ctx.fillStyle = colors.text;
+    ctx.font = canvasFont('small');
+    ctx.fillText(row.caption, 16 + labelWidth + 8, 398);
+  }
+  if (row.seated) drawAudience(ctx, stage.audience);
 
   if (stage.scene === 'curtain') {
     ctx.fillStyle = colors.accent;

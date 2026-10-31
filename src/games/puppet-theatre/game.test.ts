@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUDIENCE_LABEL,
+  FACES,
+  audienceRow,
   CENTRE,
   HOLD_CAPTION,
   PRACTICE_BUTTON,
@@ -10,6 +13,7 @@ import {
   RETRY_BUTTON,
   ENDINGS,
   PATIENT_CAPTION,
+  PRACTICE_CAPTION,
   REACTIONS,
   react,
   patientAudience,
@@ -607,5 +611,30 @@ describe('rehearsal curtain and scene reset', () => {
     theatre = act(theatre, keyAction(theatre.stage, 'ArrowUp')!);
     expect(theatre.stage.scene).toBe(2);
     expect(theatre.stage.audience.reacted).toEqual(['reunion']);
+  });
+});
+
+describe('the audience row', () => {
+  it('is labelled, with the mood caption beside it', () => {
+    const row = audienceRow(createTheatre());
+    expect(row).toEqual({ label: AUDIENCE_LABEL, caption: PATIENT_CAPTION, seated: true });
+    expect(row.label).toMatch(/audience/i);
+  });
+
+  it('shows the reaction caption after a stage event', () => {
+    const theatre = createTheatre();
+    const stage = { ...theatre.stage, audience: react(theatre.stage.audience, 'reunion') };
+    expect(audienceRow({ ...theatre, stage }).caption).toBe(REACTIONS.reunion.caption);
+  });
+
+  it('says the audience is away in rehearsal', () => {
+    const row = audienceRow(act(createTheatre(), { type: 'practice' }));
+    expect(row.caption).toBe(PRACTICE_CAPTION);
+    expect(row.seated).toBe(false);
+  });
+
+  it('gives every mood a different face shape', () => {
+    const shapes = Object.values(FACES).map((f) => `${f.eyes}/${f.mouth}`);
+    expect(new Set(shapes).size).toBe(shapes.length);
   });
 });
