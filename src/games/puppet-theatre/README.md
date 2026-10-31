@@ -21,16 +21,17 @@ stage. The picture does not move, so it reads the same with motion turned down.
 
 ### The audience
 
-Three small spectators sit in the front row, bottom left. They react only to
-what you perform, each thing once per performance, and a caption in the top
-right says the same in words:
+Three small spectators sit in the front row, bottom left, under a row labelled
+**Audience:** with a caption beside the label that says their mood in words.
+They react only to what you perform, each thing once per performance. Each mood
+has its own face shape, so it reads without colour:
 
-| You perform                                | Audience  | Caption says             |
-| ------------------------------------------ | --------- | ------------------------ |
-| Nothing yet                                | patient   | they wait patiently      |
-| The knight meets the dragon (scene 1 ends) | surprised | they gasp at the meeting |
-| The dragon takes a gift (scene 2 ends)     | amused    | they cheer the gift      |
-| A puppet drops into the hide pose (a fall) | amused    | they laugh at the tumble |
+| You perform                                | Audience  | Faces                                                 | Caption says             |
+| ------------------------------------------ | --------- | ----------------------------------------------------- | ------------------------ |
+| Nothing yet                                | patient   | dot eyes, flat mouth                                  | they wait patiently      |
+| The knight meets the dragon (scene 1 ends) | surprised | tall eyes, raised brows, round open mouth, sit taller | they gasp at the meeting |
+| The dragon takes a gift (scene 2 ends)     | amused    | eyes curved up, wide grin                             | they cheer the gift      |
+| A puppet drops into the hide pose (a fall) | amused    | eyes curved up, wide grin                             | they laugh at the tumble |
 
 Taking your time never upsets them, and a refused bell or a missed drop earns
 nothing. Undo takes back the reaction with the event, and each new performance
@@ -60,7 +61,8 @@ reset or the rehearsal switch during a drag ends the drag.
 ### Rehearsal curtain
 
 **Rehearse in private** (`P`) lowers the rehearsal curtain so you can practise
-the current scene. While it is down the audience is away and never reacts, no
+the current scene. While it is down the audience is away (their seats are empty and the
+audience caption says so) and never reacts, no
 scene ends (a move that would finish one is held back and the caption says so),
 and nothing is saved. **Go live** (`P` again) puts the live performance back
 exactly as you left it, with its undo history, so nothing practised carries
