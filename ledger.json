@@ -292,6 +292,112 @@
       "fingerprints": [
         "66c170e86fca54f1"
       ]
+    },
+    {
+      "runId": "01a1907a-99a1-744a-a9d1-d5f471952dfd",
+      "learner": "lens-tuning",
+      "trigger": "schedule",
+      "slot": "2026-10-31T05:40 Europe/London",
+      "scheduledFor": "2026-10-31T05:40:00.000Z",
+      "delayMinutes": 3,
+      "since": "2026-10-29T17:40:00.000Z",
+      "startedAt": "2026-10-31T05:43:06.000Z",
+      "finishedAt": "2026-10-31T05:44:27Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#243",
+          "#250",
+          "#257",
+          "#262",
+          "#263",
+          "#271",
+          "#272",
+          "#276",
+          "#283",
+          "#299",
+          "#304",
+          "#375",
+          "#394",
+          "#398",
+          "#405",
+          "#409",
+          "#413",
+          "#418",
+          "#419",
+          "#420",
+          "#421",
+          "#422",
+          "#423",
+          "#424",
+          "#426",
+          "#427",
+          "#447",
+          "#449"
+        ],
+        "gaps": "Run started 3 minutes late with under 20 minutes to its deadline. PR diffs were not read; inline review comments were read only as truncated top-level excerpts; review bodies were fetched but only searched, not read in full; PR bodies were read for #271 and #394 only; CI runs were counted (100 listed, all success, list hit its limit); the factory-state/visual-repair branch, tests and live-play notes were not read.",
+        "sources": [
+          {
+            "source": "pull-requests",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "gh pr list --state all updated since 2026-10-29T16:40Z sorted ascending: 28 PRs listed (under the 100 limit); titles, states and dates read, bodies only for #271 and #394",
+            "gaps": "bodies of 26 PRs not read"
+          },
+          {
+            "source": "pr-diffs",
+            "enumeration": "count-only",
+            "read": "none",
+            "scope": "file list of #271 only; no diffs read",
+            "gaps": "no diffs read"
+          },
+          {
+            "source": "review-comments",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "pulls/<n>/comments for all 28 PRs, paginated; top-level comments read as 220-character excerpts, replies not read",
+            "gaps": "comments truncated to excerpts; replies unread"
+          },
+          {
+            "source": "review-bodies",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "pulls/<n>/reviews for all 28 PRs fetched; #263 bodies searched for prize/pavilion/trail, not read in full",
+            "gaps": "review bodies not read in full"
+          },
+          {
+            "source": "visual-repair",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "factory-state/visual-repair branch not read",
+            "gaps": "branch not read"
+          },
+          {
+            "source": "ci-runs",
+            "enumeration": "capped",
+            "read": "truncated",
+            "scope": "gh run list --limit 100 created since window: 100 runs, all success; only conclusions read",
+            "gaps": "list capped at 100; logs and run names not read"
+          },
+          {
+            "source": "tests",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "tests not read"
+          },
+          {
+            "source": "live-play",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "only the live-QA note in issue #270, via its title and body",
+            "gaps": "live-play notes beyond issue #270 not read"
+          }
+        ]
+      },
+      "fingerprints": [
+        "9d8b4ffcd4c8c333"
+      ]
     }
   ],
   "proposals": [
@@ -459,6 +565,43 @@
       "firstSeen": "2026-10-31T05:22:21.000Z",
       "seenIn": [
         "01a19066-88f3-7326-bdf7-795cfdc846ca"
+      ],
+      "decisions": []
+    },
+    {
+      "fingerprint": "9d8b4ffcd4c8c333",
+      "learner": "lens-tuning",
+      "kind": "amend-lens",
+      "target": "./review-lenses/carnival-house-rules/SKILL.md",
+      "title": "Flag a game whose reachable score cannot meet its prize or Trail thresholds",
+      "change": "Add to rule 2: \"A new game, or a change to a game's scoring, whose highest reachable score is below a prize tier, Prize Pavilion threshold or Trail goal that applies to it is a finding; name the maximum score and the threshold it cannot reach.\"",
+      "rationale": "PR #263 added the Puppet Theatre, which scores at most 2 (one point per ending). Its review raised 17 inline findings, none about scoring reachability, and it merged while the Prize Pavilion still asked it for Bronze 50 / Silver 150 / Gold 300 and the Trail asked for 100 at every booth, locking Carnival Collector for good. Live QA caught it (issue #270) and PR #271 repaired the Pavilion and Trail. The house-rules lens checks how scores are recorded, not whether they can ever earn anything.",
+      "weakens": false,
+      "standards": [],
+      "netLines": 3,
+      "evidence": [
+        {
+          "kind": "pr",
+          "ref": "#263",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/263",
+          "commit": "d0b3b5165fe96e25376ce421f399c0c598701494"
+        },
+        {
+          "kind": "repair",
+          "ref": "#271",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/271",
+          "commit": "db3213780bc338d66f9dff6bb779b5d3e6202c28"
+        },
+        {
+          "kind": "live-play",
+          "ref": "#270",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/issues/270"
+        }
+      ],
+      "status": "open",
+      "firstSeen": "2026-10-31T05:44:27Z",
+      "seenIn": [
+        "01a1907a-99a1-744a-a9d1-d5f471952dfd"
       ],
       "decisions": []
     }
