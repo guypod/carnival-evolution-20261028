@@ -1,4 +1,5 @@
 import { canvasFont, recordScore, theme, type CarnivalGame } from '../../carnival';
+import { isQuiet, motionPreference, watchReducedMotion } from '../../midway/motion';
 
 const { width: WIDTH, height: HEIGHT } = theme.canvas;
 
@@ -21,6 +22,20 @@ export const GOLDEN_POINTS = 25;
 export const MILESTONES = [3, 5] as const;
 /** Seconds a streak milestone message stays on screen. */
 export const MILESTONE_TIME = 1;
+
+/** The time bar: a slim strip between the top line and the holes. */
+const TIME_BAR = { x: 16, y: 82, w: WIDTH - 32, h: 8 } as const;
+
+/**
+ * The share of the time bar to fill, from 1 when a round starts to 0 when it
+ * ends. Quiet mode keeps the bar still and complete while the round runs.
+ */
+export function timeBarShare(state: Pick<MoleState, 'phase' | 'timeLeft'>, quiet = false): number {
+  if (state.phase === 'ready') return 1;
+  if (state.phase === 'over') return 0;
+  if (quiet) return 1;
+  return Math.min(Math.max(state.timeLeft / ROUND_TIME, 0), 1);
+}
 
 /** A random number in [0, 1). Injected so tests can choose where moles pop. */
 export type Rng = () => number;
@@ -324,7 +339,7 @@ function drawCrown(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fill();
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
+function draw(ctx: CanvasRenderingContext2D, state: MoleState, quiet: boolean) {
   const { colors } = theme;
 
   ctx.fillStyle = colors.background;
@@ -344,6 +359,12 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
   ctx.fillText(`Score ${state.score}`, WIDTH / 2, 70);
   ctx.textAlign = 'right';
   ctx.fillText(`Streak ${state.streak} (x${multiplier(state.streak)})`, WIDTH - 16, 70);
+
+  // Above the golden labels, so it never covers a mole or a key number.
+  ctx.fillStyle = colors.surface;
+  ctx.fillRect(TIME_BAR.x, TIME_BAR.y, TIME_BAR.w, TIME_BAR.h);
+  ctx.fillStyle = colors.accent;
+  ctx.fillRect(TIME_BAR.x, TIME_BAR.y, TIME_BAR.w * timeBarShare(state, quiet), TIME_BAR.h);
 
   for (let i = 0; i < HOLES; i++) {
     const { x, y } = holeCentre(i);
@@ -486,6 +507,10 @@ export const moleMayhem: CarnivalGame = {
     canvas.addEventListener('pointerdown', onDown);
     window.addEventListener('keydown', onKeyDown);
 
+    let quiet = false;
+    const stopWatchingMotion = watchReducedMotion(window, (systemReduces) => {
+      quiet = isQuiet(motionPreference.load(), systemReduces);
+    });
     let frame = 0;
     const onVisibility = () => {
       if (!document.hidden) clock.resume(performance.now());
@@ -495,7 +520,7 @@ export const moleMayhem: CarnivalGame = {
       frame = requestAnimationFrame(loop);
       step(state, clock.tick(time));
       saveFinalScore(state, (score) => recordScore(moleMayhem.id, score));
-      draw(ctx, state);
+      draw(ctx, state, quiet);
     };
     frame = requestAnimationFrame(loop);
 
@@ -504,6 +529,7 @@ export const moleMayhem: CarnivalGame = {
       canvas.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('visibilitychange', onVisibility);
+      stopWatchingMotion();
     };
   },
 };

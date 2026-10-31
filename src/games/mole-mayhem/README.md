@@ -12,7 +12,10 @@ Whack the moles as they pop out of six numbered holes. You have 30 seconds.
 - A mole stays up for 1.2 seconds, then ducks away. The next mole pops up a
   quarter of a second after the last one leaves or is whacked.
 - The top of the screen shows the time left, your score, and your streak with
-  its bonus.
+  its bonus. Just below that, above the holes, a slim time bar drains from full
+  to empty over the round and is empty on the result card. In Quiet mode (the
+  midway's Quiet setting or the system's reduced motion) the bar stays still
+  and full while the round runs.
 - The round runs on real time, so it lasts 30 seconds even at a low frame
   rate. It pauses while the tab is hidden.
 - When time runs out the round ends. Press **Play again** (or Space or Enter)
@@ -43,7 +46,7 @@ still work.
 
 - `game.ts`: the game logic (`createState`, `startRound`, `beginRound`, `whack`, `step`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isStartKey`, `seededRng`,
-  `isGoldenSpawn`, `milestoneText`, `holeForKey`, `holeAt`) and the `moleMayhem`
+  `isGoldenSpawn`, `milestoneText`, `timeBarShare`, `holeForKey`, `holeAt`) and the `moleMayhem`
   entry the midway registers. `createState` takes an rng so tests can choose
   where moles pop.
 - `game.test.ts`: tests for the game logic.
