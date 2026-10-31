@@ -29,6 +29,12 @@ export type Scene = 1 | 2 | 3 | 'curtain';
 export const ACTORS: readonly ActorId[] = ['knight', 'dragon'];
 export const PROPS: readonly PropId[] = ['cake', 'umbrella', 'bell'];
 export const ITEMS: readonly ItemId[] = [...ACTORS, ...PROPS];
+/** The name shown under each prop on the stage, as the scenes and README call it. */
+export const PROP_NAMES: Record<PropId, string> = {
+  cake: 'cake',
+  umbrella: 'umbrella',
+  bell: 'bell',
+};
 export const POSES: readonly Pose[] = ['stand', 'wave', 'bow', 'hide'];
 
 export const SCENE_GOALS: Record<Exclude<Scene, 'curtain'>, string> = {
@@ -710,6 +716,10 @@ function drawProp(ctx: CanvasRenderingContext2D, stage: StageState, id: PropId) 
     ctx.quadraticCurveTo(x + 14, y - 40, x + 16, y - 4);
     ctx.fill();
   }
+  ctx.fillStyle = colors.text;
+  ctx.font = canvasFont('small', 'bold');
+  ctx.textAlign = 'center';
+  ctx.fillText(PROP_NAMES[id], x, y + 38);
   if (stage.selected === id) {
     ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 2;

@@ -9,7 +9,8 @@ Each scene's goal is shown in the caption at the top of the stage.
 
 1. **The Meeting.** Walk the knight up to the dragon and make the knight wave.
 2. **The Gift.** Drag a prop from the shelf and drop it at the dragon. The cake
-   and the umbrella are gifts; the bell only annoys it.
+   and the umbrella are gifts; the bell only annoys it. Each prop's name is
+   written on the boards under it.
 3. **The Finale.** Bring both puppets to centre stage (the strip on the boards)
    and have both bow.
 

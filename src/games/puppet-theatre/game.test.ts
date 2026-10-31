@@ -9,6 +9,8 @@ import {
   DISCARD_BUTTON,
   RETRY_BUTTON,
   ENDINGS,
+  PROP_NAMES,
+  PROPS,
   PATIENT_CAPTION,
   REACTIONS,
   react,
@@ -607,5 +609,13 @@ describe('rehearsal curtain and scene reset', () => {
     theatre = act(theatre, keyAction(theatre.stage, 'ArrowUp')!);
     expect(theatre.stage.scene).toBe(2);
     expect(theatre.stage.audience.reacted).toEqual(['reunion']);
+  });
+});
+
+describe('prop names', () => {
+  it('names every prop the way the endings and captions do', () => {
+    for (const id of PROPS) expect(PROP_NAMES[id]).toBe(id);
+    expect(ENDINGS.cake).toContain(PROP_NAMES.cake);
+    expect(ENDINGS.umbrella).toContain(PROP_NAMES.umbrella);
   });
 });
