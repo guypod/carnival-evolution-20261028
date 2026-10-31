@@ -407,6 +407,122 @@ export function pointerAction(state: PuttState, x: number, y: number): PointerAc
   return undefined;
 }
 
+/** Width of a mown band across the green. */
+export const MOWN_BAND = 60;
+/** How far the timber rail around the green, and each wall's shadow, reaches. */
+const RAIL = 8;
+
+/**
+ * Green felt with alternating mown bands. The theme has no green, so the felt
+ * is the theme's water multiplied by its accent.
+ */
+function drawGreen(ctx: CanvasRenderingContext2D) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.6;
+  ctx.fillRect(COURSE.x - RAIL + 4, COURSE.y - RAIL + 6, COURSE.w + RAIL * 2, COURSE.h + RAIL * 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = colors.wood;
+  ctx.fillRect(COURSE.x - RAIL, COURSE.y - RAIL, COURSE.w + RAIL * 2, COURSE.h + RAIL * 2);
+  ctx.fillStyle = colors.text;
+  ctx.globalAlpha = 0.35;
+  ctx.fillRect(COURSE.x - RAIL, COURSE.y - RAIL, COURSE.w + RAIL * 2, 2);
+  ctx.fillRect(COURSE.x - RAIL, COURSE.y - RAIL, 2, COURSE.h + RAIL * 2);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = colors.water;
+  ctx.fillRect(COURSE.x, COURSE.y, COURSE.w, COURSE.h);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = colors.accent;
+  ctx.fillRect(COURSE.x, COURSE.y, COURSE.w, COURSE.h);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.25;
+  ctx.fillRect(COURSE.x, COURSE.y, COURSE.w, COURSE.h);
+  ctx.fillStyle = colors.text;
+  ctx.globalAlpha = 0.06;
+  for (let x = COURSE.x; x < COURSE.x + COURSE.w; x += MOWN_BAND * 2) {
+    ctx.fillRect(x, COURSE.y, Math.min(MOWN_BAND, COURSE.x + COURSE.w - x), COURSE.h);
+  }
+  // The rail's shadow falls on the felt along the top and left edges.
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.3;
+  ctx.fillRect(COURSE.x, COURSE.y, COURSE.w, 4);
+  ctx.fillRect(COURSE.x, COURSE.y, 4, COURSE.h);
+  ctx.globalAlpha = 1;
+}
+
+/** A raised timber wall: a cast shadow, the plank, a lit top edge and a dark lower edge. */
+function drawWall(ctx: CanvasRenderingContext2D, wall: Wall) {
+  const { colors } = theme;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(COURSE.x, COURSE.y, COURSE.w, COURSE.h);
+  ctx.clip();
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.45;
+  ctx.fillRect(wall.x + 4, wall.y + 6, wall.w, wall.h);
+  ctx.restore();
+  ctx.fillStyle = colors.wood;
+  ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+  ctx.fillStyle = colors.text;
+  ctx.globalAlpha = 0.35;
+  ctx.fillRect(wall.x, wall.y, wall.w, 3);
+  ctx.fillRect(wall.x, wall.y, 3, wall.h);
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.4;
+  ctx.fillRect(wall.x, wall.y + wall.h - 3, wall.w, 3);
+  ctx.fillRect(wall.x + wall.w - 3, wall.y, 3, wall.h);
+  ctx.globalAlpha = 1;
+}
+
+/** A rubber bumper: a shadow, a red rubber ring with a dark edge, and a light hub with a sheen. */
+function drawBumper(ctx: CanvasRenderingContext2D, bumper: Bumper) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.background;
+  ctx.globalAlpha = 0.45;
+  ctx.beginPath();
+  ctx.arc(bumper.x + 4, bumper.y + 6, bumper.r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = colors.stripeA;
+  ctx.beginPath();
+  ctx.arc(bumper.x, bumper.y, bumper.r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = colors.background;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = colors.stripeB;
+  ctx.beginPath();
+  ctx.arc(bumper.x, bumper.y, bumper.r * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = colors.text;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(bumper.x, bumper.y, bumper.r * 0.72, Math.PI * 1.05, Math.PI * 1.45);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/** The cup: a lavender rim, a dark hole and a shadow on its far wall. */
+function drawCup(ctx: CanvasRenderingContext2D, cup: Point) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.muted;
+  ctx.beginPath();
+  ctx.arc(cup.x, cup.y, CUP_RADIUS + 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = colors.background;
+  ctx.beginPath();
+  ctx.arc(cup.x, cup.y, CUP_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = colors.surface;
+  ctx.beginPath();
+  ctx.arc(cup.x, cup.y, CUP_RADIUS - 2, 0, Math.PI);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
 function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
   const { colors } = theme;
   const hole = HOLES[state.hole];
@@ -429,33 +545,16 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
   ctx.fillText(`Score ${totalScore(state)}`, 760, 52);
 
   // The green, its walls and bumpers.
-  ctx.fillStyle = colors.wood;
-  ctx.fillRect(COURSE.x - 6, COURSE.y - 6, COURSE.w + 12, COURSE.h + 12);
-  ctx.fillStyle = colors.surface;
-  ctx.fillRect(COURSE.x, COURSE.y, COURSE.w, COURSE.h);
-  ctx.fillStyle = colors.wood;
-  for (const wall of hole.walls) ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-  for (const bumper of hole.bumpers) {
-    ctx.fillStyle = colors.stripeA;
-    ctx.beginPath();
-    ctx.arc(bumper.x, bumper.y, bumper.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = colors.stripeB;
-    ctx.beginPath();
-    ctx.arc(bumper.x, bumper.y, bumper.r * 0.45, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  drawGreen(ctx);
+  for (const wall of hole.walls) drawWall(ctx, wall);
+  for (const bumper of hole.bumpers) drawBumper(ctx, bumper);
 
-  // The tee and the cup with its flag.
   ctx.strokeStyle = colors.muted;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(hole.start.x, hole.start.y, BALL_RADIUS + 5, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = colors.background;
-  ctx.beginPath();
-  ctx.arc(hole.cup.x, hole.cup.y, CUP_RADIUS, 0, Math.PI * 2);
-  ctx.fill();
+  drawCup(ctx, hole.cup);
   ctx.strokeStyle = colors.text;
   ctx.beginPath();
   ctx.moveTo(hole.cup.x, hole.cup.y);
