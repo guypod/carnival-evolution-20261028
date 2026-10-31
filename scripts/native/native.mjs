@@ -1,30 +1,32 @@
 // The native creative intake (issue #425): a six-hour backlog producer, a
-// twenty-minute dispatcher and an evolution-only merge gate.
+// twenty-minute dispatcher and an evolution-only merge controller.
 //
 //   backlog   at 00:00, 06:00, 12:00 and 18:00 Europe/London, file exactly 18
 //             distinct enhancement issues labelled BACKLOG_LABEL, never tessl.
-//   dispatch  every 20 minutes, label exactly one eligible backlog issue tessl
-//             and admit implement-github-issue for it through the supported
-//             action route with a stable request id.
-//   merge     in the same twenty-minute run, squash-merge a Tessl pull request
-//             only on a trusted reviewer pass and passing CI for its exact
-//             current head, pinned to that head's SHA.
+//   dispatch  every 20 minutes, have one eligible backlog issue labelled tessl
+//             by the owner's own label route, so the existing owner-only
+//             github-issue-labelled trigger starts the run. There is no direct
+//             action trigger. Without an owner label route it fails closed.
+//   merge     in the same run, arm GitHub auto-merge for a Tessl pull request,
+//             pinned to its exact head, only on an authentic reviewer pass and
+//             green CI for that head, and only when the repository allows
+//             auto-merge.
 //
-// Native writes come from tessl-app[bot] (BOT_ID). The github-issue-labelled
-// trigger accepts only the owner (sender id OWNER_ID, type User), so a label
-// the dispatcher adds starts nothing by webhook; the run starts only through
-// `tessl action trigger`. That route is the single admission, so nothing runs
-// twice. The webhook guard is not broadened.
+// Native GitHub writes come from tessl-app[bot] (BOT_ID). The
+// github-issue-labelled trigger accepts only the owner (sender id OWNER_ID,
+// type User, repository REPOSITORY_ID), so a label the bot adds starts
+// nothing. That guard is not broadened, and nothing here routes around it.
 //
 // The record is GitHub itself, append-only: each backlog issue carries an item
 // marker naming its slot, index and scope, and each dispatch leaves a claim
-// comment naming its slot. A crashed or retried run re-reads those markers
-// before any write, so it resumes rather than repeats.
+// comment naming its slot. Claims are read across every comment in the
+// repository, so closing or relabelling an issue never hides one. A crashed
+// or retried run re-reads those markers before any write.
 //
 // Everything here is plain functions over an adapter, tested in
 // native.test.mjs with fixtures. The command line at the bottom wires them to
-// gh and tessl. scripts/factory/decide.ts is the original lab's read-only
-// readiness helper and is not used or changed here.
+// gh. scripts/factory/decide.ts is the original lab's read-only readiness
+// helper and is not used or changed here.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -37,6 +39,7 @@ export const BOT_ID = 295179765;
 export const BOT_LOGIN = 'tessl-app[bot]';
 export const CI_APP_ID = 15368;
 export const CI_CHECK = 'check';
+export const REVIEWER_APP_ID = 4850038;
 export const BACKLOG_LABEL = 'auto backlog';
 export const TRIGGER_LABEL = 'tessl';
 export const BATCH_SIZE = 18;
@@ -46,8 +49,6 @@ export const TIMEZONE = 'Europe/London';
 // Labels a person adds to keep an item out of dispatch.
 export const HOLD_LABELS = ['held', 'manual', 'on hold', 'do not dispatch'];
 export const WRITER_KEY = 'carnival-app-writer';
-export const PR_WRITING_INSTRUCTIONS =
-  'Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.';
 
 // ---------- time slots ----------
 
@@ -188,7 +189,7 @@ export function slotProgress(slot, issues) {
 }
 
 /**
- * File the slot's backlog. Candidates are matched to indexes in order. A
+ * File the slot's backlog. Candidates are matched to the missing indexes. A
  * failed or uncertain create is reconciled by re-reading the marker before
  * moving on, so a retry never files an index twice.
  */
@@ -199,7 +200,11 @@ export async function produceBacklog(adapter, slot, candidates) {
   const todo = [];
   for (let i = 0; i < BATCH_SIZE; i++) if (!done.has(i)) todo.push(i);
   if (!todo.length) return { status: 'complete', slot, issues: [...done.values()], remaining: 0 };
-  const pool = candidates.slice(0, todo.length);
+  // A full 18-item file maps item i to index i, so rerunning the original file
+  // after a crash files only the missing ones. A shorter file fills the
+  // missing indexes in order.
+  const full = Array.isArray(candidates) && candidates.length === BATCH_SIZE;
+  const pool = full ? todo.map((i) => candidates[i]) : (candidates ?? []).slice(0, todo.length);
   const errors = validateCandidates(pool, listed.items);
   if (pool.length < todo.length) errors.push(`need ${todo.length} candidates, got ${pool.length}`);
   if (errors.length) {
@@ -238,117 +243,174 @@ export async function produceBacklog(adapter, slot, candidates) {
 
 // ---------- dispatcher ----------
 
-/** Why an open backlog issue cannot be dispatched, or null when it can. */
-export function ineligible(issue, comments, linkedPrs) {
-  if (issue.state !== 'open' && issue.state !== 'OPEN') return 'closed';
+const isOpen = (issue) => issue?.state === 'open' || issue?.state === 'OPEN';
+
+/**
+ * Why a person has taken a backlog issue back or put it on hold, or null.
+ * The dispatcher's own claim and tessl label are not holds.
+ */
+export function heldBack(issue, comments) {
+  if (!isOpen(issue)) return 'closed';
   if (issue.pull_request) return 'pull request';
   if (!readItem(issue)) return 'no backlog marker from the bot';
   const labels = labelNames(issue);
   if (!labels.includes(BACKLOG_LABEL)) return 'not in the backlog';
-  if (labels.includes(TRIGGER_LABEL)) return 'already labelled tessl';
   if (labels.some((l) => HOLD_LABELS.includes(l.toLowerCase()))) return 'held';
   if ((issue.assignees ?? []).length) return 'assigned to a person';
-  if (readClaims(comments).length) return 'already claimed';
   // A person commented: they may be steering it, so it waits for them.
   if (comments.some((c) => c.user?.id !== BOT_ID)) return 'has a person comment';
+  return null;
+}
+
+/** Why an unclaimed backlog issue cannot be dispatched, or null when it can. */
+export function ineligible(issue, comments, linkedPrs) {
+  const held = heldBack(issue, comments);
+  if (held) return held;
+  if (labelNames(issue).includes(TRIGGER_LABEL)) return 'already labelled tessl';
+  if (readClaims(comments).length) return 'already claimed';
   if (linkedPrs.length) return 'has a linked pull request';
   return null;
 }
 
-export const requestId = (slot, issue) => `native-${slot}-issue-${issue}`;
-
-/** The exact `tessl action trigger` arguments for one dispatch. */
-export function triggerArgs(slot, issue) {
-  return [
-    'action',
-    'trigger',
-    'implement-github-issue',
-    '--request-id',
-    requestId(slot, issue),
-    '--input',
-    `GITHUB_ISSUE_NUMBER=${issue}`,
-    '--input',
-    `GITHUB_ISSUE_LABEL=${TRIGGER_LABEL}`,
-    '--instructions',
-    PR_WRITING_INSTRUCTIONS,
-    '--concurrency-key',
-    `${WRITER_KEY}=1`,
-    '--concurrency-mode',
-    'queue',
-    '--json',
-  ];
+/**
+ * Every claim the bot has written, across the whole repository, open or
+ * closed, labelled or not, keyed by issue with its first (identity) slot. A
+ * claim whose marker names a different issue from the one it sits on is
+ * ignored.
+ */
+export function claimHistory(comments) {
+  const byIssue = new Map();
+  for (const c of comments) {
+    const onIssue = Number(/\/issues\/(\d+)$/.exec(c.issue_url ?? '')?.[1]);
+    for (const claim of readClaims([c])) {
+      if (claim.issue !== onIssue) continue;
+      const seen = byIssue.get(claim.issue);
+      if (!seen) byIssue.set(claim.issue, { issue: claim.issue, slots: [claim.slot] });
+      else if (!seen.slots.includes(claim.slot)) seen.slots.push(claim.slot);
+    }
+  }
+  for (const v of byIssue.values()) v.slots.sort();
+  return byIssue;
 }
 
 /**
- * Dispatch one backlog issue for the slot. The claim comment is written
- * first, then the label, then the admission; a retry finds the claim and
- * completes the same issue's remaining steps, so a slot never dispatches two.
+ * Dispatch one backlog issue for the slot by having the owner's own,
+ * already-approved route add the tessl label, so the existing
+ * github-issue-labelled trigger (owner only) starts the run. There is no
+ * direct action trigger: without an owner label route the dispatcher fails
+ * closed before any write.
+ *
+ * The record is the bot's claim comments across the whole repository, read
+ * before any write. A slot that already claimed an issue never claims a
+ * second, whatever has since happened to the first. A claim from any slot
+ * that never got its label is finished in a later slot unless a person has
+ * since held or taken the issue back. A claimed issue labelled and still
+ * waiting for its pull request keeps the queue busy.
  */
 export async function dispatch(adapter, slot) {
+  if (typeof adapter.labelAsOwner !== 'function') {
+    return { status: 'blocked', reason: MISSING_LABEL_ROUTE };
+  }
+  const history = await adapter.listClaimComments();
+  if (!history.complete) return { status: 'blocked', reason: 'claim history incomplete' };
+  const claims = claimHistory(history.items);
+  const ordered = [...claims.values()].sort(
+    (a, b) => (a.slots[0] < b.slots[0] ? -1 : a.slots[0] > b.slots[0] ? 1 : 0) || a.issue - b.issue,
+  );
+  // This slot already claimed an issue: finish that one or report it, never a second.
+  const mine = ordered.find((c) => c.slots.includes(slot));
+  if (mine) return finish(adapter, slot, mine.issue, 'resumed');
+  // Earlier claims: recover an unfinished one, or wait on an admitted one.
+  for (const claim of ordered) {
+    const issue = await adapter.getIssue(claim.issue);
+    if (!isOpen(issue)) continue;
+    if (labelNames(issue).includes(TRIGGER_LABEL)) {
+      const prs = await adapter.linkedPullRequests(claim.issue);
+      if (!prs.complete)
+        return { status: 'blocked', reason: `links of #${claim.issue} incomplete` };
+      if (!prs.items.length) return { status: 'busy', waitingOn: claim.issue };
+      continue;
+    }
+    const labelled = await adapter.wasLabelledTessl(claim.issue);
+    if (labelled === undefined)
+      return { status: 'blocked', reason: `events of #${claim.issue} incomplete` };
+    if (labelled) continue; // labelled once and since removed: taken back
+    const r = await finish(adapter, slot, claim.issue, 'recovered');
+    if (r.status !== 'released') return r;
+  }
   const listed = await adapter.listIssues({ state: 'open', label: BACKLOG_LABEL });
   if (!listed.complete) return { status: 'blocked', reason: 'backlog listing incomplete' };
   const sorted = [...listed.items]
-    .filter((i) => !i.pull_request)
+    .filter((i) => !i.pull_request && !claims.has(i.number))
     .sort(
       (a, b) =>
         (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0) ||
         a.number - b.number,
     );
-  const looked = [];
   for (const issue of sorted) {
+    if (ineligible(issue, [], [])) continue;
     const comments = await adapter.listComments(issue.number);
     if (!comments.complete)
       return { status: 'blocked', reason: `comments of #${issue.number} incomplete` };
-    looked.push({ issue, comments: comments.items });
-  }
-  // Resume a claim for this slot before anything else.
-  const mine = looked.find(({ comments }) => readClaims(comments).some((c) => c.slot === slot));
-  if (mine) return finish(adapter, slot, mine.issue, 'resumed');
-  // A claim from an earlier slot whose issue is still waiting for its run to
-  // open a pull request means the queue is busy: dispatch nothing more.
-  for (const { issue, comments } of looked) {
-    if (!readClaims(comments).length || !labelNames(issue).includes(TRIGGER_LABEL)) continue;
+    if (ineligible(issue, comments.items, [])) continue;
     const prs = await adapter.linkedPullRequests(issue.number);
     if (!prs.complete) return { status: 'blocked', reason: `links of #${issue.number} incomplete` };
-    if (!prs.items.length) return { status: 'busy', waitingOn: issue.number };
-  }
-  for (const { issue, comments } of looked) {
-    if (ineligible(issue, comments, [])) continue;
-    const prs = await adapter.linkedPullRequests(issue.number);
-    if (!prs.complete) return { status: 'blocked', reason: `links of #${issue.number} incomplete` };
-    if (ineligible(issue, comments, prs.items)) continue;
     const fresh = await adapter.getIssue(issue.number);
-    if (ineligible(fresh, comments, prs.items)) continue;
-    await adapter.comment(
-      issue.number,
-      `Dispatcher slot \`${slot}\` hands this to Tessl.\n\n${claimMarker(slot, issue.number)}\n<!-- tessl-factory -->`,
-    );
-    return finish(adapter, slot, fresh, 'claimed');
+    if (ineligible(fresh, comments.items, prs.items)) continue;
+    try {
+      await adapter.comment(
+        issue.number,
+        `Dispatcher slot \`${slot}\` hands this to Tessl.\n\n${claimMarker(slot, issue.number)}\n<!-- tessl-factory -->`,
+      );
+    } catch {
+      // Uncertain: the claim may have landed. Read the history before deciding.
+      const again = await adapter.listClaimComments();
+      const landed = again.complete && claimHistory(again.items).get(issue.number);
+      if (!landed?.slots.includes(slot))
+        return { status: 'blocked', issue: issue.number, reason: 'claim write uncertain' };
+    }
+    return finish(adapter, slot, issue.number, 'claimed');
   }
   return { status: 'idle', reason: 'no eligible backlog issue' };
 }
 
-async function finish(adapter, slot, issue, how) {
-  const fresh = await adapter.getIssue(issue.number);
-  if (fresh.state !== 'open' && fresh.state !== 'OPEN') {
-    return { status: 'stopped', issue: issue.number, reason: 'closed after its claim' };
+export const MISSING_LABEL_ROUTE =
+  'no owner-authenticated label route: the github-issue-labelled trigger starts a run only for a tessl label added by user 1106394, and native-intake has only the tessl-app[bot] GitHub identity, so a label it adds starts nothing';
+
+async function finish(adapter, slot, number, how) {
+  const fresh = await adapter.getIssue(number);
+  if (!isOpen(fresh)) return { status: 'stopped', issue: number, reason: 'closed after its claim' };
+  if (labelNames(fresh).includes(TRIGGER_LABEL)) {
+    return { status: 'labelled', how, issue: number, note: 'already labelled; nothing to write' };
   }
-  if (!labelNames(fresh).includes(TRIGGER_LABEL)) {
-    if (how === 'resumed' && (await adapter.wasLabelledTessl(issue.number))) {
-      // Labelled once and since removed: a person took it back.
-      return { status: 'stopped', issue: issue.number, reason: 'taken back' };
-    }
-    await adapter.addLabel(issue.number, TRIGGER_LABEL);
+  const labelled = await adapter.wasLabelledTessl(number);
+  if (labelled === undefined)
+    return { status: 'blocked', reason: `events of #${number} incomplete` };
+  // Labelled once and since removed: a person took it back. Never relabel.
+  if (labelled) return { status: 'stopped', issue: number, reason: 'taken back' };
+  const comments = await adapter.listComments(number);
+  if (!comments.complete) return { status: 'blocked', reason: `comments of #${number} incomplete` };
+  const held = heldBack(fresh, comments.items);
+  if (held)
+    return { status: how === 'recovered' ? 'released' : 'stopped', issue: number, reason: held };
+  try {
+    await adapter.labelAsOwner(number, TRIGGER_LABEL);
+  } catch {
+    // Uncertain: read back. If the label did not land, a later slot recovers it.
+    const again = await adapter.getIssue(number);
+    if (!labelNames(again).includes(TRIGGER_LABEL))
+      return {
+        status: 'blocked',
+        issue: number,
+        reason: 'label write uncertain; a later slot recovers it',
+      };
   }
-  // The request id is stable per slot and issue, so a repeat starts no run.
-  const run = await adapter.triggerAction(triggerArgs(slot, issue.number));
-  return {
-    status: 'dispatched',
-    how,
-    issue: issue.number,
-    requestId: requestId(slot, issue.number),
-    run,
-  };
+  // The trigger only fires for the owner's own label: check who actually added it.
+  const actor = await adapter.labelActor(number, TRIGGER_LABEL);
+  if (actor?.id !== OWNER_ID || actor?.type !== 'User') {
+    return { status: 'failed', issue: number, reason: 'tessl label was not added by the owner' };
+  }
+  return { status: 'dispatched', how, issue: number, slot };
 }
 
 // ---------- merge gate ----------
@@ -377,7 +439,32 @@ export function readReview(review) {
 }
 
 /**
- * Whether a pull request may be squash-merged now, from a snapshot of its
+ * Why a pull request's source issue does not match it, as a list. The issue
+ * comes from the branch name, and the body must close exactly that issue and
+ * no other; the issue must be an open issue of this repository that still
+ * carries its authorization label.
+ */
+export function provenance(pr, issue) {
+  const branch = /^tessl\/issue-(\d+)$/.exec(pr?.head?.ref ?? '');
+  const closes = [...(pr?.body ?? '').matchAll(/^Closes #(\d+)\s*$/gm)].map((m) => Number(m[1]));
+  const anyClose =
+    (pr?.body ?? '').match(/\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+\S*#\d+/gi) ?? [];
+  if (!branch) return [];
+  const n = Number(branch[1]);
+  if (closes.length !== 1 || anyClose.length !== 1) return ['no single Closes line'];
+  if (closes[0] !== n) return [`Closes #${closes[0]} does not match branch issue #${n}`];
+  const label = /<!-- tessl-factory:issue-label: (\S+) -->/.exec(pr.body)?.[1] ?? TRIGGER_LABEL;
+  if (!issue) return ['source issue not read'];
+  if (issue.number !== n || issue.pull_request) return ['source issue is not the branch issue'];
+  if (issue.repository_url !== `https://api.github.com/repos/${REPOSITORY}`)
+    return ['source issue is in another repository'];
+  if (!isOpen(issue)) return ['source issue is closed'];
+  if (!labelNames(issue).includes(label)) return [`source issue no longer carries ${label}`];
+  return [];
+}
+
+/**
+ * Whether a pull request may be armed for auto-merge now, from a snapshot of its
  * current state. Every listing must be complete. Returns { merge, reasons }.
  */
 export function mergeGate(s) {
@@ -396,7 +483,7 @@ export function mergeGate(s) {
   if (pr?.user?.id !== BOT_ID) reasons.push("pull request is not the factory bot's");
   if (!labelNames(pr ?? {}).includes(TRIGGER_LABEL))
     reasons.push('pull request is not labelled tessl');
-  if (!/^Closes #\d+$/m.test(pr?.body ?? '')) reasons.push('no Closes line');
+  reasons.push(...provenance(pr, s.issue));
   if (!/^[0-9a-f]{40}$/.test(head ?? '')) reasons.push('no head sha');
   if (!s.reviews?.complete) reasons.push('review listing incomplete');
   if (!s.checks?.complete) reasons.push('check listing incomplete');
@@ -405,9 +492,11 @@ export function mergeGate(s) {
   const reviews = [...s.reviews.items].sort(
     (a, b) => (a.submitted_at < b.submitted_at ? -1 : 1) || a.id - b.id,
   );
-  // A person's open request for changes blocks until they submit a later review.
+  // A request for changes stands until the same reviewer approves or it is
+  // dismissed. A later COMMENTED review does not clear it, as on GitHub.
   const latestByUser = new Map();
-  for (const r of reviews) if (r.state !== 'PENDING') latestByUser.set(r.user?.id, r);
+  for (const r of reviews)
+    if (!['PENDING', 'COMMENTED'].includes(r.state)) latestByUser.set(r.user?.id, r);
   for (const r of latestByUser.values()) {
     if (r.state === 'CHANGES_REQUESTED') reasons.push(`changes requested by ${r.user?.login}`);
   }
@@ -422,6 +511,17 @@ export function mergeGate(s) {
     const result = readReview(latest);
     if (result.error) reasons.push(`trusted review: ${result.error}`);
     else if (!result.approved) reasons.push('trusted review has blocking findings');
+    else {
+      // The review's run must be the reviewer's own completed check run on this head.
+      const run = s.checks.items.find(
+        (c) =>
+          c.head_sha === head &&
+          c.app?.id === REVIEWER_APP_ID &&
+          c.external_id === `tessl-code-review-run:${result.runId}`,
+      );
+      if (!run) reasons.push('trusted review has no matching reviewer run on the head');
+      else if (run.status !== 'completed') reasons.push('reviewer run still running');
+    }
   }
 
   const runs = s.checks.items.filter((c) => c.head_sha === head);
@@ -441,12 +541,22 @@ export function mergeGate(s) {
   return { merge: reasons.length === 0, reasons, head };
 }
 
+export const AUTO_MERGE_BLOCKER =
+  'repository setting allow_auto_merge is false; turning it on needs the administration:write repository permission, which tessl-app[bot] does not have (GET repos/guypod/carnival-evolution-20261028 reports admin false, and administration reads return 403)';
+
 /**
- * Re-read, gate, re-read again and merge pinned to the head the gate saw.
- * GitHub refuses the merge when the head moved since, so it never lands an
- * unreviewed commit. Nothing here submits a review or arms auto-merge.
+ * Re-read, gate, re-read again, then arm GitHub's own auto-merge pinned to
+ * the head the gate saw (expectedHeadOid), so GitHub refuses if the head
+ * moved and never merges an unreviewed commit. Auto-merge needs the
+ * repository's allow_auto_merge setting; with it off this refuses with that
+ * blocker and does not merge another way. Only when GitHub says the pull
+ * request is already mergeable (it will not arm a clean one) does it merge
+ * directly, still pinned to the gated head. It never submits a review.
  */
 export async function mergeOne(adapter, number) {
+  const settings = await adapter.repoSettings();
+  if (settings?.allow_auto_merge !== true)
+    return { status: 'blocked', number, reasons: [AUTO_MERGE_BLOCKER] };
   const first = mergeGate(await adapter.snapshot(number));
   if (!first.merge) return { status: 'refused', number, reasons: first.reasons };
   const second = mergeGate(await adapter.snapshot(number));
@@ -456,6 +566,10 @@ export async function mergeOne(adapter, number) {
       number,
       reasons: second.reasons.length ? second.reasons : ['head moved'],
     };
+  const armed = await adapter.enableAutoMerge(number, second.head);
+  if (armed.enabled) return { status: 'armed', number, head: second.head, live: 'pending' };
+  if (!/clean status/i.test(armed.message ?? ''))
+    return { status: 'refused', number, reasons: [armed.message ?? 'auto-merge refused'] };
   const result = await adapter.squashMerge(number, second.head);
   if (!result.merged)
     return { status: 'refused', number, reasons: [result.message ?? 'merge refused'] };
@@ -514,11 +628,20 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         ['api', '-X', 'POST', `${base}/issues/${n}/labels`, '--input', '-'],
         JSON.stringify({ labels: [label] }),
       ),
+    // Every comment in the repository, so claims on closed or relabelled
+    // issues still count. Only the bot's claim markers are read from it.
+    listClaimComments: async () => pages(`${base}/issues/comments?per_page=100`),
     wasLabelledTessl: async (n) => {
       const r = pages(`${base}/issues/${n}/events?per_page=100`);
-      if (!r.complete) throw new Error(`events of #${n} incomplete`);
+      if (!r.complete) return undefined;
       return r.items.some((e) => e.event === 'labeled' && e.label?.name === TRIGGER_LABEL);
     },
+    labelActor: async (n, label) => {
+      const r = pages(`${base}/issues/${n}/events?per_page=100`);
+      return r.items.filter((e) => e.event === 'labeled' && e.label?.name === label).at(-1)?.actor;
+    },
+    // No labelAsOwner: this action has only the tessl-app[bot] identity, and
+    // no approved route adds a label as the owner. dispatch fails closed.
     linkedPullRequests: async (n) => {
       const r = pages(`${base}/issues/${n}/timeline?per_page=100`);
       return {
@@ -528,18 +651,38 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         ),
       };
     },
-    triggerAction: async (args) => JSON.parse(execFileSync('tessl', args, { encoding: 'utf8' })),
     snapshot: async (n) => {
       const pr = JSON.parse(gh(['api', `${base}/pulls/${n}`]));
       const sha = pr.head.sha;
       const checks = pages(`${base}/commits/${sha}/check-runs?per_page=100`);
+      const n2 = /^tessl\/issue-(\d+)$/.exec(pr.head.ref)?.[1];
       return {
+        issue: n2 ? JSON.parse(gh(['api', `${base}/issues/${n2}`])) : undefined,
         writerKeyHeld,
         pr,
         reviews: pages(`${base}/pulls/${n}/reviews?per_page=100`),
         checks: { ...checks, items: checks.items.flatMap((p) => p.check_runs ?? p) },
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
       };
+    },
+    repoSettings: async () => JSON.parse(gh(['api', base])),
+    enableAutoMerge: async (n, sha) => {
+      try {
+        const id = JSON.parse(gh(['api', `${base}/pulls/${n}`])).node_id;
+        gh([
+          'api',
+          'graphql',
+          '-f',
+          'query=mutation($id:ID!,$sha:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,expectedHeadOid:$sha,mergeMethod:SQUASH}){clientMutationId}}',
+          '-f',
+          `id=${id}`,
+          '-f',
+          `sha=${sha}`,
+        ]);
+        return { enabled: true };
+      } catch (e) {
+        return { enabled: false, message: String(e.stderr ?? e.message).slice(0, 300) };
+      }
     },
     squashMerge: async (n, sha) => {
       try {

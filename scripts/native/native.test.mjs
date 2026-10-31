@@ -21,8 +21,8 @@ import {
   mergeGate,
   mergeOne,
   produceBacklog,
-  requestId,
-  triggerArgs,
+  AUTO_MERGE_BLOCKER,
+  MISSING_LABEL_ROUTE,
 } from './native.mjs';
 
 const bot = { id: BOT_ID, login: 'tessl-app[bot]', type: 'Bot' };
@@ -39,7 +39,14 @@ const candidates = (n, prefix = 'Polish') =>
     evidence: `src/games/water-cannon/game.ts line ${i}`,
   }));
 
-function fakeGitHub({ issues = [], comments = {}, links = {}, failCreateAt, landUncertain } = {}) {
+function fakeGitHub({
+  issues = [],
+  comments = {},
+  links = {},
+  failCreateAt,
+  landUncertain,
+  ownerRoute = true,
+} = {}) {
   const calls = [];
   let next = 1000;
   const state = { issues: structuredClone(issues), comments: structuredClone(comments), links };
@@ -58,6 +65,16 @@ function fakeGitHub({ issues = [], comments = {}, links = {}, failCreateAt, land
       };
     },
     listComments: async (n) => ({ complete: true, items: state.comments[n] ?? [] }),
+    listClaimComments: async () => {
+      calls.push(['listClaimComments']);
+      if (adapter.failHistory) return { items: [], complete: false };
+      return {
+        complete: true,
+        items: Object.entries(state.comments).flatMap(([n, cs]) =>
+          cs.map((c) => ({ issue_url: `https://api.github.com/repos/x/issues/${n}`, ...c })),
+        ),
+      };
+    },
     getIssue: async (n) => structuredClone(state.issues.find((i) => i.number === n)),
     ensureLabel: async (name) => calls.push(['ensureLabel', name]),
     createIssue: async (issue) => {
@@ -81,17 +98,16 @@ function fakeGitHub({ issues = [], comments = {}, links = {}, failCreateAt, land
       calls.push(['comment', n]);
       (state.comments[n] ??= []).push({ user: bot, body });
     },
-    addLabel: async (n, label) => {
+    labelAsOwner: async (n, label) => {
       calls.push(['addLabel', n, label]);
       state.issues.find((i) => i.number === n).labels.push({ name: label });
+      state.links[`actor:${n}`] = owner;
     },
     wasLabelledTessl: async (n) => Boolean(state.links[`labelled:${n}`]),
+    labelActor: async (n) => state.links[`actor:${n}`],
     linkedPullRequests: async (n) => ({ complete: true, items: state.links[n] ?? [] }),
-    triggerAction: async (args) => {
-      calls.push(['trigger', ...args]);
-      return { id: 'run' };
-    },
   };
+  if (!ownerRoute) delete adapter.labelAsOwner;
   return adapter;
 }
 
@@ -207,6 +223,19 @@ test('a crash after 7 creates resumes at index 7 without refiling', async () => 
   assert.equal(gh2.calls.filter((c) => c[0] === 'createIssue').length, 11);
 });
 
+test('rerunning the original 18-item file after a crash files only the missing items', async () => {
+  const gh = fakeGitHub({ failCreateAt: 8 });
+  const file = candidates(18);
+  await produceBacklog(gh, SLOT, file);
+  const gh2 = fakeGitHub({ issues: gh.state.issues });
+  const r = await produceBacklog(gh2, SLOT, file);
+  assert.equal(r.status, 'complete');
+  assert.deepEqual(
+    gh2.calls.filter((c) => c[0] === 'createIssue').map((c) => c[1]),
+    file.slice(7).map((c) => c.title),
+  );
+});
+
 test('an uncertain create that landed is found by its marker, not refiled', async () => {
   const gh = fakeGitHub({ failCreateAt: 3, landUncertain: true });
   const r = await produceBacklog(gh, SLOT, candidates(18));
@@ -242,64 +271,176 @@ test('an incomplete issue listing blocks the producer before any write', async (
 
 const DSLOT = 'dispatch-2026-10-31T0020';
 
-test('one dispatch labels exactly one issue, the oldest, and admits it once', async () => {
+const writes = (gh) =>
+  gh.calls.filter((c) => ['comment', 'addLabel', 'createIssue'].includes(c[0]));
+const claimed = (slot, n) => ({ user: bot, body: claimMarker(slot, n) });
+const EARLIER = 'dispatch-2026-10-31T0000';
+
+test('one dispatch claims and has the owner label exactly one issue, the oldest', async () => {
   const gh = fakeGitHub({ issues: [backlogIssue(12), backlogIssue(11), backlogIssue(13)] });
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.status, 'dispatched');
   assert.equal(r.issue, 11);
-  const writes = gh.calls.filter((c) => ['comment', 'addLabel', 'trigger'].includes(c[0]));
   assert.deepEqual(
-    writes.map((c) => c.slice(0, 3)),
+    writes(gh).map((c) => c.slice(0, 3)),
     [
       ['comment', 11],
       ['addLabel', 11, 'tessl'],
-      ['trigger', 'action', 'trigger'],
     ],
   );
-  const trigger = writes[2];
-  assert.ok(trigger.includes(requestId(DSLOT, 11)));
-  assert.ok(trigger.includes('carnival-app-writer=1'));
-  assert.ok(trigger.includes('implement-github-issue'));
 });
 
-test('a retried slot resumes its own claim and labels nothing new', async () => {
+test('dispatch never starts implementation directly: the label is the only start', async () => {
+  const gh = fakeGitHub({ issues: [backlogIssue(11)] });
+  gh.triggerAction = async (args) => gh.calls.push(['trigger', ...args]);
+  await dispatch(gh, DSLOT);
+  assert.equal(gh.calls.filter((c) => c[0] === 'trigger').length, 0);
+});
+
+test('without an owner label route, dispatch fails closed before any write', async () => {
+  const gh = fakeGitHub({ issues: [backlogIssue(11)], ownerRoute: false });
+  gh.addLabel = async (n, l) => gh.calls.push(['addLabel', n, l]);
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'blocked');
+  assert.equal(r.reason, MISSING_LABEL_ROUTE);
+  assert.deepEqual(writes(gh), []);
+});
+
+test('a label that lands but not from the owner is reported, not counted as dispatched', async () => {
+  const gh = fakeGitHub({ issues: [backlogIssue(11)] });
+  const route = gh.labelAsOwner;
+  gh.labelAsOwner = async (n, l) => {
+    await route(n, l);
+    gh.state.links[`actor:${n}`] = bot;
+  };
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'failed');
+  assert.match(r.reason, /not added by the owner/);
+});
+
+test('a retried slot resumes its own claim and writes nothing new', async () => {
   const gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)] });
   await dispatch(gh, DSLOT);
   const gh2 = fakeGitHub({ issues: gh.state.issues, comments: gh.state.comments });
   const r = await dispatch(gh2, DSLOT);
   assert.equal(r.how, 'resumed');
   assert.equal(r.issue, 11);
-  assert.equal(gh2.calls.filter((c) => c[0] === 'addLabel' || c[0] === 'comment').length, 0);
-  // The repeat uses the same request id, so the platform starts no second run.
-  assert.deepEqual(gh2.calls.find((c) => c[0] === 'trigger').slice(1), triggerArgs(DSLOT, 11));
+  assert.deepEqual(writes(gh2), []);
 });
 
-test('a crash between claim and label finishes the same issue', async () => {
-  const comments = { 11: [{ user: bot, body: claimMarker(DSLOT, 11) }] };
+test('a slot whose claimed issue was closed or unlabelled never claims a second issue', async () => {
+  for (const change of [
+    { state: 'closed' },
+    { labels: [] },
+    { labels: [{ name: 'tessl' }] },
+    { state: 'closed', labels: [] },
+  ]) {
+    const issues = [backlogIssue(11, change), backlogIssue(12)];
+    const gh = fakeGitHub({ issues, comments: { 11: [claimed(DSLOT, 11)] } });
+    const r = await dispatch(gh, DSLOT);
+    assert.equal(r.issue, 11, JSON.stringify(change));
+    assert.deepEqual(writes(gh), [], JSON.stringify(change));
+  }
+});
+
+test('a crash between claim and label finishes the same issue in the same slot', async () => {
+  const comments = { 11: [claimed(DSLOT, 11)] };
   const gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)], comments });
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.issue, 11);
-  assert.deepEqual(
-    gh.calls.find((c) => c[0] === 'addLabel'),
-    ['addLabel', 11, 'tessl'],
-  );
+  assert.deepEqual(writes(gh), [['addLabel', 11, 'tessl']]);
+});
+
+test('a claim from an earlier slot that never got its label is recovered later', async () => {
+  const comments = { 11: [claimed(EARLIER, 11)] };
+  const gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)], comments });
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'dispatched');
+  assert.equal(r.how, 'recovered');
+  assert.equal(r.issue, 11);
+  assert.deepEqual(writes(gh), [['addLabel', 11, 'tessl']]);
+});
+
+test('an unfinished claim a person has since held is released, not labelled', async () => {
+  for (const extra of [
+    { labels: [{ name: BACKLOG_LABEL }, { name: 'held' }] },
+    { assignees: [owner] },
+  ]) {
+    const comments = { 11: [claimed(EARLIER, 11)] };
+    const gh = fakeGitHub({ issues: [backlogIssue(11, extra), backlogIssue(12)], comments });
+    const r = await dispatch(gh, DSLOT);
+    assert.equal(r.issue, 12, JSON.stringify(extra));
+    assert.ok(!writes(gh).some((c) => c[1] === 11));
+  }
+  const comments = { 11: [claimed(DSLOT, 11), { user: owner, body: 'wait for me' }] };
+  const gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)], comments });
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'stopped');
+  assert.equal(r.reason, 'has a person comment');
+  assert.deepEqual(writes(gh), []);
 });
 
 test('a claimed issue a person unlabelled is not relabelled', async () => {
-  const comments = { 11: [{ user: bot, body: claimMarker(DSLOT, 11) }] };
+  const comments = { 11: [claimed(DSLOT, 11)] };
   const gh = fakeGitHub({ issues: [backlogIssue(11)], comments, links: { 'labelled:11': true } });
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.status, 'stopped');
-  assert.equal(gh.calls.filter((c) => c[0] === 'addLabel' || c[0] === 'trigger').length, 0);
+  assert.deepEqual(writes(gh), []);
+  const gh2 = fakeGitHub({
+    issues: [backlogIssue(11), backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+    links: { 'labelled:11': true },
+  });
+  assert.equal((await dispatch(gh2, DSLOT)).issue, 12);
+  assert.ok(!writes(gh2).some((c) => c[1] === 11));
+});
+
+test('an uncertain claim or label write is read back before anything else', async () => {
+  let gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)] });
+  const post = gh.comment;
+  gh.comment = async (n, b) => {
+    await post(n, b);
+    throw new Error('timeout');
+  };
+  let r = await dispatch(gh, DSLOT);
+  assert.equal(r.issue, 11);
+  assert.equal(r.status, 'dispatched');
+  gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)] });
+  gh.comment = async () => {
+    throw new Error('timeout');
+  };
+  r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'blocked');
+  assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'));
+  gh = fakeGitHub({ issues: [backlogIssue(11)], comments: { 11: [claimed(DSLOT, 11)] } });
+  gh.labelAsOwner = async () => {
+    throw new Error('timeout');
+  };
+  r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'blocked');
+  assert.match(r.reason, /later slot recovers/);
 });
 
 test('an earlier claim still waiting for its pull request keeps the queue busy', async () => {
   const waiting = backlogIssue(11, { labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }] });
-  const comments = { 11: [{ user: bot, body: claimMarker('dispatch-2026-10-31T0000', 11) }] };
-  const gh = fakeGitHub({ issues: [waiting, backlogIssue(12)], comments });
+  const gh = fakeGitHub({
+    issues: [waiting, backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+  });
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.status, 'busy');
-  assert.equal(gh.calls.filter((c) => ['comment', 'addLabel', 'trigger'].includes(c[0])).length, 0);
+  assert.deepEqual(writes(gh), []);
+});
+
+test('a busy dispatch does not scan comments of the whole backlog', async () => {
+  const waiting = backlogIssue(11, { labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }] });
+  const issues = [waiting, ...Array.from({ length: 50 }, (_, i) => backlogIssue(100 + i))];
+  const gh = fakeGitHub({ issues, comments: { 11: [claimed(EARLIER, 11)] } });
+  let reads = 0;
+  const list = gh.listComments;
+  gh.listComments = async (n) => (reads++, list(n));
+  assert.equal((await dispatch(gh, DSLOT)).status, 'busy');
+  assert.equal(reads, 0);
 });
 
 test('ineligible issues are skipped: tessl, held, assigned, person comment, linked PR, foreign author', async () => {
@@ -312,7 +453,7 @@ test('ineligible issues are skipped: tessl, held, assigned, person comment, link
     backlogIssue(6, { user: owner }),
     backlogIssue(7),
   ];
-  const comments = { 4: [{ user: owner, body: 'wait' }], 1: [] };
+  const comments = { 4: [{ user: owner, body: 'wait' }] };
   const links = { 5: [{ event: 'cross-referenced' }] };
   const gh = fakeGitHub({ issues, comments, links });
   const r = await dispatch(gh, DSLOT);
@@ -326,13 +467,17 @@ test("a forged claim in a person's comment does not make an issue claimed", asyn
   assert.equal(r.issue, 12);
 });
 
-test('nothing eligible dispatches nothing; an incomplete listing blocks', async () => {
+test('nothing eligible dispatches nothing; an incomplete listing or history blocks', async () => {
   let gh = fakeGitHub();
   assert.equal((await dispatch(gh, DSLOT)).status, 'idle');
   gh = fakeGitHub({ issues: [backlogIssue(11)] });
   gh.failList = true;
   assert.equal((await dispatch(gh, DSLOT)).status, 'blocked');
-  assert.equal(gh.calls.filter((c) => c[0] !== 'listIssues').length, 0);
+  assert.deepEqual(writes(gh), []);
+  gh = fakeGitHub({ issues: [backlogIssue(11)] });
+  gh.failHistory = true;
+  assert.equal((await dispatch(gh, DSLOT)).status, 'blocked');
+  assert.deepEqual(writes(gh), []);
 });
 
 test('an issue closed between listing and claim is skipped', async () => {
@@ -364,6 +509,23 @@ const ci = (extra = {}) => ({
   conclusion: 'success',
   ...extra,
 });
+const sourceIssue = (extra = {}) => ({
+  number: 29,
+  state: 'open',
+  repository_url: 'https://api.github.com/repos/guypod/carnival-evolution-20261028',
+  labels: [{ name: 'tessl' }],
+  ...extra,
+});
+const RUN = '01a18ea8-6bcc-72d6-9187-e9d41e479ea8';
+const reviewerRun = (extra = {}) => ({
+  name: 'Tessl Reviewer',
+  app: { id: 4850038 },
+  head_sha: HEAD,
+  external_id: `tessl-code-review-run:${RUN}`,
+  status: 'completed',
+  conclusion: 'neutral',
+  ...extra,
+});
 const snapshot = (extra = {}) => ({
   writerKeyHeld: true,
   pr: {
@@ -372,7 +534,7 @@ const snapshot = (extra = {}) => ({
     draft: false,
     merged: false,
     user: bot,
-    body: 'Why.\n\nCloses #29\n',
+    body: 'Why.\n\nCloses #29\n\n<!-- tessl-factory:issue-label: tessl -->',
     labels: [{ name: 'tessl' }],
     base: { ref: 'main', repo: { id: REPOSITORY_ID } },
     head: { sha: HEAD, ref: 'tessl/issue-29', repo: { id: REPOSITORY_ID } },
@@ -380,9 +542,10 @@ const snapshot = (extra = {}) => ({
   reviews: { complete: true, items: [review()] },
   checks: {
     complete: true,
-    items: [ci(), ci({ name: 'Tessl Reviewer', app: { id: 4850038 }, conclusion: 'neutral' })],
+    items: [ci(), reviewerRun()],
   },
   combinedStatus: { state: 'pending', total_count: 0 },
+  issue: sourceIssue(),
   ...extra,
 });
 
@@ -519,6 +682,90 @@ refuses(
 );
 refuses('no writer key', snapshot({ writerKeyHeld: false }), /writer key/);
 refuses('no Closes line', snapshot({ pr: { ...snapshot().pr, body: 'x' } }), /Closes/);
+const withBody = (body) => snapshot({ pr: { ...snapshot().pr, body } });
+refuses('Closes names another issue than the branch', withBody('Closes #28'), /does not match/);
+refuses('two Closes lines', withBody('Closes #29\nCloses #28'), /single Closes/);
+refuses('a second closing keyword', withBody('Closes #29\nAlso fixes #28.'), /single Closes/);
+refuses('source issue closed', snapshot({ issue: sourceIssue({ state: 'closed' }) }), /closed/);
+refuses('source issue lost its label', snapshot({ issue: sourceIssue({ labels: [] }) }), /tessl/);
+refuses(
+  'source issue in another repository',
+  snapshot({ issue: sourceIssue({ repository_url: 'https://api.github.com/repos/a/b' }) }),
+  /another repository/,
+);
+refuses(
+  'source issue is a PR',
+  snapshot({ issue: sourceIssue({ pull_request: {} }) }),
+  /branch issue/,
+);
+refuses('source issue not read', snapshot({ issue: undefined }), /not read/);
+refuses(
+  "issue label from the PR's marker is missing",
+  snapshot({
+    pr: { ...snapshot().pr, body: 'Closes #29\n<!-- tessl-factory:issue-label: go -->' },
+  }),
+  /no longer carries go/,
+);
+refuses(
+  'a later COMMENTED review does not clear a request for changes',
+  snapshot({
+    reviews: {
+      complete: true,
+      items: [
+        review(),
+        {
+          id: 7,
+          user: owner,
+          state: 'CHANGES_REQUESTED',
+          commit_id: HEAD,
+          submitted_at: '2026-10-31T00:11:00Z',
+        },
+        {
+          id: 8,
+          user: owner,
+          state: 'COMMENTED',
+          commit_id: HEAD,
+          submitted_at: '2026-10-31T00:12:00Z',
+        },
+      ],
+    },
+  }),
+  /changes requested by guypod/,
+);
+refuses(
+  'review run id has no reviewer check run on the head',
+  snapshot({
+    checks: {
+      complete: true,
+      items: [ci(), reviewerRun({ external_id: 'tessl-code-review-run:other' })],
+    },
+  }),
+  /no matching reviewer run/,
+);
+refuses(
+  'reviewer run from another app',
+  snapshot({ checks: { complete: true, items: [ci(), reviewerRun({ app: { id: 1 } })] } }),
+  /no matching reviewer run/,
+);
+
+test('a dismissed request for changes no longer blocks', () => {
+  const s = snapshot({
+    reviews: {
+      complete: true,
+      items: [
+        {
+          id: 7,
+          user: owner,
+          state: 'DISMISSED',
+          commit_id: HEAD,
+          submitted_at: '2026-10-31T00:09:00Z',
+        },
+        review(),
+      ],
+    },
+  });
+  assert.deepEqual(mergeGate(s).reasons, []);
+});
 
 test('a formal APPROVE from someone else does not stand in for the reviewer', () => {
   const s = snapshot({
@@ -538,35 +785,59 @@ test('a formal APPROVE from someone else does not stand in for the reviewer', ()
   assert.match(mergeGate(s).reasons.join(), /no trusted review/);
 });
 
-test('merge is pinned to the gated head and refused when the head moves between reads', async () => {
+const mergeAdapter = (extra = {}) => {
   const calls = [];
-  const moved = snapshot({ pr: { ...snapshot().pr, head: { ...snapshot().pr.head, sha: OLD } } });
-  let reads = 0;
-  const adapter = {
-    snapshot: async () => (reads++ === 0 ? snapshot() : moved),
-    squashMerge: async (...a) => (calls.push(a), { merged: true }),
-  };
-  const r = await mergeOne(adapter, 30);
-  assert.equal(r.status, 'refused');
-  assert.equal(calls.length, 0);
-  const ok = {
+  return {
+    calls,
+    repoSettings: async () => ({ allow_auto_merge: true }),
     snapshot: async () => snapshot(),
-    squashMerge: async (...a) => (calls.push(a), { merged: true, sha: 'm' }),
+    enableAutoMerge: async (...a) => (calls.push(['arm', ...a]), { enabled: true }),
+    squashMerge: async (...a) => (calls.push(['merge', ...a]), { merged: true, sha: 'm' }),
+    ...extra,
   };
-  const done = await mergeOne(ok, 30);
-  assert.equal(done.status, 'merged');
-  assert.equal(done.live, 'pending');
-  assert.deepEqual(calls, [[30, HEAD]]);
+};
+
+test('with allow_auto_merge off, the controller reports the blocker and merges nothing', async () => {
+  const adapter = mergeAdapter({ repoSettings: async () => ({ allow_auto_merge: false }) });
+  const r = await mergeOne(adapter, 30);
+  assert.equal(r.status, 'blocked');
+  assert.deepEqual(r.reasons, [AUTO_MERGE_BLOCKER]);
+  assert.deepEqual(adapter.calls, []);
 });
 
-test('GitHub refusing a moved head is reported, not retried', async () => {
-  const adapter = {
-    snapshot: async () => snapshot(),
-    squashMerge: async () => ({ merged: false, message: 'Head branch was modified' }),
-  };
+test('auto-merge is armed pinned to the gated head, never a direct squash', async () => {
+  const adapter = mergeAdapter();
   const r = await mergeOne(adapter, 30);
+  assert.equal(r.status, 'armed');
+  assert.equal(r.live, 'pending');
+  assert.deepEqual(adapter.calls, [['arm', 30, HEAD]]);
+});
+
+test('an unverified head is never armed: refused gate or a head moving between reads', async () => {
+  const moved = snapshot({ pr: { ...snapshot().pr, head: { ...snapshot().pr.head, sha: OLD } } });
+  let reads = 0;
+  let adapter = mergeAdapter({ snapshot: async () => (reads++ === 0 ? snapshot() : moved) });
+  assert.equal((await mergeOne(adapter, 30)).status, 'refused');
+  assert.deepEqual(adapter.calls, []);
+  adapter = mergeAdapter({ snapshot: async () => snapshot({ writerKeyHeld: false }) });
+  assert.equal((await mergeOne(adapter, 30)).status, 'refused');
+  assert.deepEqual(adapter.calls, []);
+});
+
+test('GitHub refusing to arm is reported; only an already clean PR merges, still pinned', async () => {
+  let adapter = mergeAdapter({
+    enableAutoMerge: async () => ({ enabled: false, message: 'Head branch was modified' }),
+  });
+  let r = await mergeOne(adapter, 30);
   assert.equal(r.status, 'refused');
   assert.match(r.reasons[0], /modified/);
+  assert.deepEqual(adapter.calls, []);
+  adapter = mergeAdapter({
+    enableAutoMerge: async () => ({ enabled: false, message: 'Pull request is in clean status' }),
+  });
+  r = await mergeOne(adapter, 30);
+  assert.equal(r.status, 'merged');
+  assert.deepEqual(adapter.calls, [['merge', 30, HEAD]]);
 });
 
 test('merged is not live until the Pages run for that commit succeeds', () => {
@@ -595,8 +866,13 @@ test('the native action holds the writer key and its schedules are London slots'
   assert.equal(manifest.schedules['native-backlog-six-hourly'].cron, '0 0,6,12,18 * * *');
   assert.equal(manifest.schedules['native-dispatch-twenty-minutes'].cron, '*/20 * * * *');
   // The label webhook still needs the owner: native labels cannot start it.
-  assert.equal(manifest.triggers['github-issue-labelled'].when['event.sender.id'], OWNER_ID);
-  assert.equal(manifest.triggers['github-issue-labelled'].when['event.sender.type'], 'User');
+  assert.deepEqual(manifest.triggers['github-issue-labelled'].when, {
+    'event.label.name': 'tessl',
+    'event.sender.type': 'User',
+    'event.sender.id': OWNER_ID,
+    'event.issue.state': 'open',
+    'event.repository.id': REPOSITORY_ID,
+  });
   const unserialized = structuredClone(manifest);
   delete unserialized.actions['native-intake'].concurrency;
   assert.match(checkContract(unserialized).join(), /native-intake\.concurrency/);
