@@ -745,7 +745,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
     snapshot: async (n) => {
       const pr = JSON.parse(gh(['api', `${base}/pulls/${n}`]));
       const sha = pr.head.sha;
-      const checks = pages(`${base}/commits/${sha}/check-runs?per_page=100`);
+      const checks = pages(`${base}/commits/${sha}/check-runs?filter=all&per_page=100`);
       const n2 = /^tessl\/issue-(\d+)$/.exec(pr.head.ref)?.[1];
       return {
         issue: n2 ? JSON.parse(gh(['api', `${base}/issues/${n2}`])) : undefined,
@@ -814,8 +814,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (!open.complete) print({ status: 'blocked', reason: 'pull request listing incomplete' });
     else {
       const results = [];
+      // Stop starting new pull requests well inside the action's 30 minutes,
+      // so the results of merges already done are always reported.
+      const deadline = Date.now() + 15 * 60_000;
       for (const pr of open.items) {
         if (!labelNames(pr).includes(TRIGGER_LABEL) || !pr.head.ref.startsWith('tessl/')) continue;
+        if (Date.now() > deadline) {
+          results.push({ status: 'deferred', number: pr.number, reasons: ['sweep time limit'] });
+          continue;
+        }
         try {
           results.push(await mergeOne(adapter, pr.number));
         } catch (e) {

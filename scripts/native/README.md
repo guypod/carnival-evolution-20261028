@@ -96,6 +96,12 @@ just a 200 response.
 
 ## Activation and limits
 
+- The merge sweep starts no new pull request after 15 minutes; the rest are
+  reported as `deferred` for the next run.
+- A shortened backlog file (fewer than 18 items) fills the missing indexes in
+  order each run, so after a partial write it must be trimmed to what is
+  still missing. The full 18-item file can always be rerun unchanged.
+
 - Schedules and the action take effect only after this reaches `main` and
   Tessl syncs `tessl.json`. `tessl doctor --automations` validates the file
   locally only.
