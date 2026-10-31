@@ -226,7 +226,15 @@ export async function produceBacklog(adapter, slot, candidates) {
   // A full 18-item file maps item i to index i, so rerunning the original file
   // after a crash files only the missing ones. A shorter file fills the
   // missing indexes in order.
-  const full = Array.isArray(candidates) && candidates.length === BATCH_SIZE;
+  if (!Array.isArray(candidates))
+    return {
+      status: 'partial',
+      slot,
+      issues: [...done.values()],
+      remaining: todo.length,
+      errors: ['candidates must be an array'],
+    };
+  const full = candidates.length === BATCH_SIZE;
   const pool = full ? todo.map((i) => candidates[i]) : (candidates ?? []).slice(0, todo.length);
   const errors = validateCandidates(pool, listed.items);
   if (pool.length < todo.length) errors.push(`need ${todo.length} candidates, got ${pool.length}`);
@@ -509,7 +517,10 @@ export function provenance(pr, issue) {
   const n = Number(branch[1]);
   if (closes.length !== 1 || anyClose.length !== 1) return ['no single Closes line'];
   if (closes[0] !== n) return [`Closes #${closes[0]} does not match branch issue #${n}`];
+  // Only a tessl label starts work through the owner's trigger, whatever the
+  // PR's own (editable) text names.
   const label = issueLabel(pr.body);
+  if (label !== TRIGGER_LABEL) return [`issue label ${label} is not ${TRIGGER_LABEL}`];
   if (!issue) return ['source issue not read'];
   if (issue.number !== n || issue.pull_request) return ['source issue is not the branch issue'];
   if (issue.repository_url !== `https://api.github.com/repos/${REPOSITORY}`)
@@ -623,6 +634,8 @@ export async function mergeOne(adapter, number) {
       reasons: second.reasons.length ? second.reasons : ['head moved'],
     };
   const merged = await adapter.squashMerge(number, second.head);
+  if (merged.uncertain)
+    return { status: 'uncertain', number, head: second.head, reasons: [merged.message] };
   if (merged.merged)
     return { status: 'merged', number, head: second.head, sha: merged.sha, live: 'pending' };
   return { status: 'refused', number, reasons: [merged.message ?? 'merge refused'] };
@@ -750,7 +763,16 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         );
         return JSON.parse(out);
       } catch (e) {
-        return { merged: false, message: String(e.stderr ?? e.message).slice(0, 300) };
+        const message = String(e.stderr ?? e.message).slice(0, 300);
+        // The merge may have landed without its response: read the PR back.
+        try {
+          const pr = JSON.parse(gh(['api', `${base}/pulls/${n}`]));
+          if (pr.merged) return { merged: true, sha: pr.merge_commit_sha };
+          if (pr.head?.sha === sha && pr.state === 'open') return { merged: false, message };
+        } catch {
+          // fall through: unknown
+        }
+        return { merged: false, uncertain: true, message: `merge result unknown: ${message}` };
       }
     },
   };

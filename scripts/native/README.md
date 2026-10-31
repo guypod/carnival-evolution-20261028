@@ -66,8 +66,8 @@ into `main`, labelled `tessl`, when:
 
 - the body has exactly one closing reference, `Closes #<n>`, naming the
   branch's issue, and that issue is an open issue of this repository that
-  still carries its issue label (the PR's `tessl-factory:issue-label` marker,
-  or `tessl`), last added by the owner, user 1106394, as read from the
+  still carries `tessl` (a PR whose `tessl-factory:issue-label` marker names
+  another label is refused, since only `tessl` starts work), last added by the owner, user 1106394, as read from the
   issue's complete event history;
 - the newest review by `tessl-reviewer[bot]` (id 325629464) is on the exact
   head, not dismissed, and has exactly one `workflow-run:v1` marker and one

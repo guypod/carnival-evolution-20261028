@@ -710,11 +710,9 @@ refuses(
 );
 refuses('source issue not read', snapshot({ issue: undefined }), /not read/);
 refuses(
-  "issue label from the PR's marker is missing",
-  snapshot({
-    pr: { ...snapshot().pr, body: 'Closes #29\n<!-- tessl-factory:issue-label: go -->' },
-  }),
-  /no longer carries go/,
+  'source issue no longer carries tessl',
+  snapshot({ issue: sourceIssue({ labels: [] }) }),
+  /no longer carries tessl/,
 );
 refuses(
   'a later COMMENTED review does not clear a request for changes',
@@ -1041,4 +1039,30 @@ test('a source issue label restored by someone other than the owner, or unread, 
     assert.equal(g.merge, false, JSON.stringify(issueLabelActor));
     assert.match(g.reasons.join(), /source issue label/);
   }
+});
+
+test('a PR naming another issue label never stands in for the tessl hand-off', () => {
+  const pr = {
+    ...snapshot().pr,
+    body: 'Why.\n\nCloses #29\n\n<!-- tessl-factory:issue-label: bug -->',
+  };
+  const g = mergeGate(snapshot({ pr, issue: sourceIssue({ labels: [{ name: 'bug' }] }) }));
+  assert.equal(g.merge, false);
+  assert.match(g.reasons.join(), /issue label bug is not tessl/);
+});
+
+test('a batch whose candidates are not an array is refused without writes', async () => {
+  const gh = fakeGitHub();
+  const r = await produceBacklog(gh, SLOT, { title: 'x' });
+  assert.equal(r.status, 'partial');
+  assert.deepEqual(r.errors, ['candidates must be an array']);
+  assert.deepEqual(writes(gh), []);
+});
+
+test('a merge whose result is unknown is reported as uncertain, not refused or merged', async () => {
+  const adapter = mergeAdapter({
+    squashMerge: async () => ({ merged: false, uncertain: true, message: 'merge result unknown' }),
+  });
+  const r = await mergeOne(adapter, 30);
+  assert.equal(r.status, 'uncertain');
 });
