@@ -22,6 +22,7 @@ import {
   skeeBall,
   startRound,
   step,
+  targetBand,
   type SkeeState,
 } from './game';
 
@@ -255,5 +256,19 @@ describe('skee ball', () => {
     expect(state.lastRoll).toBeUndefined();
     expect(state.lastAim).toBeUndefined();
     expect(state.ballsLeft).toBe(BALLS);
+  });
+
+  it("marks each lane's 50 ring on the meter, matching the scoring", () => {
+    for (let lane = 0; lane < 3; lane++) {
+      const { low, high } = targetBand(lane);
+      expect(low).toBeLessThan(TARGETS[lane]);
+      expect(high).toBeGreaterThan(TARGETS[lane]);
+      expect(scoreRoll(lane, low)).toBe(50);
+      expect(scoreRoll(lane, high)).toBe(50);
+      expect(scoreRoll(lane, (low + high) / 2)).toBe(50);
+      expect(scoreRoll(lane, low - 0.001)).toBeLessThan(50);
+      expect(scoreRoll(lane, high + 0.001)).toBeLessThan(50);
+    }
+    expect(targetBand(0)).not.toEqual(targetBand(1));
   });
 });
