@@ -13,6 +13,7 @@ export {
 } from './scores';
 export { prizeFor, type PrizeTier } from './prizes';
 export { theme, canvasFont, applyTheme } from './theme';
+export { drawRoundCard, layoutRoundCard, type RoundCard, type RoundCardLayout } from './round-card';
 export {
   createSaveSlot,
   browserSaveStorage,
