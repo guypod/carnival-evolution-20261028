@@ -58,18 +58,57 @@ implementation run is one labelled `implement-github-issue` or whose skill is
 `#implement-github-issue`. Its own run is the one labelled
 `implement-github-issue <its request id>`. Before any write:
 
-| What the runs show                                 | `admit`                                          |
-| -------------------------------------------------- | ------------------------------------------------ |
-| a listing failed, was denied or is malformed       | `refused`: runs incomplete                       |
-| its own request's run is queued or running         | `admitted`, `already running`: no new handoff    |
-| its own request's run ended, whatever the outcome  | `refused`: never restarted                       |
-| another implementation run is queued or running    | `deferred`: no record, no handoff; exits at once |
-| another implementation run for this issue ever ran | `refused`: not the issue's first run             |
-| none of these                                      | writes the record and hands off                  |
+| What the runs show                                 | `admit`                                       |
+| -------------------------------------------------- | --------------------------------------------- |
+| a listing failed, was denied or is malformed       | `deferred`: still owed, nothing written       |
+| its own request's run is queued or running         | `admitted`, `already running`: no new handoff |
+| its own request's run ended, whatever the outcome  | `refused`: never restarted                    |
+| another implementation run is queued or running    | `deferred`: one deferral record, no handoff   |
+| another implementation run for this issue ever ran | `refused`: not the issue's first run          |
+| none of these                                      | writes the record and hands off               |
 
-`deferred` exits at once and never waits holding the writer key. The issue
-keeps its label, and a later dispatch sees it as still held (below). Nothing
-retries the admission automatically.
+`deferred` exits at once and never waits holding the writer key. A read
+that fails (the issue, comments, events, claim history, links, branch or
+runs) also defers rather than refuses. When another run is pending, `admit`
+writes one app deferral record, `carnival-deferred:v1`, keyed by the
+original label event and request id.
+
+**Retrying a deferred admission.** Each dispatch that finds a claimed,
+bot-labelled issue with no pull request and a deferral record for its
+current label event and node calls the same admission again, with every
+guard read fresh. It uses the original request id, never relabels, makes no
+new generation and fabricates no event. Deferred again keeps the queue on
+that issue. A refusal (taken back, held, assigned, a person commented,
+content changed, an earlier run) frees the queue and nothing resumes it. A
+read that fails blocks dispatch, so the owed work stays owed. A deferral
+from a failed read alone writes no record, so it falls back to the 90-minute
+grace below and is not retried.
+
+## Implementation entry guard
+
+Accepting a request twice is possible (see the gap below); coding twice is
+not. `.tessl/cloud-launch-setup.sh` runs before the agent and before the
+skill installs, with the recipe's `SKILL`, `INPUTS`, `TRIGGER_EVENTS` and
+`TESSL_LAUNCH_RUN_ID`. When `SKILL` ends in `#implement-github-issue`, both
+for the owner's label and the native handoff, it runs
+`scripts/native/entry-guard.mjs`. Other actions skip it.
+
+The guard reads the issue, its events and comments in full and builds one
+key: repository, issue, node, content digest, and generation (the newest
+`tessl` label event). The owner's label is its own hand-off; the bot's label
+needs the app admission record for that exact event and node. It then
+creates `refs/tessl-entry/issue-<n>/gen-<event>` with GitHub's create-ref
+call, which fails if the ref exists. The ref points at a parentless commit
+whose message records the key and the run id. It is never moved or deleted.
+
+- Same key, same run id (setup reruns on resume): resumes.
+- Any other run, or a changed digest: refused, whatever the claim's age.
+- Anything unreadable, no run id, closed, unlabelled: refused.
+
+A refusal exits non-zero, which fails the run's prepare step before coding.
+Fixture tests cover the decisions, including a race on the create. The hook
+itself, the real create-ref call and the env vars at setup time are checked
+only by reading the recipe here, not in a live run.
 
 **The gap.** `tessl action trigger` answers once the request is recorded,
 before Tessl admits it to a launch run. The API documents no listing of
@@ -174,7 +213,9 @@ into `main`, labelled `tessl`, when:
 - no reviewer has a request for changes still standing. A later `COMMENTED`
   review does not clear it; a later approval or a dismissal does;
 - the `check` run from GitHub Actions (app 15368) on that head succeeded, and
-  no other check or status on it failed or is still running;
+  no other check or status on it failed or is still running. Only the newest
+  run of each check from each app counts, so a successful rerun replaces the
+  failure it reran;
 - every listing was read to its last page.
 
 `mergeOne` gates twice, then merges with GitHub's atomic merge API

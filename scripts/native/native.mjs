@@ -472,7 +472,7 @@ export async function dispatch(adapter, slot, now = new Date()) {
       if (!prs.complete)
         return { status: 'blocked', reason: `links of #${claim.issue} incomplete` };
       if (prs.items.length) continue;
-      const waiting = await awaitingRun(adapter, claim.issue, now);
+      const waiting = await awaitingRun(adapter, claim.issue, now, issue);
       if (waiting) return waiting;
       continue; // labelled, never admitted, past the grace: refused, not running
     }
@@ -540,7 +540,7 @@ export const RUN_GRACE_MS = 3 * 60 * 60_000;
  *   - The bot's label, no admission, no pending admit run: busy within the
  *     admit grace, then refused, so the queue moves on.
  */
-async function awaitingRun(adapter, number, now) {
+async function awaitingRun(adapter, number, now, issue) {
   const pending = await adapter.launchRuns({ status: 'pending' });
   const linked = await adapter.launchRuns({ issue: number });
   if (!pending.complete || !linked.complete)
@@ -567,6 +567,25 @@ async function awaitingRun(adapter, number, now) {
   }
   const events = await adapter.listEvents(number);
   if (!events.complete) return { status: 'blocked', reason: `events of #${number} incomplete` };
+  // An admission deferred for its current label event is still owed: retry the
+  // original admission with every guard read fresh, never relabelling. Deferred
+  // again keeps the queue on it; a refusal (taken back, held, changed) frees it.
+  const labelEvent = events.items
+    .filter((e) => e.event === 'labeled' && e.label?.name === TRIGGER_LABEL)
+    .at(-1);
+  const owed = readDeferrals(comments.items).find(
+    (d) =>
+      d.issue === number &&
+      d.event === labelEvent?.id &&
+      d.node === issue?.node_id &&
+      d.request === requestId(number, labelEvent.id),
+  );
+  if (owed && isBot(labelEvent.actor)) {
+    const r = await admitIssue(adapter, { number, nodeId: issue.node_id, id: issue.id }, now);
+    if (r.status === 'refused') return null;
+    if (r.status === 'uncertain') return { status: 'blocked', issue: number, retried: r };
+    return { status: 'busy', waitingOn: number, retried: r };
+  }
   const at = events.items
     .filter((e) => e.event === 'labeled' && e.label?.name === TRIGGER_LABEL)
     .at(-1)?.created_at;
@@ -686,6 +705,33 @@ export function readAdmissions(comments) {
     }));
 }
 
+const DEFER_RE = /<!-- carnival-deferred:v1 issue=(\d+) node=(\S+) event=(\d+) request=(\S+) -->/;
+export const deferralMarker = (a) =>
+  `<!-- carnival-deferred:v1 issue=${a.issue} node=${a.node} event=${a.event} request=${a.request} -->`;
+
+/** The app's own records that an admission was deferred and is still owed. */
+export function readDeferrals(comments) {
+  return comments
+    .filter(byApp)
+    .map((c) => DEFER_RE.exec(c.body ?? ''))
+    .filter(Boolean)
+    .map(([, issue, node, event, request]) => ({
+      issue: Number(issue),
+      node,
+      event: Number(event),
+      request,
+    }));
+}
+
+/** Refusal reasons that only mean a read failed, so the admission is still owed. */
+const TRANSIENT = [
+  'comments incomplete',
+  'events incomplete',
+  'claim history incomplete',
+  'links incomplete',
+  'branch state unknown',
+];
+
 export const requestId = (issue, eventId) => `carnival-admit:${REPOSITORY_ID}:${issue}:${eventId}`;
 
 // ---------- execution state ----------
@@ -789,10 +835,22 @@ export function readAdmitEvent(events) {
 export async function admit(adapter, events, now = new Date()) {
   const ev = readAdmitEvent(events);
   if (ev.error) return { status: 'refused', reasons: [ev.error] };
+  return admitIssue(adapter, ev, now);
+}
+
+/**
+ * The admission decision for one issue from fresh reads. The original admit
+ * run calls it with the webhook's issue; dispatch calls it again, with the
+ * issue's own identity, to retry an owed admission. Either way the request id
+ * comes from the issue's one tessl label event, so a retry never makes a new
+ * generation, and an incomplete read or another pending run leaves the work
+ * owed (`deferred`) rather than refused.
+ */
+export async function admitIssue(adapter, ev, now = new Date()) {
   const n = ev.number;
   const reasons = [];
   const fresh = await adapter.getIssue(n);
-  if (!fresh) return { status: 'refused', issue: n, reasons: ['issue not read'] };
+  if (!fresh) return { status: 'deferred', issue: n, reasons: ['issue not read'] };
   if (fresh.node_id !== ev.nodeId || (ev.id !== undefined && fresh.id !== ev.id))
     reasons.push('issue identity differs from the event');
   if (fresh.repository_url !== `https://api.github.com/repos/${REPOSITORY}`)
@@ -818,7 +876,11 @@ export async function admit(adapter, events, now = new Date()) {
   if (!history.complete) reasons.push('claim history incomplete');
   if (!prs.complete) reasons.push('links incomplete');
   if (branch === undefined) reasons.push('branch state unknown');
-  if (reasons.length) return { status: 'refused', issue: n, reasons };
+  // Only unreadable state so far: the work is still owed, so a later dispatch retries.
+  if (reasons.length) {
+    const owed = reasons.every((r) => TRANSIENT.includes(r));
+    return { status: owed ? 'deferred' : 'refused', issue: n, reasons };
+  }
 
   // Content: the producer's one journal entry for this item, digest unchanged.
   const digest = contentDigest(fresh.title, fresh.body);
@@ -884,7 +946,7 @@ export async function admit(adapter, events, now = new Date()) {
     record.request,
   );
   if (exec.state === 'unknown')
-    return { status: 'refused', issue: n, reasons: ['implementation runs incomplete'] };
+    return { status: 'deferred', issue: n, reasons: ['implementation runs incomplete'] };
   if (exec.state === 'own-pending')
     return { status: 'admitted', issue: n, how: 'already running', run: exec.run, ...record };
   if (exec.state === 'own-ended')
@@ -899,13 +961,25 @@ export async function admit(adapter, events, now = new Date()) {
       issue: n,
       reasons: [`an earlier implementation run ${exec.run} (${exec.status}) exists for this issue`],
     };
-  // Another run is queued or running: exit now, never wait holding the writer key.
-  if (exec.state === 'foreign-pending')
-    return {
+  // Another run is queued or running: record that the work is owed, then exit
+  // now, never waiting while holding the writer key. A later dispatch retries.
+  if (exec.state === 'foreign-pending') {
+    const out = {
       status: 'deferred',
       issue: n,
       reasons: [`implementation run ${exec.run} is queued or running`],
     };
+    if (readDeferrals(comments.items).some((d) => d.request === record.request)) return out;
+    try {
+      await adapter.comment(
+        n,
+        `Admission waits for another implementation run; a later dispatch retries it.\n\n${deferralMarker(record)}\n<!-- tessl-factory -->`,
+      );
+    } catch {
+      out.reasons.push('deferral record write uncertain');
+    }
+    return out;
+  }
   if (!prior.length) {
     try {
       await adapter.comment(
@@ -1078,7 +1152,14 @@ export function mergeGate(s) {
     }
   }
 
-  const runs = s.checks.items.filter((c) => c.head_sha === head);
+  // A rerun replaces the run it reran: GitHub lists both under filter=all, and
+  // only the newest run of each check by each app counts.
+  const newest = new Map();
+  for (const c of s.checks.items.filter((x) => x.head_sha === head)) {
+    const k = `${c.app?.id}:${c.name}`;
+    if (!newest.has(k) || c.id > newest.get(k).id) newest.set(k, c);
+  }
+  const runs = [...newest.values()];
   const ci = runs.filter((c) => c.name === CI_CHECK && c.app?.id === CI_APP_ID);
   if (!ci.length) reasons.push('no CI check on the head');
   else if (ci.some((c) => c.status !== 'completed' || c.conclusion !== 'success'))

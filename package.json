@@ -20,7 +20,7 @@
     "check": "npm run lint && npm run format:check && npm run typecheck && npm run test && npm run factory:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "factory:check": "node scripts/factory/check-contract.mjs && node --test scripts/factory/factory.test.mjs scripts/factory/pr-writing.test.mjs scripts/visual/visual.test.mjs scripts/visual/ledger.test.mjs scripts/lenses/ledger.test.mjs scripts/native/native.test.mjs"
+    "factory:check": "node scripts/factory/check-contract.mjs && node --test scripts/factory/factory.test.mjs scripts/factory/pr-writing.test.mjs scripts/visual/visual.test.mjs scripts/visual/ledger.test.mjs scripts/lenses/ledger.test.mjs scripts/native/native.test.mjs scripts/native/entry-guard.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

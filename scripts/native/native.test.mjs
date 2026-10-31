@@ -30,6 +30,7 @@ import {
   contentDigest,
   journalMarker,
   readAdmissions,
+  readDeferrals,
   readItem,
   readJournal,
   requestId,
@@ -1651,7 +1652,7 @@ const implRun = (id, status, extra = {}) => ({
   ...extra,
 });
 
-test('admit defers, without a record or handoff, while another implementation is queued or running', async () => {
+test('admit defers, with only a deferral record and no handoff, while another implementation is queued or running', async () => {
   for (const phase of ['queued', 'starting', 'running']) {
     const gh = admitWorld();
     // An owner or manual run for #40, before any branch exists.
@@ -1660,7 +1661,8 @@ test('admit defers, without a record or handoff, while another implementation is
     assert.equal(r.status, 'deferred', JSON.stringify(r));
     assert.match(r.reasons.join(), /foreign-1/);
     assert.deepEqual(handoffs(gh), []);
-    assert.ok(!gh.calls.some((c) => c[0] === 'comment'), 'no record');
+    assert.deepEqual(readAdmissions(gh.state.comments[40]), [], 'no admission record');
+    assert.equal(readDeferrals(gh.state.comments[40]).length, 1, 'one deferral record');
   }
   // A pending run in this repository whose issue cannot be told still defers.
   const gh = admitWorld();
@@ -1827,4 +1829,119 @@ test('launchRuns reads every page, keeps only this repository, and fails closed 
   };
   assert.deepEqual(launchRuns({ status: 'pending' }, failing), { items: [], complete: false });
   assert.equal(launchRuns({ status: 'pending' }, () => '{"error":{}}').complete, false);
+});
+
+// ---------- deferred admission recovery ----------
+//
+// An admission deferred by another pending run, or by a read that failed, is
+// still owed. A later dispatch retries the original admission, keyed to the
+// original label event, with every guard read fresh. It never relabels.
+
+/** #40 dispatched and bot-labelled at 00:21, with dispatch now two hours later. */
+const LATER = new Date('2026-10-31T02:30:00Z');
+const LSLOT = 'dispatch-2026-10-31T0220';
+function owedWorld() {
+  const gh = admitWorld();
+  gh.wasLabelledTessl = async () => true;
+  gh.state.issues.push(fileIssue(41, { labels: [{ name: BACKLOG_LABEL }] }));
+  return gh;
+}
+
+test('a deferred admission is retried by a later dispatch once the foreign run ends, without relabel', async () => {
+  const gh = owedWorld();
+  gh.state.runs.push(implRun('foreign-1', 'pending', { issue: 7 }));
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'deferred');
+  assert.deepEqual(handoffs(gh), []);
+  // The foreign run ends. Two hours later, no new event arrives.
+  gh.state.runs[0].status = 'completed';
+  const r = await dispatch(gh, LSLOT, LATER);
+  assert.equal(r.status, 'busy', JSON.stringify(r));
+  assert.equal(r.retried.status, 'admitted');
+  assert.equal(r.retried.request, OWN, 'the original label event keys the request');
+  assert.deepEqual(handoffs(gh), [['handoff', 40, OWN]]);
+  assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'), 'never relabelled');
+  assert.ok(!gh.calls.some((c) => c[0] === 'comment' && c[1] === 41), 'no second issue is claimed');
+  // Repeated dispatches: the run is now visible under its own key, so nothing repeats.
+  gh.state.runs.push(implRun('own-1', 'pending', { label: runLabel(OWN), issue: 40 }));
+  for (let i = 0; i < 3; i++) {
+    const again = await dispatch(gh, LSLOT, LATER);
+    assert.equal(again.status, 'busy');
+  }
+  assert.equal(handoffs(gh).length, 1, 'one handoff');
+  assert.equal(readAdmissions(gh.state.comments[40]).length, 1, 'one admission record');
+  assert.equal(readDeferrals(gh.state.comments[40]).length, 1, 'one deferral record');
+});
+
+test('a retry while the foreign run is still pending stays owed and writes nothing new', async () => {
+  const gh = owedWorld();
+  gh.state.runs.push(implRun('foreign-1', 'pending', { issue: 7 }));
+  await admit(gh, labelledEvent(), NOW);
+  const before = gh.calls.filter((c) => c[0] === 'comment').length;
+  for (let i = 0; i < 3; i++) {
+    const r = await dispatch(gh, LSLOT, LATER);
+    assert.equal(r.status, 'busy', JSON.stringify(r));
+  }
+  assert.equal(gh.calls.filter((c) => c[0] === 'comment').length, before, 'no new writes');
+  assert.deepEqual(handoffs(gh), []);
+});
+
+test('incomplete reads at admission leave it owed, and a later dispatch recovers it', async () => {
+  const gh = owedWorld();
+  const listEvents = gh.listEvents;
+  // The run listing fails at admission: deferred, not refused.
+  gh.failRuns = true;
+  const r = await admit(gh, labelledEvent(), NOW);
+  assert.equal(r.status, 'deferred', JSON.stringify(r));
+  assert.deepEqual(handoffs(gh), []);
+  // An unreadable comment list is also owed, not refused.
+  gh.failRuns = false;
+  const listComments = gh.listComments;
+  gh.listComments = async () => ({ complete: false, items: [] });
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'deferred');
+  gh.listComments = listComments;
+  gh.listEvents = listEvents;
+  // The deferral record was not written on a failed read, so dispatch sees a
+  // bot label with no admission and no record: it waits out the grace, then
+  // moves on. With the record (from a pending-run deferral) it retries.
+  gh.state.runs.push(implRun('foreign-1', 'pending', { issue: 7 }));
+  await admit(gh, labelledEvent(), NOW);
+  gh.state.runs = [];
+  gh.failRuns = true;
+  assert.equal((await dispatch(gh, LSLOT, LATER)).status, 'blocked', 'unknown runs block');
+  gh.failRuns = false;
+  const ok = await dispatch(gh, LSLOT, LATER);
+  assert.equal(ok.retried?.status, 'admitted', JSON.stringify(ok));
+  assert.equal(handoffs(gh).length, 1);
+});
+
+test('a person taking the issue back after a deferral is never resumed', async () => {
+  for (const takeBack of ['unlabel', 'hold', 'assign', 'comment']) {
+    const gh = owedWorld();
+    gh.state.runs.push(implRun('foreign-1', 'pending', { issue: 7 }));
+    await admit(gh, labelledEvent(), NOW);
+    gh.state.runs = [];
+    const issue = gh.state.issues.find((i) => i.number === 40);
+    if (takeBack === 'hold') issue.labels.push({ name: 'held' });
+    if (takeBack === 'assign') issue.assignees = [owner];
+    if (takeBack === 'comment') gh.state.comments[40].push({ user: owner, body: 'wait' });
+    if (takeBack === 'unlabel') {
+      issue.labels = issue.labels.filter((l) => l.name !== 'tessl');
+    }
+    await dispatch(gh, LSLOT, LATER);
+    assert.deepEqual(handoffs(gh), [], takeBack);
+    assert.equal(readAdmissions(gh.state.comments[40]).length, 0, takeBack);
+  }
+});
+
+test('merge gate: a failed check superseded by a successful rerun on the same head no longer blocks', () => {
+  const base = snapshot();
+  base.checks.items = base.checks.items.filter((c) => c.name !== 'check');
+  const failed = ci({ id: 1, conclusion: 'failure' });
+  const rerun = ci({ id: 2 });
+  const s = { ...base, checks: { complete: true, items: [...base.checks.items, failed, rerun] } };
+  assert.equal(mergeGate(s).merge, true, JSON.stringify(mergeGate(s).reasons));
+  // The newest run is the one that counts: a later failure still blocks.
+  const worse = ci({ id: 3, conclusion: 'failure' });
+  const t = { ...base, checks: { complete: true, items: [...base.checks.items, rerun, worse] } };
+  assert.equal(mergeGate(t).merge, false);
 });
