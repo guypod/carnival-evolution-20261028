@@ -1,5 +1,5 @@
 import { canvasFont, recordScore, theme, type CarnivalGame } from '../../carnival';
-import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../../midway/motion';
+import { isQuiet, motionPreference, watchReducedMotion } from '../../midway/motion';
 
 const { width: WIDTH, height: HEIGHT } = theme.canvas;
 
@@ -507,10 +507,10 @@ export const moleMayhem: CarnivalGame = {
     canvas.addEventListener('pointerdown', onDown);
     window.addEventListener('keydown', onKeyDown);
 
-    const quiet = isQuiet(
-      motionPreference.load(),
-      window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false,
-    );
+    let quiet = false;
+    const stopWatchingMotion = watchReducedMotion(window, (systemReduces) => {
+      quiet = isQuiet(motionPreference.load(), systemReduces);
+    });
     let frame = 0;
     const onVisibility = () => {
       if (!document.hidden) clock.resume(performance.now());
@@ -529,6 +529,7 @@ export const moleMayhem: CarnivalGame = {
       canvas.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('visibilitychange', onVisibility);
+      stopWatchingMotion();
     };
   },
 };
