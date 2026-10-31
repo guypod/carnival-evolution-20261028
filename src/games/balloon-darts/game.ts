@@ -22,6 +22,10 @@ const CELL = 120;
 const RACK_LEFT = WIDTH / 2 - CELL * 1.5;
 const RACK_TOP = 80;
 export const THROWER = { x: WIDTH / 2, y: HEIGHT - 10 } as const;
+/** The baseline of the rule line under the awning. */
+export const RULE_Y = 60;
+/** The baseline of the Score, Streak and Darts row. */
+export const HUD_Y = HEIGHT - 20;
 
 const BALLOON_COLORS = [
   theme.colors.stripeA,
@@ -279,12 +283,28 @@ function drawBalloon(ctx: CanvasRenderingContext2D, cell: number) {
   if (star) ctx.fillText('5', x - 22, y - 26);
 }
 
+/**
+ * The panel behind the start and result card's text, for a card with `lines`
+ * lines under its title. Only the panel is dimmed, so the rule line and the
+ * bottom row stay readable around it.
+ */
+export function cardBox(lines: number): { x: number; y: number; width: number; height: number } {
+  const width = 520;
+  const top = HEIGHT / 2 - 40 - theme.font.title - 12;
+  const bottom = HEIGHT / 2 + (lines - 1) * 30 + 20;
+  return { x: (WIDTH - width) / 2, y: top, width, height: bottom - top };
+}
+
 function drawResults(ctx: CanvasRenderingContext2D, lines: string[], title: string) {
   const { colors } = theme;
+  const box = cardBox(lines.length);
   ctx.fillStyle = colors.background;
-  ctx.globalAlpha = 0.85;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.globalAlpha = 0.92;
+  ctx.fillRect(box.x, box.y, box.width, box.height);
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = colors.accent;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(box.x, box.y, box.width, box.height);
   ctx.textAlign = 'center';
   ctx.fillStyle = colors.accent;
   ctx.font = canvasFont('title', 'bold');
@@ -311,7 +331,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
   ctx.fillText(
     `Click a balloon or press 1 to 9. Balloons ${BALLOON_POINTS}, star ${STAR_POINTS}, pops in a row up to +${streakBonus(STREAK_BONUSES.length)}.`,
     WIDTH / 2,
-    60,
+    RULE_Y,
   );
 
   // Rack: a wooden frame with a cork board behind the balloons.
@@ -384,11 +404,11 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
   ctx.fillStyle = colors.text;
   ctx.font = canvasFont('body', 'bold');
   ctx.textAlign = 'left';
-  ctx.fillText(`Score ${state.score}`, 16, HEIGHT - 20);
+  ctx.fillText(`Score ${state.score}`, 16, HUD_Y);
   ctx.textAlign = 'center';
-  ctx.fillText(`Streak ${state.streak}  Best ${state.bestStreak}`, WIDTH / 2, HEIGHT - 20);
+  ctx.fillText(`Streak ${state.streak}  Best ${state.bestStreak}`, WIDTH / 2, HUD_Y);
   ctx.textAlign = 'right';
-  ctx.fillText(`Darts ${state.dartsLeft}/${DARTS_PER_ROUND}`, WIDTH - 16, HEIGHT - 20);
+  ctx.fillText(`Darts ${state.dartsLeft}/${DARTS_PER_ROUND}`, WIDTH - 16, HUD_Y);
 
   if (state.phase === 'ready') {
     drawResults(

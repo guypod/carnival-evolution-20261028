@@ -3,12 +3,15 @@ import {
   BALLOON_POINTS,
   DARTS_PER_ROUND,
   FLIGHT_TIME,
+  HUD_Y,
+  RULE_Y,
   STAR_CELL,
   STAR_POINTS,
   STREAK_BONUSES,
   accuracy,
   act,
   begin,
+  cardBox,
   cellAt,
   cellCenter,
   cellForKey,
@@ -233,5 +236,13 @@ describe('balloon darts', () => {
     win.dispatchEvent(new Event('keydown'));
     expect(handlers.pointerdown).toHaveBeenCalledTimes(1);
     expect(handlers.keydown).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the start and result card clear of the rule line and the bottom row', () => {
+    for (const lines of [2, 3]) {
+      const box = cardBox(lines);
+      expect(box.y).toBeGreaterThan(RULE_Y);
+      expect(box.y + box.height).toBeLessThan(HUD_Y - 18);
+    }
   });
 });
