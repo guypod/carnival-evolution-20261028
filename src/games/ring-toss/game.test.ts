@@ -8,6 +8,7 @@ import {
   bottleAt,
   createState,
   goldenIndex,
+  ringStack,
   step,
   takeFinalScore,
   toss,
@@ -179,5 +180,25 @@ describe('ring toss', () => {
     expect(goldenIndex(0, 0)).not.toBe(goldenIndex(0, 1));
     const goldenXs = (s: RingTossState) => s.bottles.filter((b) => b.golden).map((b) => b.x);
     expect(goldenXs(next)).not.toEqual(goldenXs(createState(0)));
+  });
+});
+
+describe('ring stack', () => {
+  it('shows one ring per ring left, and loses one with every throw', () => {
+    const state = createState();
+    expect(ringStack(state.ringsLeft)).toHaveLength(RINGS_PER_ROUND);
+    for (let thrown = 1; thrown <= RINGS_PER_ROUND; thrown++) {
+      toss(state, 400, 200);
+      expect(ringStack(state.ringsLeft)).toHaveLength(state.ringsLeft);
+      expect(state.ringsLeft).toBe(RINGS_PER_ROUND - thrown);
+    }
+    expect(ringStack(state.ringsLeft)).toEqual([]);
+  });
+
+  it('stacks the rings upwards from the bottom of the peg', () => {
+    const stack = ringStack(3);
+    expect(stack[1].y).toBeLessThan(stack[0].y);
+    expect(stack[2].y).toBeLessThan(stack[1].y);
+    expect(new Set(stack.map((r) => r.x)).size).toBe(1);
   });
 });

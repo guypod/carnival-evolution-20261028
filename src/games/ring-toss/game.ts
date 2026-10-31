@@ -8,6 +8,8 @@ export const FLIGHT_TIME = 0.5;
 /** A ring scores when it lands this close to a bottle's neck. */
 export const RINGER_RADIUS = 18;
 export const THROWER = { x: WIDTH / 2, y: HEIGHT - 30 } as const;
+/** The peg beside the thrower that holds the rings still to throw. */
+export const RING_STACK = { x: THROWER.x + 56, y: THROWER.y + 14, gap: 4 } as const;
 /** Pixels per second the aim moves when steered with the arrow keys. */
 export const AIM_SPEED = 360;
 
@@ -119,6 +121,14 @@ export function toss(state: RingTossState, aimX: number, aimY: number): boolean 
   });
   state.ringsLeft -= 1;
   return true;
+}
+
+/** Where each ring left sits on the stack, bottom first: one entry per ring left. */
+export function ringStack(ringsLeft: number): { x: number; y: number }[] {
+  return Array.from({ length: Math.max(ringsLeft, 0) }, (_, i) => ({
+    x: RING_STACK.x,
+    y: RING_STACK.y - i * RING_STACK.gap,
+  }));
 }
 
 function moveBottle(bottle: Bottle, dt: number) {
@@ -276,10 +286,33 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
   }
   ctx.globalAlpha = 1;
 
-  ctx.fillStyle = colors.surface;
+  // The thrower: a wooden post with a cream hand on top, outlined so it stands
+  // out from the dark background.
+  ctx.fillStyle = colors.wood;
+  ctx.strokeStyle = colors.text;
+  ctx.lineWidth = 2;
+  ctx.fillRect(THROWER.x - 6, THROWER.y, 12, HEIGHT - THROWER.y);
+  ctx.strokeRect(THROWER.x - 6, THROWER.y, 12, HEIGHT - THROWER.y);
+  ctx.fillStyle = colors.text;
   ctx.beginPath();
-  ctx.arc(THROWER.x, THROWER.y, 20, 0, Math.PI * 2);
+  ctx.arc(THROWER.x, THROWER.y, 14, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillRect(THROWER.x - 13, THROWER.y - 22, 6, 14);
+  ctx.fillRect(THROWER.x - 5, THROWER.y - 26, 6, 18);
+  ctx.fillRect(THROWER.x + 3, THROWER.y - 24, 6, 16);
+  ctx.fillRect(THROWER.x + 11, THROWER.y - 6, 10, 6);
+
+  // The rings left, stacked on a peg beside the thrower.
+  ctx.fillStyle = colors.wood;
+  ctx.fillRect(
+    RING_STACK.x - 3,
+    RING_STACK.y - RINGS_PER_ROUND * RING_STACK.gap - 6,
+    6,
+    RINGS_PER_ROUND * RING_STACK.gap + 12,
+  );
+  ctx.strokeStyle = colors.stripeA;
+  ctx.lineWidth = 3;
+  for (const ring of ringStack(state.ringsLeft)) drawRing(ctx, ring.x, ring.y, 0.8);
 
   ctx.fillStyle = colors.text;
   ctx.font = canvasFont('body', 'bold');
