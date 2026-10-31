@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  BOT_ID,
   checkContract,
   OWNER_ID,
   PR_WRITING_INSTRUCTIONS,
@@ -18,6 +19,7 @@ const manifest = JSON.parse(readFileSync(new URL('../../tessl.json', import.meta
 const clone = () => structuredClone(manifest);
 const repository = { id: REPOSITORY_ID };
 const owner = { id: OWNER_ID, type: 'User' };
+const tesslBot = { id: BOT_ID, login: 'tessl-app[bot]', type: 'Bot' };
 const tesslPr = (state, extra = {}) => ({
   number: 7,
   state,
@@ -31,6 +33,20 @@ const positives = {
   'github-issue-labelled': [
     'github:issues.labeled',
     { label: { name: 'tessl' }, sender: owner, issue: issue('open'), repository },
+  ],
+  'native-bot-backlog-labelled': [
+    'github:issues.labeled',
+    {
+      label: { name: 'tessl' },
+      sender: tesslBot,
+      issue: {
+        number: 8,
+        state: 'open',
+        user: tesslBot,
+        labels: [{ name: 'auto backlog' }, { name: 'tessl' }],
+      },
+      repository: { ...repository, full_name: 'guypod/carnival-evolution-20261028', fork: false },
+    },
   ],
   'shepherd-pr-review': [
     'github:pull_request_review.submitted',
@@ -133,8 +149,8 @@ test('root AGENTS.md keeps its workflow section scoped as pacing, not permission
   assert.doesNotMatch(section, /pr-writing|cold-reader/);
 });
 
-test('every one of the eleven routes has a positive fixture that only it accepts', () => {
-  assert.equal(Object.keys(manifest.triggers).length, 11);
+test('every one of the twelve routes has a positive fixture that only it accepts', () => {
+  assert.equal(Object.keys(manifest.triggers).length, 12);
   for (const [name, [event, payload]] of Object.entries(positives)) {
     assert.deepEqual(matchingTriggers(manifest, event, payload), [name], name);
   }
@@ -268,12 +284,24 @@ test('the original manifest fails the narrow guard contract', () => {
     delete trigger.when['event.repository.id'];
   delete original.triggers['follow-ticket-changes-github-ended'].when['event.issue.state'];
   delete original.triggers['follow-ticket-changes-pr-closed'].when['event.pull_request.state'];
-  assert.equal(checkContract(original).length, 11);
+  assert.equal(checkContract(original).length, 12);
 });
 
 test('unsafe mutants fail the contract', () => {
   const mutants = {
     'drop the owner guard': (m) => delete m.triggers['shepherd-pr-review'].when['event.sender.id'],
+    'drop the bot sender guard': (m) =>
+      delete m.triggers['native-bot-backlog-labelled'].when['event.sender.id'],
+    'drop the bot author guard': (m) =>
+      delete m.triggers['native-bot-backlog-labelled'].when['event.issue.user.id'],
+    'drop the backlog label guard': (m) =>
+      delete m.triggers['native-bot-backlog-labelled'].when['event.issue.labels.*.name'],
+    'drop the fork guard': (m) =>
+      delete m.triggers['native-bot-backlog-labelled'].when['event.repository.fork'],
+    'point the bot route at implementation': (m) =>
+      (m.triggers['native-bot-backlog-labelled'].action = 'implement-github-issue'),
+    'widen the owner trigger to bots': (m) =>
+      delete m.triggers['github-issue-labelled'].when['event.sender.type'],
     'drop a repository guard': (m) =>
       delete m.triggers['shepherd-checks-passed'].when['event.repository.id'],
     'drop the head repo guard': (m) =>
@@ -331,4 +359,64 @@ test('unsafe mutants fail the contract', () => {
     const [event, payload] = positives[name];
     assert.deepEqual(matchingTriggers(manifest, event, payload), [name]);
   }
+});
+
+test('the bot backlog route is separate, narrow, and leaves the owner trigger byte-for-byte unchanged', () => {
+  // The owner trigger, exactly as on main before issue #425.
+  assert.equal(
+    JSON.stringify(manifest.triggers['github-issue-labelled']),
+    JSON.stringify({
+      on: ['github:issues.labeled'],
+      when: {
+        'event.label.name': 'tessl',
+        'event.sender.type': 'User',
+        'event.sender.id': 1106394,
+        'event.issue.state': 'open',
+        'event.repository.id': 1437265009,
+      },
+      concurrency: {
+        keys: [{ key: 'implement:{{ event.repository.id }}#{{ event.issue.number }}', limit: 1 }],
+      },
+      action: 'implement-github-issue',
+    }),
+  );
+  const [event, payload] = positives['native-bot-backlog-labelled'];
+  assert.deepEqual(matchingTriggers(manifest, event, payload), ['native-bot-backlog-labelled']);
+  // It never starts implementation itself: only the admission check does.
+  assert.deepEqual(manifest.triggers['native-bot-backlog-labelled'].action, {
+    use: 'native-intake',
+    inputs: { MODE: 'admit' },
+  });
+  const cases = [
+    (p) => (p.sender = owner),
+    (p) => (p.sender = { ...tesslBot, type: 'User' }),
+    (p) => (p.sender = { ...tesslBot, id: 1 }),
+    (p) => (p.sender = { ...tesslBot, login: 'other[bot]' }),
+    (p) => (p.issue.user = owner),
+    (p) => (p.issue.user = { ...tesslBot, type: 'User' }),
+    (p) => (p.issue.state = 'closed'),
+    (p) => (p.issue.pull_request = { url: 'x' }),
+    (p) => (p.issue.labels = [{ name: 'tessl' }]),
+    (p) => (p.label.name = 'auto backlog'),
+    (p) => (p.repository.id = 1),
+    (p) => (p.repository.full_name = 'someone/carnival-evolution-20261028'),
+    (p) => (p.repository.fork = true),
+    (p) => delete p.repository.fork,
+  ];
+  for (const change of cases)
+    assert.equal(mutate('native-bot-backlog-labelled', change), false, String(change));
+  // A comment, or any other event shape, never reaches it.
+  assert.equal(
+    matchesTrigger(
+      manifest.triggers['native-bot-backlog-labelled'],
+      'github:issue_comment.created',
+      payload,
+    ),
+    false,
+  );
+  // The owner route still refuses the bot's label.
+  assert.equal(
+    mutate('github-issue-labelled', (p) => (p.sender = tesslBot)),
+    false,
+  );
 });

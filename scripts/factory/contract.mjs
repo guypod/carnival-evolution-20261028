@@ -8,6 +8,7 @@
 export const REPOSITORY_ID = 1437265009;
 export const OWNER_ID = 1106394;
 export const REVIEWER_ID = 325629464;
+export const BOT_ID = 295179765;
 
 const ENVIRONMENT = 'carnival-evolution-20261028-factory';
 const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
@@ -76,6 +77,17 @@ export const EXPECTED_ACTIONS = {
     timeout: '20m',
     concurrency: writer,
   },
+  // The native creative intake (issue #425): the backlog producer and the
+  // dispatcher with its evolution merge gate, one skill chosen by its MODE
+  // input. It holds the writer key because it files issues, labels and merges.
+  'native-intake': {
+    skill: 'file:tessl-factory#native-intake',
+    environment: ENVIRONMENT,
+    agent: 'claude-code',
+    model: 'claude-opus-5-5',
+    timeout: '30m',
+    concurrency: writer,
+  },
 };
 
 // Test health weekly, per WORKSHOP module 04, visual repair every six hours
@@ -83,7 +95,8 @@ export const EXPECTED_ACTIONS = {
 // the scheduler's own Europe/London timezone so DST needs no change: lens
 // tuning twenty minutes before each six-hour London block ends, review
 // feedback and run learning daily, and the instruction tidy on Mondays. No
-// other schedules: gameplay batching is owned outside this repository.
+// other schedules, apart from the native intake (issue #425): the backlog at
+// London 00, 06, 12 and 18 and the dispatcher every 20 minutes.
 const learner = (name) => ({
   use: 'review-lens-improvement',
   inputs: { LEARNER: name },
@@ -128,6 +141,20 @@ export const EXPECTED_SCHEDULES = {
       'Mondays at 05:30 London: propose replacing AGENTS.md guidance with tests, lint or area-scoped instructions',
     action: learner('instruction-tidy'),
   },
+  'native-backlog-six-hourly': {
+    cron: '0 0,6,12,18 * * *',
+    timezone: 'Europe/London',
+    description:
+      'At 00:00, 06:00, 12:00 and 18:00 London: file exactly 18 distinct enhancement issues labelled auto backlog, never tessl',
+    action: { use: 'native-intake', inputs: { MODE: 'backlog' } },
+  },
+  'native-dispatch-twenty-minutes': {
+    cron: '*/20 * * * *',
+    timezone: 'Europe/London',
+    description:
+      'Every 20 minutes London: merge Tessl PRs that pass the evolution gate on their exact head, then hand one eligible backlog issue to Tessl',
+    action: { use: 'native-intake', inputs: { MODE: 'dispatch' } },
+  },
 };
 
 const tesslLabel = (path) => ({ [path]: { any: { equals: 'tessl' } } });
@@ -156,6 +183,31 @@ export const EXPECTED_TRIGGERS = {
     },
     concurrency: implementKey,
     action: 'implement-github-issue',
+  },
+  // The owner-approved bot route (issue #425): only the Tessl app's own tessl
+  // label on its own open auto backlog issue here. It starts no
+  // implementation itself: native-intake MODE=admit checks GitHub as it is
+  // now and alone hands off. github-issue-labelled above is unchanged.
+  'native-bot-backlog-labelled': {
+    description:
+      "The Tessl app's own tessl label on its own open auto backlog issue in this repository runs the deterministic admission check, which alone may hand the issue to implement-github-issue",
+    on: ['github:issues.labeled'],
+    when: {
+      'event.label.name': 'tessl',
+      'event.sender.type': 'Bot',
+      'event.sender.id': BOT_ID,
+      'event.sender.login': 'tessl-app[bot]',
+      'event.issue.user.type': 'Bot',
+      'event.issue.user.id': BOT_ID,
+      'event.issue.state': 'open',
+      'event.issue.pull_request': { exists: false },
+      'event.issue.labels.*.name': { any: { equals: 'auto backlog' } },
+      ...repo,
+      'event.repository.full_name': 'guypod/carnival-evolution-20261028',
+      'event.repository.fork': false,
+    },
+    concurrency: key('native-admit:{{ event.repository.id }}#{{ event.issue.number }}'),
+    action: { use: 'native-intake', inputs: { MODE: 'admit' } },
   },
   'shepherd-pr-review': {
     on: ['github:pull_request_review.submitted'],
