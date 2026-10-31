@@ -76,6 +76,13 @@ export function aimFor(lane: number, power: number): Aim {
   return off < 0 ? 'under' : 'over';
 }
 
+/** The span of power, lowest first, that lands in `lane`'s 50 ring: the meter's target band. */
+export function targetBand(lane: number): { low: number; high: number } {
+  const centre = TARGETS[clampLane(lane)];
+  const inner = RINGS[0].within;
+  return { low: Math.max(centre - inner, 0), high: Math.min(centre + inner, 1) };
+}
+
 const AIM_TEXT: Record<Aim, string> = {
   under: 'Too little power',
   over: 'Too much power',
@@ -292,22 +299,28 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
     ctx.fillText('50', x, rampY(centre) + 5);
   }
 
-  // The power meter, with each lane's 50 band marked for the chosen lane.
+  // The power meter, with the band that reaches the chosen lane's 50 ring.
+  const meterY = (power: number) => METER.y + METER.h * (1 - power);
   ctx.fillStyle = colors.surface;
   ctx.fillRect(METER.x, METER.y, METER.w, METER.h);
-  const target = TARGETS[state.lane];
-  const inner = RINGS[0].within;
+  const band = targetBand(state.lane);
   ctx.fillStyle = colors.accent;
-  ctx.globalAlpha = 0.5;
-  ctx.fillRect(METER.x, METER.y + METER.h * (1 - target - inner), METER.w, METER.h * inner * 2);
-  ctx.globalAlpha = 1;
+  ctx.fillRect(METER.x, meterY(band.high), METER.w, meterY(band.low) - meterY(band.high));
   const power = state.phase === 'aiming' ? meterPower(state.meterTime) : state.power;
   ctx.fillStyle = colors.stripeA;
-  ctx.fillRect(METER.x - 6, METER.y + METER.h * (1 - power) - 3, METER.w + 12, 6);
+  ctx.fillRect(METER.x - 6, meterY(power) - 3, METER.w + 12, 6);
   ctx.fillStyle = colors.text;
   ctx.font = canvasFont('small');
   ctx.textAlign = 'center';
   ctx.fillText('Power', METER.x + METER.w / 2, METER.y - 10);
+  const labelX = METER.x + METER.w + 12;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = colors.muted;
+  ctx.fillText('Full', labelX, meterY(1) + 10);
+  ctx.fillText('Empty', labelX, meterY(0));
+  ctx.fillStyle = colors.accent;
+  ctx.font = canvasFont('small', 'bold');
+  ctx.fillText('50 zone', labelX, meterY((band.low + band.high) / 2) + 5);
 
   if (state.phase === 'rolling') {
     ctx.fillStyle = colors.text;
