@@ -2545,7 +2545,6 @@ function liveEvidence(merge, digest, at = '2026-10-31T09:30:00Z') {
 test('shipped: a deploy alone, premerge evidence or a bare live pass never ships', () => {
   const MERGE = 'c'.repeat(40);
   const EV = 'e'.repeat(40);
-  const DIR = liveDir(MERGE, FLOW);
   const files = changed('src/games/mini-putt/game.ts');
   const ev = liveEvidence(MERGE, 'd'.repeat(64));
   const good = {
@@ -2739,7 +2738,6 @@ test('shipped: deploy context times the first successful deploy job across rerun
 
 test('shipped: a failed rerun of the same Pages run keeps the verified deploy and is reported', () => {
   const MERGE = 'c'.repeat(40);
-  const DIR = liveDir(MERGE, FLOW);
   const digest = 'd'.repeat(64);
   const ev = liveEvidence(MERGE, digest, '2026-10-31T02:30:00Z');
   const rec = {
