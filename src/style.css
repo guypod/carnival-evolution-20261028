@@ -187,53 +187,6 @@ kbd {
   display: none;
 }
 
-/*
- * Phone width: Help, Guide, the tour, Photo and the map view share one row of
- * icon buttons. Each keeps its accessible name in aria-label, and the
- * next-landmark hint shrinks to one line under the row.
- */
-@media (max-width: 560px) {
-  .midway-toolbar {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 4px;
-    max-width: 100%;
-  }
-
-  .midway-toggles,
-  .midway-view {
-    gap: 4px;
-  }
-
-  .toolbar-label {
-    display: none;
-  }
-
-  .toolbar-icon {
-    display: inline;
-  }
-
-  .midway-toolbar button,
-  .midway-toolbar .help-toggle,
-  .midway-toolbar .guide-toggle,
-  .midway-toolbar .tour-start {
-    min-width: 32px;
-    padding: 4px 6px;
-  }
-
-  .help-toggle[aria-expanded='true']::after,
-  .guide-toggle[aria-expanded='true']::after {
-    content: '✕';
-  }
-
-  .discovery-hint {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .midway-view button,
 .midway-ferry button,
 .midway-homeward button {
@@ -305,6 +258,56 @@ kbd {
 .guide-toggle:focus-visible {
   outline: 3px solid var(--color-text);
   outline-offset: 2px;
+}
+
+/*
+ * Phone width: Help, Guide, the tour, Photo and the map view share one row of
+ * icon buttons. Each keeps its accessible name in aria-label, and the
+ * next-landmark hint shrinks to one line under the row. This block sits after
+ * the button and toggle rules so its sizes win, and the row wraps instead of
+ * running off the narrowest screens.
+ */
+@media (max-width: 560px) {
+  .midway-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+    max-width: 100%;
+  }
+
+  .midway-toggles,
+  .midway-view {
+    gap: 4px;
+  }
+
+  .toolbar-label {
+    display: none;
+  }
+
+  .toolbar-icon {
+    display: inline;
+  }
+
+  .midway-toolbar button,
+  .midway-toolbar .help-toggle,
+  .midway-toolbar .guide-toggle,
+  .midway-toolbar .tour-start {
+    min-width: 32px;
+    padding: 4px 6px;
+  }
+
+  .help-toggle[aria-expanded='true']::after,
+  .guide-toggle[aria-expanded='true']::after {
+    content: '✕';
+  }
+
+  .discovery-hint {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* The open guide is one bounded panel with one scroll area, so everything in
