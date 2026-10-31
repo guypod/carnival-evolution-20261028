@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  FLOW_SPEED,
+  RIPPLE_GAP,
+  currentOffset,
   LANES,
   MAX_FRAME,
   MAX_STREAK_BONUS,
@@ -355,5 +358,24 @@ describe('star streak', () => {
     expect(next.streak).toBe(0);
     expect(next.peakStreak).toBe(0);
     expect(next.bonus).toBe(0);
+  });
+});
+
+describe('river current', () => {
+  it('flows at the same speed the objects float', () => {
+    expect(currentOffset(0.1, false)).toBeCloseTo(FLOW_SPEED * 0.1);
+    expect(currentOffset(RIPPLE_GAP / FLOW_SPEED, false)).toBeCloseTo(0);
+  });
+
+  it('wraps to one ripple gap', () => {
+    for (const t of [0, 1.3, 7.9, 20]) {
+      const offset = currentOffset(t, false);
+      expect(offset).toBeGreaterThanOrEqual(0);
+      expect(offset).toBeLessThan(RIPPLE_GAP);
+    }
+  });
+
+  it('holds still under Quiet', () => {
+    expect(currentOffset(3.7, true)).toBe(0);
   });
 });

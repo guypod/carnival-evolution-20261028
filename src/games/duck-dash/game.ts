@@ -1,4 +1,5 @@
 import { canvasFont, recordScore, theme, type CarnivalGame } from '../../carnival';
+import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../../midway/motion';
 
 const { width: WIDTH, height: HEIGHT } = theme.canvas;
 
@@ -317,6 +318,20 @@ const DUCK_Y = 380;
 const BUTTON_Y = 430;
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
 
+/** Pixels the river flows per second: the same speed the stars and reeds float. */
+export const FLOW_SPEED = (DUCK_Y - TOP_Y) / TRAVEL_TIME;
+/** Pixels between one row of current ripples and the next. */
+export const RIPPLE_GAP = 60;
+
+/**
+ * How far down the current ripples sit after `seconds` of flowing, wrapped to
+ * one ripple gap. Under Quiet the current holds still.
+ */
+export function currentOffset(seconds: number, quiet: boolean): number {
+  if (quiet) return 0;
+  return (((seconds * FLOW_SPEED) % RIPPLE_GAP) + RIPPLE_GAP) % RIPPLE_GAP;
+}
+
 export function laneCentre(lane: number): number {
   return RIVER.x + LANE_W * (lane + 0.5);
 }
@@ -343,11 +358,29 @@ function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.fill();
 }
 
+// A reed clump: tall leaning blades with cattail heads on a muddy base, so it
+// reads as an upright tuft rather than a round star.
 function drawReed(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  ctx.fillStyle = theme.colors.wood;
-  for (const dx of [-14, 0, 14]) ctx.fillRect(x + dx - 3, y - 26, 6, 40);
+  ctx.fillStyle = theme.colors.surface;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 14, 26, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = theme.colors.wood;
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (const lean of [-16, -8, 0, 8, 16]) {
+    ctx.beginPath();
+    ctx.moveTo(x + lean / 3, y + 12);
+    ctx.quadraticCurveTo(x + lean / 2, y - 10, x + lean, y - 30);
+    ctx.stroke();
+  }
   ctx.fillStyle = theme.colors.danger;
-  for (const dx of [-14, 0, 14]) ctx.fillRect(x + dx - 5, y - 34, 10, 14);
+  for (const lean of [-8, 8]) {
+    ctx.beginPath();
+    ctx.ellipse(x + lean * 0.8, y - 20, 4, 9, lean / 60, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.lineCap = 'butt';
 }
 
 function drawDuck(ctx: CanvasRenderingContext2D, x: number, y: number) {
@@ -373,7 +406,59 @@ function drawDuck(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fill();
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
+const BANK_W = 18;
+
+function drawRiver(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.water;
+  ctx.fillRect(RIVER.x, RIVER.y, RIVER.w, RIVER.h);
+  for (let lane = 0; lane < LANES; lane++) {
+    if (lane === state.lane) {
+      ctx.fillStyle = colors.surface;
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(RIVER.x + lane * LANE_W, RIVER.y, LANE_W, RIVER.h);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // The current: soft ripples that drift down at the items' speed.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(RIVER.x, RIVER.y, RIVER.w, RIVER.h);
+  ctx.clip();
+  ctx.strokeStyle = colors.stripeB;
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = 2;
+  for (let lane = 0; lane < LANES; lane++) {
+    for (let y = RIVER.y - RIPPLE_GAP + offset; y < RIVER.y + RIVER.h; y += RIPPLE_GAP) {
+      for (const dx of [-0.25, 0.2]) {
+        const cx = laneCentre(lane) + dx * LANE_W;
+        const cy = y + (dx < 0 ? 0 : RIPPLE_GAP / 2);
+        ctx.beginPath();
+        ctx.moveTo(cx - 14, cy);
+        ctx.quadraticCurveTo(cx - 7, cy - 5, cx, cy);
+        ctx.quadraticCurveTo(cx + 7, cy + 5, cx + 14, cy);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+
+  for (let lane = 1; lane < LANES; lane++) {
+    ctx.fillStyle = colors.stripeB;
+    ctx.fillRect(RIVER.x + lane * LANE_W - 1.5, RIVER.y, 3, RIVER.h);
+  }
+
+  // Banks: earth on both sides with a pale waterline.
+  for (const x of [RIVER.x - BANK_W, RIVER.x + RIVER.w]) {
+    ctx.fillStyle = colors.wood;
+    ctx.fillRect(x, RIVER.y, BANK_W, RIVER.h);
+    ctx.fillStyle = colors.stripeB;
+    ctx.fillRect(x === RIVER.x - BANK_W ? RIVER.x - 3 : RIVER.x, RIVER.y, 3, RIVER.h);
+  }
+}
+
+function draw(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
   const { colors } = theme;
   ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -395,20 +480,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState) {
   ctx.fillText(`Stars ${state.collected}`, WIDTH - 16, 60);
   ctx.fillText(`Reeds hit ${state.hits}`, WIDTH - 16, 90);
 
-  ctx.fillStyle = colors.water;
-  ctx.fillRect(RIVER.x, RIVER.y, RIVER.w, RIVER.h);
-  for (let lane = 0; lane < LANES; lane++) {
-    if (lane === state.lane) {
-      ctx.fillStyle = colors.surface;
-      ctx.globalAlpha = 0.25;
-      ctx.fillRect(RIVER.x + lane * LANE_W, RIVER.y, LANE_W, RIVER.h);
-      ctx.globalAlpha = 1;
-    }
-    if (lane > 0) {
-      ctx.fillStyle = colors.stripeB;
-      ctx.fillRect(RIVER.x + lane * LANE_W - 1, RIVER.y, 2, RIVER.h);
-    }
-  }
+  drawRiver(ctx, state, offset);
 
   for (const object of state.objects) {
     const x = laneCentre(object.lane);
@@ -552,12 +624,19 @@ export const duckDash: CarnivalGame = {
     };
     document.addEventListener('visibilitychange', onVisibility);
 
+    const quiet = isQuiet(
+      motionPreference.load(),
+      window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false,
+    );
+    let flowed = 0;
     let frame = 0;
     const loop = (time: number) => {
       frame = requestAnimationFrame(loop);
-      step(state, clock.tick(time));
+      const dt = clock.tick(time);
+      if (state.phase === 'playing') flowed += Math.min(dt, MAX_FRAME);
+      step(state, dt);
       saveFinalScore(state, record);
-      draw(ctx, state);
+      draw(ctx, state, currentOffset(flowed, quiet));
     };
     frame = requestAnimationFrame(loop);
 
