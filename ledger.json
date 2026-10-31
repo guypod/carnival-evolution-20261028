@@ -1,12 +1,10 @@
 {
   "version": 1,
-  "head": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+  "head": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
   "reviewedThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
   "pending": [
-    "#/party",
     "#/records",
     "#/booths",
-    "#/postcard",
     "#/plush",
     "#/tune",
     "#/balloon",
@@ -35,11 +33,11 @@
       "route": "#/",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at 5f4ba10: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon, beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
+      "note": "Still at 0e55deb: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon, beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "open",
-      "seenOn": "2026-10-31T00:34:48.501Z"
+      "seenOn": "2026-10-31T06:52:20.583Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:materials",
@@ -49,8 +47,10 @@
       "note": "Still at 5f4ba10: booth prize cards are flat purple rectangles with a yellow outline on a flat dark page; the Prize Room and desk toy links are plain full-width yellow bars; no wood, paper tags or lantern glow.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
-      "status": "open",
-      "seenOn": "2026-10-31T00:34:48.501Z"
+      "status": "pr-open",
+      "seenOn": "2026-10-31T00:34:48.501Z",
+      "applied": [],
+      "pr": 427
     },
     {
       "fingerprint": "#/prizes:desktop-clean:depth",
@@ -60,8 +60,10 @@
       "note": "Still at 5f4ba10: cards, the dashed Carnival Collector panel and the link bars have no shadow, frame or counter edge on the full-bleed dark background.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
       "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
-      "status": "open",
-      "seenOn": "2026-10-31T00:34:48.501Z"
+      "status": "pr-open",
+      "seenOn": "2026-10-31T00:34:48.501Z",
+      "applied": [],
+      "pr": 427
     },
     {
       "fingerprint": "#/room:desktop-clean:controls",
@@ -70,9 +72,9 @@
       "criterion": "controls",
       "note": "Spot grid buttons, collection buttons (Striped Rug, Paper Lantern...), Turn/Put away/Undo/Clear the room and Previous/Next spot are raw grey browser-default buttons with default font size; the Backdrop radios are default blue radio dots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T18:19:26.239Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -85,9 +87,9 @@
       "criterion": "composition",
       "note": "The room scene sits at left with an empty right half at 1280x800, followed by a long unframed column of controls, a clipped scrolling collection list and a plain ordered list of spots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T18:19:26.239Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -100,9 +102,9 @@
       "criterion": "focus-contrast",
       "note": "Locked collection buttons and the disabled Turn/Put away/Undo buttons show light grey text on a mid-grey fill, well under 4.5:1.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T18:19:26.239Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -115,9 +117,9 @@
       "criterion": "spacing",
       "note": "Collection, backdrop, action buttons and the walk-the-room list are loose blocks without a shared framed panel; the collection list is cut off mid-row (Tiny Mallet Keyring) against the Backdrop fieldset.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T18:19:26.239Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -130,9 +132,9 @@
       "criterion": "art-integration",
       "note": "The 12 spot buttons under the scene are blank grey bars labelled with a single dot, detached from the drawing they control.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T18:19:26.239Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -190,9 +192,9 @@
       "criterion": "controls",
       "note": "Still at a863a17: Player 1/2 nickname fields are default white inputs with grey placeholder and the mode radios are default blue/white dots, unlike the themed Start party button.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T16:24:35.396Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "398:merged:2026-10-30T15:46:01Z"
       ],
@@ -203,11 +205,11 @@
       "route": "#/party",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Still at 3f87238: the framed setup panel sits left at 720px wide with a large empty dark area to its right and below; there is no scene or stall as focal point, only the form panel.",
+      "note": "Still at 0e55deb: the framed setup panel sits left at 720px wide with a large empty dark area to its right and below; there is no scene or stall as focal point, only the form panel.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "open",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-10-31T06:52:20.583Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:spacing",
@@ -216,9 +218,9 @@
       "criterion": "spacing",
       "note": "Still at a863a17: the 200px inputs sit under a full-width fieldset, with a large uneven gap between Start party and the closing note.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T16:24:35.396Z",
+      "seenOn": "2026-10-31T06:52:20.583Z",
       "applied": [
         "398:merged:2026-10-30T15:46:01Z"
       ],
@@ -295,11 +297,11 @@
       "route": "#/postcard",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "The 600px postcard sits left with a large empty area to its right, and below it two long plain bulleted lists repeat the card's contents, so the page reads as a document rather than a souvenir focal point.",
+      "note": "Still at 0e55deb: the 600px postcard sits left with a large empty area to its right, and below it two long plain bulleted lists repeat the card's contents, so the page reads as a document rather than a souvenir focal point.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "open",
-      "seenOn": "2026-10-30T16:26:22.640Z"
+      "seenOn": "2026-10-31T06:52:20.583Z"
     },
     {
       "fingerprint": "#/postcard:desktop-clean:spacing",
@@ -308,9 +310,9 @@
       "criterion": "spacing",
       "note": "The 'On the card' and 'Stamps and emblems' sections are plain default bullet lists loose on the background, not grouped in a framed panel with the postcard and its name/download controls.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "resolved",
-      "seenOn": "2026-10-30T16:26:22.640Z"
+      "seenOn": "2026-10-31T06:52:20.583Z"
     },
     {
       "fingerprint": "#/plush:desktop-clean:controls",
@@ -606,8 +608,10 @@
       "note": "Still at 5f4ba10: the Carnival Collector badge and the icons before Arrange your Prize Room and Wind up a desk toy render as missing-glyph boxes.",
       "firstSeen": "2026-10-30T16:34:27.953Z",
       "seenAt": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
-      "status": "open",
-      "seenOn": "2026-10-31T00:34:48.501Z"
+      "status": "pr-open",
+      "seenOn": "2026-10-31T00:34:48.501Z",
+      "applied": [],
+      "pr": 427
     },
     {
       "fingerprint": "#/play/puppet-theatre:narrow-clean:responsive",
@@ -658,20 +662,22 @@
       "route": "#/room",
       "state": "narrow-interaction",
       "criterion": "typography",
-      "note": "Still at 0cf60d3: at 390px after placing two objects, the filled spot tiles break labels mid-word ('Paper Lanter / n', 'Stripe / d Rug').",
+      "note": "Still at 0e55deb: at 390px after placing two objects, the filled spot tiles break labels mid-word ('Paper Lanter / n', 'Stripe / d Rug').",
       "firstSeen": "2026-10-30T16:36:36.685Z",
-      "seenAt": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
       "status": "open",
-      "seenOn": "2026-10-30T18:19:26.239Z"
+      "seenOn": "2026-10-31T06:52:20.583Z"
     }
   ],
   "reviewedAt": {
-    "#/": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+    "#/": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
     "#/prizes": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
-    "#/room": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
+    "#/room": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
     "#/toy": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
     "#/trail": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
-    "#/circuit": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7"
+    "#/circuit": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
+    "#/party": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+    "#/postcard": "0e55deb9a9db8016a21a229c545bb6823af7aa3c"
   },
-  "reconciledAt": "2026-10-31T00:32:13.952Z"
+  "reconciledAt": "2026-10-31T06:50:48.674Z"
 }
