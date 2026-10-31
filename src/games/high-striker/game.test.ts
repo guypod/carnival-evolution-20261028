@@ -7,6 +7,8 @@ import {
   FLIGHT_TIME,
   TIMING_LABELS,
   ZONES,
+  ZONE_COLOURS,
+  MARKER_COLOURS,
   MARKER_PERIOD,
   SWINGS,
   bestSwing,
@@ -19,6 +21,7 @@ import {
   isActionKey,
   lastStrike,
   listen,
+  markerOutline,
   markerPosition,
   nextSwing,
   press,
@@ -320,6 +323,43 @@ describe('high striker timing feedback', () => {
         expect(label.y).toBeLessThanOrEqual(METER.y + METER.h);
       }
     }
+  });
+
+  it('keeps the moving marker at 3:1 or better against every zone', () => {
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: string, b: string) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    expect(ZONE_COLOURS).toHaveLength(ZONES.length);
+    for (const zone of ZONE_COLOURS) {
+      const best = Math.max(
+        contrast(theme.colors[MARKER_COLOURS.fill], theme.colors[zone]),
+        contrast(theme.colors[MARKER_COLOURS.outline], theme.colors[zone]),
+      );
+      expect(best, zone).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('draws the moving marker as a pointer centred on its position, clear of the bell value', () => {
+    const x = METER.x + METER.w / 2;
+    const points = markerOutline(x);
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBe(x);
+    // Wider than the old 6px line, so it is easy to follow.
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThanOrEqual(16);
+    expect(Math.min(...ys)).toBeLessThan(METER.y);
+    expect(Math.max(...ys)).toBeGreaterThan(METER.y + METER.h);
+    // With its 4px outline it reaches no further than the struck marker, 16px each side.
+    expect(Math.min(...ys) - 2).toBeGreaterThanOrEqual(METER.y - 16);
+    expect(Math.max(...ys) + 2).toBeLessThanOrEqual(METER.y + METER.h + 16);
   });
 
   it('marks the first of tied swings as best', () => {

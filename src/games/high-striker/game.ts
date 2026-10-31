@@ -298,6 +298,36 @@ export const BUTTON = { x: WIDTH - 280, y: HEIGHT - 90, w: 240, h: 52 } as const
 export const TOWER = { x: 140, top: 90, bottom: HEIGHT - 60, w: 40 } as const;
 export const METER = { x: 300, y: 300, w: 440, h: 36 } as const;
 
+/** Theme colour of each zone in `ZONES`, from the bell zone out. */
+export const ZONE_COLOURS = ['accent', 'stripeA', 'wood', 'surface', 'background'] as const;
+
+/**
+ * The moving marker's theme colours. Light fill with a dark outline: over every
+ * zone at least one of the two reaches 3:1, so the marker never blends in.
+ */
+export const MARKER_COLOURS = { fill: 'text', outline: 'background' } as const;
+
+/**
+ * The moving marker's shape at x: a pointer above the meter and one below,
+ * joined by a bar across it, like a hammer head. Clockwise from the top left.
+ */
+export function markerOutline(x: number): { x: number; y: number }[] {
+  const bar = 4;
+  const head = 10;
+  const top = METER.y - 14;
+  const bottom = METER.y + METER.h + 14;
+  return [
+    { x: x - head, y: top },
+    { x: x + head, y: top },
+    { x: x + bar, y: METER.y },
+    { x: x + bar, y: METER.y + METER.h },
+    { x: x + head, y: bottom },
+    { x: x - head, y: bottom },
+    { x: x - bar, y: METER.y + METER.h },
+    { x: x - bar, y: METER.y },
+  ];
+}
+
 /** A zone's points value as drawn on the meter, centred on x with its baseline at y. */
 export interface ZoneLabel {
   text: string;
@@ -371,16 +401,9 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   ctx.fillText(`Total ${total(state)} / ${SWINGS * 100}`, WIDTH - 40, 80);
 
   // Power meter: zones drawn from the edges in, so the centre ends up brightest.
-  const zoneColours = [
-    colors.accent,
-    colors.stripeA,
-    colors.wood,
-    colors.surface,
-    colors.background,
-  ];
   for (let i = ZONES.length - 1; i >= 0; i--) {
     const half = (ZONES[i].within * METER.w) / 2;
-    ctx.fillStyle = zoneColours[i];
+    ctx.fillStyle = colors[ZONE_COLOURS[i]];
     ctx.fillRect(METER.x + METER.w / 2 - half, METER.y, half * 2, METER.h);
   }
   ctx.strokeStyle = colors.text;
@@ -403,8 +426,16 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   }
   if (state.phase === 'aiming') {
     const mx = METER.x + ((markerPosition(state.markerTime) + 1) / 2) * METER.w;
-    ctx.fillStyle = colors.text;
-    ctx.fillRect(mx - 3, METER.y - 12, 6, METER.h + 24);
+    ctx.beginPath();
+    for (const point of markerOutline(mx)) ctx.lineTo(point.x, point.y);
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = colors[MARKER_COLOURS.outline];
+    ctx.stroke();
+    ctx.fillStyle = colors[MARKER_COLOURS.fill];
+    ctx.fill();
+    ctx.lineWidth = 1;
   }
 
   ctx.textAlign = 'center';
