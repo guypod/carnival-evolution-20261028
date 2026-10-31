@@ -307,6 +307,45 @@ request reports. The dispatch
 mode of `tessl-factory/skills/native-intake` runs it for every required flow
 before the merge sweep.
 
+### Isolated capture (not yet authoritative)
+
+`scripts/visual/isolated-flow.sh <out dir> <flow> <candidate sha>` captures a
+flow on a pull request commit without running that commit's code on the host.
+It records evidence locally and publishes nothing.
+
+- `isolated-build.sh` exports the exact commit with `git archive` (no `.git`,
+  symlinks refused) into a fresh directory and runs the candidate's `npm ci`
+  and `vite build` in a disposable container from a digest-pinned
+  `node:22-bookworm-slim` image: the caller's non-root uid, `--cap-drop ALL`,
+  `no-new-privileges`, a read-only root, memory, CPU and process limits, no
+  host environment, home, `gh` config, Git directory or Docker socket.
+  `npm ci` has public registry networking with no credentials, and the build
+  runs with `--network none`. It refuses when Docker reports no seccomp or
+  namespace option.
+- The host serves only the built files, with the runner's own
+  `static-serve.mjs` on `127.0.0.1`. The candidate's Vite never runs on the
+  host, and paths outside `dist`, traversal and symlinks are refused.
+- The flow, its assertions and the report come from the runner checkout
+  (`flow.mjs`), which must be clean. Chromium is driven from outside the page.
+  The candidate's tests, screenshots and JSON are never read.
+- `isolated-record.mjs` accepts only `flow.json` and `<flow>-<state>.png` as
+  plain files, recomputes every sha256, and writes `provenance.json` naming the
+  candidate, the runner commit, `bootstrap: null` and `publishable: false`.
+- `isolated-canary.sh` tests the boundary with nonsecret canaries: a hostile
+  candidate's install script and build try to read a controller canary file,
+  write a trusted-code canary and the controller's Git directory, find the
+  Docker socket or a token in the environment, and leave a forged `flow.json`
+  with a traversal path and a symlinked screenshot. It fails if any attempt
+  worked. `--unboxed` runs the same candidate on the host as a control, and
+  reports every breach.
+
+Not done yet: no path publishes an isolated capture as a `browser-flow`
+check, and dispatch still reports every flow as owed. Publishing needs a
+runner commit that an operator pins after an independent review, recorded in
+the provenance as `bootstrap`; the candidate can never choose it, and the
+runner checkout's own `HEAD` is never taken as trusted. After this merges,
+native dispatch is meant to use the reviewed runner from `main`.
+
 `mergeOne` gates twice, then merges with GitHub's atomic merge API
 (`PUT pulls/<n>/merge`) with `sha` set to the head both gates saw, so GitHub
 refuses if the head moved. It never arms GitHub's auto-merge: this repository
