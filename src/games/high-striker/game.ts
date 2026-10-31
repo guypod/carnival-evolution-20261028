@@ -193,7 +193,7 @@ export function puckHeight(state: StrikerState, quiet = false): number {
 
 /**
  * Whether the bell is lit for a 100-point swing. It flashes, on and off every
- * tenth of the flight, while the puck holds at the top. In quiet mode it stays
+ * twentieth of the flight, only while the puck holds at the top. In quiet mode it stays
  * lit, without flashing, until the next swing starts.
  */
 export function bellLit(state: StrikerState, quiet = false): boolean {
@@ -202,7 +202,7 @@ export function bellLit(state: StrikerState, quiet = false): boolean {
   if (quiet) return true;
   if (state.phase !== 'flying') return false;
   const t = state.flyTime / FLIGHT_TIME;
-  return t >= RISE_END && t < HOLD_END + 0.2 && Math.floor((t - RISE_END) * 10) % 2 === 0;
+  return t >= RISE_END && t < HOLD_END && Math.floor((t - RISE_END) * 20) % 2 === 0;
 }
 
 /**
