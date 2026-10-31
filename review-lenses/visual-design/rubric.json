@@ -1,0 +1,15 @@
+{
+  "criteria": [
+    "composition",
+    "typography",
+    "spacing",
+    "depth",
+    "materials",
+    "art-integration",
+    "controls",
+    "responsive",
+    "focus-contrast",
+    "quiet"
+  ],
+  "verdicts": ["pass", "finding", "unverified"]
+}
