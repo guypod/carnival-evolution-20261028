@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Deliberately inconsistent sample for the visual-design lens. Colours copy
+     src/carnival/theme.ts because a standalone fixture cannot import it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inconsistent sample</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #1b1035;
+        color: #fff8e7;
+        font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px 16px;
+      }
+      button:focus {
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Ticket Counter</h1>
+      <p>Choose how many tickets you want.</p>
+      <label><input type="radio" name="n" checked /> One</label>
+      <label><input type="radio" name="n" /> Two</label>
+      <input type="text" placeholder="Your name" />
+      <button>Buy</button>
+      <table>
+        <tr>
+          <th>Tickets</th>
+          <th>Total</th>
+        </tr>
+        <tr>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+      </table>
+    </main>
+  </body>
+</html>
