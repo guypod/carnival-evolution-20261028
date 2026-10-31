@@ -9,7 +9,8 @@ Swing the mallet three times and try to ring the bell at the top of the tower.
   leaves Enter and Space to the browser: Enter activates the link, and Space
   keeps its native behaviour (it does not activate the link or strike).
 - A marker sweeps back and forth across the power meter, one full sweep there
-  and back every 1.6 seconds. Press **Strike!** (click or tap it, or press Space
+  and back every 1.6 seconds. Each coloured zone of the meter shows the points
+  it scores, with the bell's 100 just above the narrow centre zone. Press **Strike!** (click or tap it, or press Space
   or Enter) to lock it.
 - The puck flies up the tower to a height set by your score. A perfect hit
   rings the bell.
@@ -47,7 +48,7 @@ it, the error goes to the console and **Play again** still works.
 ## Files
 
 - `game.ts`: the game logic (`createState`, `markerPosition`,
-  `markerDirection`, `signedOffset`, `timingFor`, `zoneFor`, `scoreFor`,
+  `markerDirection`, `signedOffset`, `timingFor`, `zoneFor`, `scoreFor`, `zoneLabels`,
   `lastStrike`, `feedback`, `bestSwing`, `breakdown`, `breakdownRow`, `strike`, `nextSwing`, `step`, `press`, `puckHeight`, `total`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isActionKey`, `listen`) and
   the `highStriker` entry the midway registers.
