@@ -25,6 +25,9 @@ import {
   REPOSITORY,
   REPOSITORY_ID,
   TRIGGER_LABEL,
+  botEligibility,
+  byApp,
+  claimHistory,
   contentDigest,
   readAdmissions,
   requestId,
@@ -72,18 +75,28 @@ export function identity(n, issue, events, comments) {
     .at(-1);
   if (!label?.id) return { error: 'no tessl label event' };
   if (isBotUser(label.actor)) {
-    const admitted = readAdmissions(comments.items).some(
+    // Admission checked the issue once; the run may have queued since. The
+    // same predicate admission uses runs again on fresh reads, so a hold, an
+    // assignment, a person's comment or event, a removed label or an edit
+    // after admission stops coding here.
+    const fit = botEligibility(n, issue, comments, events);
+    const why = [...fit.issueReasons, ...fit.reasons];
+    if (!why.length && fit.labelEvent?.id !== label.id) why.push('tessl label event changed');
+    if (why.length) return { error: `bot issue no longer eligible: ${why.join('; ')}` };
+    // One app admission record must match every part of this entry at once.
+    const claims = claimHistory(comments.items.filter(byApp)).get(n);
+    const admitted = readAdmissions(comments.items).filter(
       (a) =>
         a.issue === n &&
-        a.event === label.id &&
         a.node === issue.node_id &&
+        a.event === label.id &&
         a.request === requestId(n, label.id),
     );
-    if (!admitted) return { error: 'bot label has no admission for its label event' };
-    // The content must still be what admission checked against the journal.
-    const digest = contentDigest(issue.title, issue.body);
-    if (!readAdmissions(comments.items).some((a) => a.event === label.id && a.digest === digest))
+    if (!admitted.length) return { error: 'bot label has no admission for its label event' };
+    if (!admitted.some((a) => a.digest === fit.digest))
       return { error: 'content changed since admission' };
+    if (!admitted.some((a) => a.digest === fit.digest && a.slot === claims?.slots.at(-1)))
+      return { error: 'admission is not for the original claim slot' };
   } else if (!isOwner(label.actor)) {
     return { error: 'tessl label was not added by the owner or an admitted bot' };
   }

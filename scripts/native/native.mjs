@@ -804,7 +804,7 @@ export function executionState(pending, linked, request) {
 const admitPending = (pending) =>
   pending.items.some((r) => r.status === 'pending' && r.label?.startsWith(ADMIT_TRIGGER));
 
-const isBot = (u) => u?.id === BOT_ID && u?.type === 'Bot' && u?.login === BOT_LOGIN;
+export const isBot = (u) => u?.id === BOT_ID && u?.type === 'Bot' && u?.login === BOT_LOGIN;
 
 /** The single issues.labeled payload in a trigger-events file, or why not. */
 export function readAdmitEvent(events) {
@@ -828,6 +828,58 @@ export function readAdmitEvent(events) {
   if (typeof i?.node_id !== 'string' || !i.node_id) problems.push('no issue node id');
   if (problems.length) return { error: problems.join('; ') };
   return { number: i.number, nodeId: i.node_id, id: i.id };
+}
+
+/**
+ * Whether a bot-labelled backlog issue is still the app's untouched work, from
+ * fresh reads of the issue, its comments and its events. Admission and the
+ * implementation entry guard both call it, so a hold, an assignment, a
+ * person's comment or event, a removed label or an edit made after admission
+ * stops coding just as it stops admission.
+ *   issueReasons: the issue itself, plus any read that is incomplete;
+ *   reasons: content against the producer's one journal entry, every comment
+ *     the app's own, every event the bot's, tessl labelled once, never removed.
+ * reasons is only filled when issueReasons is empty.
+ */
+export function botEligibility(n, issue, comments, events) {
+  const issueReasons = [];
+  if (issue.repository_url !== `https://api.github.com/repos/${REPOSITORY}`)
+    issueReasons.push('issue is in another repository');
+  if (issue.number !== undefined && issue.number !== n) issueReasons.push('not this issue');
+  if (!isBot(issue.user)) issueReasons.push('issue author is not tessl-app[bot]');
+  if (!isOpen(issue)) issueReasons.push('issue is closed');
+  if (issue.pull_request) issueReasons.push('a pull request');
+  const labels = labelNames(issue);
+  if (!labels.includes(BACKLOG_LABEL)) issueReasons.push('not in auto backlog');
+  if (!labels.includes(TRIGGER_LABEL)) issueReasons.push('tessl label is gone');
+  if (labels.some((l) => HOLD_LABELS.includes(l.toLowerCase()))) issueReasons.push('held');
+  if ((issue.assignees ?? []).length || issue.assignee) issueReasons.push('assigned to a person');
+  const item = readItem(issue);
+  if (!item) issueReasons.push('no backlog marker from the bot');
+  if (!comments?.complete) issueReasons.push('comments incomplete');
+  if (!events?.complete) issueReasons.push('events incomplete');
+  const digest = contentDigest(issue.title, issue.body);
+  if (issueReasons.length) return { issueReasons, reasons: [], digest };
+
+  const reasons = [];
+  // Content: the producer's one journal entry for this item, digest unchanged.
+  const journal = readJournal(comments.items).filter((j) => j.issue === n);
+  if (journal.length !== 1) reasons.push('no single producer journal entry');
+  else {
+    const [j] = journal;
+    if (j.slot !== item.slot || j.index !== item.index)
+      reasons.push('journal entry is for another item');
+    if (j.digest !== digest) reasons.push('content changed since it was filed');
+  }
+  if (comments.items.some((c) => !byApp(c))) reasons.push('has a comment not from the app');
+
+  // History: only the bot has acted, it labelled tessl once, and nobody took it back.
+  if (events.items.some((e) => !isBot(e.actor))) reasons.push('a person acted on the issue');
+  const tesslEvents = events.items.filter((e) => e.label?.name === TRIGGER_LABEL);
+  const labelled = tesslEvents.filter((e) => e.event === 'labeled');
+  if (tesslEvents.some((e) => e.event === 'unlabeled')) reasons.push('tessl was taken back');
+  if (labelled.length !== 1) reasons.push('tessl was not labelled exactly once');
+  return { issueReasons, reasons, digest, item, labelEvent: labelled[0] };
 }
 
 /**
@@ -867,26 +919,13 @@ export async function admitIssue(adapter, ev, now = new Date()) {
   if (!fresh) return { status: 'deferred', issue: n, reasons: ['issue not read'] };
   if (fresh.node_id !== ev.nodeId || (ev.id !== undefined && fresh.id !== ev.id))
     reasons.push('issue identity differs from the event');
-  if (fresh.repository_url !== `https://api.github.com/repos/${REPOSITORY}`)
-    reasons.push('issue is in another repository');
-  if (!isBot(fresh.user)) reasons.push('issue author is not tessl-app[bot]');
-  if (!isOpen(fresh)) reasons.push('issue is closed');
-  if (fresh.pull_request) reasons.push('a pull request');
-  const labels = labelNames(fresh);
-  if (!labels.includes(BACKLOG_LABEL)) reasons.push('not in auto backlog');
-  if (!labels.includes(TRIGGER_LABEL)) reasons.push('tessl label is gone');
-  if (labels.some((l) => HOLD_LABELS.includes(l.toLowerCase()))) reasons.push('held');
-  if ((fresh.assignees ?? []).length || fresh.assignee) reasons.push('assigned to a person');
-  const item = readItem(fresh);
-  if (!item) reasons.push('no backlog marker from the bot');
-
   const comments = await adapter.listComments(n);
   const issueEvents = await adapter.listEvents(n);
   const history = await adapter.listClaimComments();
   const prs = await adapter.linkedPullRequests(n);
   const branch = await adapter.branchExists(`tessl/issue-${n}`);
-  if (!comments.complete) reasons.push('comments incomplete');
-  if (!issueEvents.complete) reasons.push('events incomplete');
+  const fit = botEligibility(n, fresh, comments, issueEvents);
+  reasons.push(...fit.issueReasons);
   if (!history.complete) reasons.push('claim history incomplete');
   if (!prs.complete) reasons.push('links incomplete');
   if (branch === undefined) reasons.push('branch state unknown');
@@ -895,26 +934,8 @@ export async function admitIssue(adapter, ev, now = new Date()) {
     const owed = reasons.every((r) => TRANSIENT.includes(r));
     return { status: owed ? 'deferred' : 'refused', issue: n, reasons };
   }
-
-  // Content: the producer's one journal entry for this item, digest unchanged.
-  const digest = contentDigest(fresh.title, fresh.body);
-  const journal = readJournal(comments.items).filter((j) => j.issue === n);
-  if (journal.length !== 1) reasons.push('no single producer journal entry');
-  else {
-    const [j] = journal;
-    if (j.slot !== item.slot || j.index !== item.index)
-      reasons.push('journal entry is for another item');
-    if (j.digest !== digest) reasons.push('content changed since it was filed');
-  }
-  if (comments.items.some((c) => !byApp(c))) reasons.push('has a comment not from the app');
-
-  // History: only the bot has acted, it labelled tessl once, and nobody took it back.
-  if (issueEvents.items.some((e) => !isBot(e.actor))) reasons.push('a person acted on the issue');
-  const tesslEvents = issueEvents.items.filter((e) => e.label?.name === TRIGGER_LABEL);
-  const labelled = tesslEvents.filter((e) => e.event === 'labeled');
-  if (tesslEvents.some((e) => e.event === 'unlabeled')) reasons.push('tessl was taken back');
-  if (labelled.length !== 1) reasons.push('tessl was not labelled exactly once');
-  const labelEvent = labelled[0];
+  reasons.push(...fit.reasons);
+  const { digest, labelEvent } = fit;
 
   // Claim: the app's own, before the label, in a slot that claimed only this issue.
   const claims = claimHistory(history.items.filter(byApp));

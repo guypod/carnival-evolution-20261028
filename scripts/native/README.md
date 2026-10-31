@@ -98,8 +98,18 @@ for the owner's label and the native handoff, it runs
 
 The guard reads the issue, its events and comments in full and builds one
 key: repository, issue, node, content digest, and generation (the newest
-`tessl` label event). The owner's label is its own hand-off; the bot's label
-needs the app admission record for that exact event and node. It then
+`tessl` label event). The owner's label is its own hand-off, and none of the
+bot-only conditions below apply to it. For the bot's label, the run may have
+queued for a while since admission, so the guard runs the same
+`botEligibility` check admission uses, on fresh reads: still open, the bot's
+own, in `auto backlog` and `tessl`, no hold label, no assignee, every comment
+the app's own, every event the bot's, `tessl` labelled once and never
+removed, and the title and body still matching the producer's journal. A
+hold, an assignment, a person's comment such as "Please stop", a person's
+event or an edit made after admission refuses entry. Then one app admission
+record must match the issue, node, label event, request id, original claim
+slot and current digest together; fields from different records never
+combine. It then
 creates `refs/tessl-entry/issue-<n>/gen-<event>` with GitHub's create-ref
 call, which fails if the ref exists. The ref points at a parentless commit
 whose message records the key and the run id. It is never moved or deleted.
