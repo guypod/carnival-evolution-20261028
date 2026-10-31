@@ -24,6 +24,11 @@ export const SHELVES = [
   { y: 300, speed: 50, points: 10 },
 ] as const;
 const BOTTLES_PER_SHELF = 4;
+/**
+ * Each shelf ends in a post this wide at both edges. Bottles slide behind the
+ * posts, which are wide enough to hide a whole bottle and its scoring zone.
+ */
+export const SHELF_POST_WIDTH = RINGER_RADIUS * 2;
 /** A golden bottle scores this many times its shelf's points. */
 export const GOLDEN_MULTIPLIER = 2;
 
@@ -102,11 +107,23 @@ export function createState(round = 0): RingTossState {
   };
 }
 
-/** The bottle a ring landing at (x, y) rings, if any: the closest neck within RINGER_RADIUS. */
+/** Whether a bottle and its whole scoring zone are clear of the shelf posts. */
+export function isFullyVisible(bottle: Bottle): boolean {
+  return (
+    bottle.x - RINGER_RADIUS >= SHELF_POST_WIDTH &&
+    bottle.x + RINGER_RADIUS <= WIDTH - SHELF_POST_WIDTH
+  );
+}
+
+/**
+ * The bottle a ring landing at (x, y) rings, if any: the closest fully visible
+ * neck within RINGER_RADIUS. A bottle partly behind a shelf post can't be rung.
+ */
 export function bottleAt(bottles: readonly Bottle[], x: number, y: number): Bottle | undefined {
   let best: Bottle | undefined;
   let bestDistance = RINGER_RADIUS;
   for (const bottle of bottles) {
+    if (!isFullyVisible(bottle)) continue;
     const distance = Math.hypot(bottle.x - x, bottle.y - y);
     if (distance <= bestDistance) {
       best = bottle;
@@ -237,6 +254,16 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
     ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'center';
     ctx.fillText(String(bottle.points), bottle.x, bottle.y + 26);
+  }
+
+  // Shelf posts at both ends, drawn over the bottles so they slide out of sight
+  // behind a post instead of being sliced by the canvas edge.
+  ctx.fillStyle = colors.wood;
+  for (const shelf of SHELVES) {
+    const top = shelf.y - RINGER_RADIUS - 4;
+    const height = shelf.y + 42 - top;
+    ctx.fillRect(0, top, SHELF_POST_WIDTH, height);
+    ctx.fillRect(WIDTH - SHELF_POST_WIDTH, top, SHELF_POST_WIDTH, height);
   }
 
   // Arcs, rings and landings stay inside the playfield, never over the awning.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { theme } from '../../carnival';
 import {
   AIM_TOP,
   CONTROLS_HINT,
@@ -8,9 +9,11 @@ import {
   RINGER_RADIUS,
   RINGS_PER_ROUND,
   SHELVES,
+  SHELF_POST_WIDTH,
   bottleAt,
   createState,
   goldenIndex,
+  isFullyVisible,
   step,
   steerAim,
   takeFinalScore,
@@ -79,6 +82,34 @@ describe('ring toss', () => {
     const far = { x: 110, y: 100, speed: 0, points: 30, golden: false };
     expect(bottleAt([far, near], 102, 100)).toBe(near);
     expect(bottleAt([far, near], 300, 100)).toBeUndefined();
+  });
+
+  it('only scores bottles at the shelf ends once they are clear of the posts', () => {
+    const width = theme.canvas.width;
+    const left = { x: SHELF_POST_WIDTH, y: 120, speed: 0, points: 30, golden: false };
+    const right = { x: width - SHELF_POST_WIDTH, y: 300, speed: 0, points: 10, golden: false };
+    expect(isFullyVisible(left)).toBe(false);
+    expect(isFullyVisible(right)).toBe(false);
+    expect(bottleAt([left], left.x, left.y)).toBeUndefined();
+    expect(bottleAt([right], right.x, right.y)).toBeUndefined();
+
+    left.x = SHELF_POST_WIDTH + RINGER_RADIUS;
+    right.x = width - SHELF_POST_WIDTH - RINGER_RADIUS;
+    expect(bottleAt([left], left.x, left.y)).toBe(left);
+    expect(bottleAt([right], right.x, right.y)).toBe(right);
+  });
+
+  it('scores nothing for a ring on a bottle half behind a shelf post', () => {
+    const state = createState();
+    state.bottles = [{ x: 10, y: 200, speed: 0, points: 20, golden: false }];
+    toss(state, 10, 200);
+    step(state, FLIGHT_TIME);
+    expect(state.score).toBe(0);
+    expect(state.landings[0].points).toBe(0);
+  });
+
+  it('starts every bottle clear of the shelf posts', () => {
+    expect(createState().bottles.every(isFullyVisible)).toBe(true);
   });
 
   it('moves bottles along their shelves', () => {
