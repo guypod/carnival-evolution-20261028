@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   canZoomIn,
   canZoomOut,
+  clearOfControls,
+  CONTROLS_BAND,
   DEFAULT_VIEW_SCALE,
   fitCamera,
   project,
@@ -90,5 +92,31 @@ describe('fitCamera', () => {
   it('centres a view larger than the bounds', () => {
     const camera = fitCamera({ x: 300, y: 0 }, { w: 1000, h: 600 }, bounds);
     expect(camera).toEqual({ x: -500, y: -200 });
+  });
+});
+
+describe('clearOfControls', () => {
+  const view = { w: 864, h: 540 };
+  const zoom = 1.5;
+
+  it('lifts the camera so the highest sign sits below the controls band', () => {
+    const camera = clearOfControls({ x: -632, y: 102 }, 80, { x: 0, y: 388 }, view, zoom, -174);
+    expect(camera.x).toBe(-632);
+    expect((80 - camera.y) * zoom).toBeCloseTo(CONTROLS_BAND);
+  });
+
+  it('leaves a camera that already clears the band alone', () => {
+    const camera = { x: 10, y: -100 };
+    expect(clearOfControls(camera, 80, { x: 0, y: 100 }, view, zoom, -174)).toBe(camera);
+  });
+
+  it('keeps the focus on screen above the bottom edge', () => {
+    const camera = clearOfControls({ x: 0, y: 400 }, -200, { x: 0, y: 700 }, view, zoom, -400);
+    expect(camera.y).toBe(700 - view.h + 48);
+  });
+
+  it('never lifts the camera past the top bound', () => {
+    const camera = clearOfControls({ x: 0, y: 0 }, -200, { x: 0, y: 0 }, view, zoom, -250);
+    expect(camera.y).toBe(-250);
   });
 });
