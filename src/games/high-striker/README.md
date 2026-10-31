@@ -12,8 +12,11 @@ Swing the mallet three times and try to ring the bell at the top of the tower.
   and back every 1.6 seconds. Each coloured zone of the meter shows the points
   it scores, with the bell's 100 just above the narrow centre zone. Press **Strike!** (click or tap it, or press Space
   or Enter) to lock it.
-- The puck flies up the tower to a height set by your score. A perfect hit
-  rings the bell.
+- The puck flies up the tower to a height set by your score, holds there for
+  a moment, then drops back to the base. A perfect hit (100 points) carries it
+  to the top and the bell flashes. With Quiet or your system's reduced-motion
+  setting on, the puck shows its height straight away without moving, and a
+  100 lights the bell steadily until the next swing.
 - A red marker stays on the meter where you struck, while the puck flies and
   until the next swing starts, next to a line that gives your points and your
   timing: **Perfect timing** inside the bell zone, **Early: wait a beat longer**
@@ -49,7 +52,7 @@ it, the error goes to the console and **Play again** still works.
 
 - `game.ts`: the game logic (`createState`, `markerPosition`,
   `markerDirection`, `signedOffset`, `timingFor`, `zoneFor`, `scoreFor`, `zoneLabels`,
-  `lastStrike`, `feedback`, `bestSwing`, `breakdown`, `breakdownRow`, `strike`, `nextSwing`, `step`, `press`, `puckHeight`, `total`,
+  `lastStrike`, `feedback`, `bestSwing`, `breakdown`, `breakdownRow`, `strike`, `nextSwing`, `step`, `press`, `puckHeight`, `bellLit`, `total`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isActionKey`, `listen`) and
   the `highStriker` entry the midway registers.
 - `game.test.ts`: tests for the game logic.
