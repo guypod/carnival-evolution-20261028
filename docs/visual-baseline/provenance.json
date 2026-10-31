@@ -1,0 +1,235 @@
+{
+  "browser": "149.0.7827.55",
+  "base": "vite dev server, fresh browser context, empty local storage",
+  "before": {
+    "commit": "eb6f3cb",
+    "capturedAt": "2026-10-30T00:49:48.914Z",
+    "shots": [
+      {
+        "route": "#/",
+        "file": "midway-desktop-clean.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "clean",
+        "pixels": {
+          "width": 1280,
+          "height": 800,
+          "colours": 755,
+          "flatShare": 0.288
+        },
+        "errors": []
+      },
+      {
+        "route": "#/",
+        "file": "midway-desktop-focus.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "focus",
+        "pixels": {
+          "width": 1280,
+          "height": 800,
+          "colours": 758,
+          "flatShare": 0.285
+        },
+        "errors": []
+      },
+      {
+        "route": "#/",
+        "file": "midway-narrow-clean.png",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "quiet": false,
+        "state": "clean",
+        "pixels": {
+          "width": 390,
+          "height": 844,
+          "colours": 417,
+          "flatShare": 0.375
+        },
+        "errors": []
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-desktop-clean.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "clean",
+        "pixels": {
+          "width": 1280,
+          "height": 800,
+          "colours": 92,
+          "flatShare": 0.876
+        },
+        "errors": []
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-desktop-focus.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "focus",
+        "pixels": {
+          "width": 1280,
+          "height": 800,
+          "colours": 88,
+          "flatShare": 0.878
+        },
+        "errors": []
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-narrow-clean.png",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "quiet": false,
+        "state": "clean",
+        "pixels": {
+          "width": 390,
+          "height": 898,
+          "colours": 87,
+          "flatShare": 0.858
+        },
+        "errors": []
+      }
+    ]
+  },
+  "after": {
+    "commit": "3798837",
+    "capturedAt": "2026-10-30T00:52:37.121Z",
+    "shots": [
+      {
+        "route": "#/balloon",
+        "file": "balloon-desktop-clean.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "clean",
+        "pixels": {
+          "width": 1280,
+          "height": 834,
+          "colours": 209,
+          "flatShare": 0.572
+        },
+        "errors": []
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-desktop-focus.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "focus",
+        "pixels": {
+          "width": 1280,
+          "height": 834,
+          "colours": 203,
+          "flatShare": 0.574
+        },
+        "errors": []
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-desktop-interaction.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": false,
+        "state": "interaction",
+        "pixels": {
+          "width": 1280,
+          "height": 834,
+          "colours": 212,
+          "flatShare": 0.563
+        },
+        "errors": [],
+        "recaptured": {
+          "commit": "8e580ae",
+          "capturedAt": "2026-10-30T01:25:12.602Z",
+          "why": "plain wishes, so the comparison image carries no sanitizer test text"
+        }
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-desktop-quiet-interaction.png",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "quiet": true,
+        "state": "interaction",
+        "pixels": {
+          "width": 1280,
+          "height": 834,
+          "colours": 215,
+          "flatShare": 0.564
+        },
+        "errors": [],
+        "recaptured": {
+          "commit": "8e580ae",
+          "capturedAt": "2026-10-30T01:25:12.602Z",
+          "why": "plain wishes, so the comparison image carries no sanitizer test text"
+        }
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-narrow-focus.png",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "quiet": false,
+        "state": "focus",
+        "pixels": {
+          "width": 390,
+          "height": 1133,
+          "colours": 166,
+          "flatShare": 0.439
+        },
+        "errors": []
+      },
+      {
+        "route": "#/balloon",
+        "file": "balloon-narrow-interaction.png",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "quiet": false,
+        "state": "interaction",
+        "pixels": {
+          "width": 390,
+          "height": 1176,
+          "colours": 171,
+          "flatShare": 0.438
+        },
+        "errors": [],
+        "recaptured": {
+          "commit": "8e580ae",
+          "capturedAt": "2026-10-30T01:25:12.602Z",
+          "why": "plain wishes, so the comparison image carries no sanitizer test text"
+        }
+      }
+    ]
+  }
+}
