@@ -371,13 +371,13 @@ function renderMidway() {
       <div class="midway-panels">
         <div class="midway-toggles">
           <button type="button" class="help-toggle" aria-expanded="false" aria-controls="midway-help-panel">
-            ❔ Help
+            <svg class="toolbar-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" /><path d="M6 6.2a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.6" /><circle cx="8" cy="11.6" r=".4" /></svg> Help
           </button>
           <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
-            🗺️ Guide
+            <svg class="toolbar-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 3.5 5.5 2l5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z" /><path d="M5.5 2v10.5M10.5 3.5V14" /></svg> Guide
           </button>
-          <button type="button" class="tour-start" aria-controls="welcome-tour" hidden>👋 Start tour</button>
-          <button type="button" class="photo-toggle" aria-expanded="false" aria-controls="photo-mode">📷 Photo</button>
+          <button type="button" class="tour-start" aria-controls="welcome-tour" hidden><svg class="toolbar-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 2.5v11" /><path d="M4 3h8.5l-2 2.75 2 2.75H4" /></svg> Start tour</button>
+          <button type="button" class="photo-toggle" aria-expanded="false" aria-controls="photo-mode"><svg class="toolbar-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 5h3l1.2-2h4.6l1.2 2h3v8h-13z" /><circle cx="8" cy="8.8" r="2.4" /></svg> Photo</button>
         </div>
         <div class="midway-view" role="group" aria-label="Map view">
           <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
@@ -714,6 +714,10 @@ function renderMidway() {
   };
 }
 
+// Drawn inline so the chip never depends on an emoji font.
+const COMPASS_ICON =
+  '<svg class="toolbar-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" /><path d="M10.5 5.5 9 9 5.5 10.5 7 7z" /></svg>';
+
 // Photo mode: hides the midway's panels on purpose, outlines a frame on the
 // live map and copies that part of the canvas into a preview. Walking and
 // zooming still work, so the photo is the real scene. Nothing is uploaded, no
@@ -1045,8 +1049,12 @@ function setUpDiscovery(landmarks: Landmark[], walkTo: (id: LandmarkId) => boole
   const render = () => {
     const text = landmarkHint(landmarks, found);
     hint.hidden = text === undefined;
-    hint.textContent = text ?? '';
-    hint.setAttribute('aria-label', text ? `${text}. Walk there.` : '');
+    // The hint's compass is an emoji, which shows as an empty box without an
+    // emoji font, so the chip draws its own compass instead.
+    const label = text?.replace(/^🧭\s*/u, '') ?? '';
+    hint.innerHTML = text ? `${COMPASS_ICON} ` : '';
+    hint.append(label);
+    hint.setAttribute('aria-label', text ? `${label}. Walk there.` : '');
     section.querySelector('.discovery-progress')!.textContent = discoveryProgress(landmarks, found);
     section.querySelector('.discovery-clue')!.textContent = discoveryClue(landmarks, found);
     const list = section.querySelector('ul')!;
