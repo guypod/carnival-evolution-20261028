@@ -21,7 +21,7 @@ import {
   mergeGate,
   mergeOne,
   produceBacklog,
-  AUTO_MERGE_BLOCKER,
+  readBatch,
   MISSING_LABEL_ROUTE,
 } from './native.mjs';
 
@@ -358,7 +358,10 @@ test('a claim from an earlier slot that never got its label is recovered later',
   assert.equal(r.status, 'dispatched');
   assert.equal(r.how, 'recovered');
   assert.equal(r.issue, 11);
-  assert.deepEqual(writes(gh), [['addLabel', 11, 'tessl']]);
+  assert.deepEqual(writes(gh), [
+    ['comment', 11],
+    ['addLabel', 11, 'tessl'],
+  ]);
 });
 
 test('an unfinished claim a person has since held is released, not labelled', async () => {
@@ -794,31 +797,21 @@ const mergeAdapter = (extra = {}) => {
   const calls = [];
   return {
     calls,
-    repoSettings: async () => ({ allow_auto_merge: true }),
     snapshot: async () => snapshot(),
-    enableAutoMerge: async (...a) => (calls.push(['arm', ...a]), { enabled: true }),
     squashMerge: async (...a) => (calls.push(['merge', ...a]), { merged: true, sha: 'm' }),
     ...extra,
   };
 };
 
-test('with allow_auto_merge off, the controller reports the blocker and merges nothing', async () => {
-  const adapter = mergeAdapter({ repoSettings: async () => ({ allow_auto_merge: false }) });
-  const r = await mergeOne(adapter, 30);
-  assert.equal(r.status, 'blocked');
-  assert.deepEqual(r.reasons, [AUTO_MERGE_BLOCKER]);
-  assert.deepEqual(adapter.calls, []);
-});
-
-test('auto-merge is armed pinned to the gated head, never a direct squash', async () => {
+test('the controller merges atomically pinned to the gated head and never arms auto-merge', async () => {
   const adapter = mergeAdapter();
   const r = await mergeOne(adapter, 30);
-  assert.equal(r.status, 'armed');
+  assert.equal(r.status, 'merged');
   assert.equal(r.live, 'pending');
-  assert.deepEqual(adapter.calls, [['arm', 30, HEAD]]);
+  assert.deepEqual(adapter.calls, [['merge', 30, HEAD]]);
 });
 
-test('an unverified head is never armed: refused gate or a head moving between reads', async () => {
+test('an unverified head is never merged: refused gate or a head moving between reads', async () => {
   const moved = snapshot({ pr: { ...snapshot().pr, head: { ...snapshot().pr.head, sha: OLD } } });
   let reads = 0;
   let adapter = mergeAdapter({ snapshot: async () => (reads++ === 0 ? snapshot() : moved) });
@@ -829,13 +822,31 @@ test('an unverified head is never armed: refused gate or a head moving between r
   assert.deepEqual(adapter.calls, []);
 });
 
-test('GitHub refusing to arm is reported and nothing merges another way', async () => {
-  for (const message of ['Head branch was modified', 'Pull request is in clean status']) {
-    const adapter = mergeAdapter({ enableAutoMerge: async () => ({ enabled: false, message }) });
+test('a gate that fails only on the second read, just before merging, merges nothing', async () => {
+  const pending = snapshot({
+    checks: {
+      complete: true,
+      items: [...snapshot().checks.items, { name: 'late', head_sha: HEAD, status: 'in_progress' }],
+    },
+  });
+  let reads = 0;
+  const adapter = mergeAdapter({ snapshot: async () => (reads++ === 0 ? snapshot() : pending) });
+  const r = await mergeOne(adapter, 30);
+  assert.equal(r.status, 'refused');
+  assert.match(r.reasons.join(), /late still running/);
+  assert.deepEqual(adapter.calls, []);
+});
+
+test('GitHub refusing the expected-head merge is reported and nothing merges another way', async () => {
+  for (const message of ['Head branch was modified', 'Pull request is not mergeable']) {
+    const calls = [];
+    const adapter = mergeAdapter({
+      squashMerge: async (...a) => (calls.push(['merge', ...a]), { merged: false, message }),
+    });
     const r = await mergeOne(adapter, 30);
     assert.equal(r.status, 'refused');
     assert.equal(r.reasons[0], message);
-    assert.deepEqual(adapter.calls, []);
+    assert.deepEqual(calls, [['merge', 30, HEAD]]);
   }
 });
 
@@ -881,4 +892,100 @@ test('the native action holds the writer key and its schedules are London slots'
   const often = structuredClone(manifest);
   often.schedules['native-dispatch-twenty-minutes'].cron = '* * * * *';
   assert.match(checkContract(often).join(), /native-dispatch-twenty-minutes\.cron/);
+});
+
+test('after recovering an earlier claim, a retry of the same slot never dispatches a second issue', async () => {
+  // Each case changes the recovered issue after its label: closed, label
+  // removed by a person, or given a linked pull request.
+  const after = {
+    closed: (gh) => (gh.state.issues.find((i) => i.number === 11).state = 'closed'),
+    'label removed': (gh) => {
+      const i = gh.state.issues.find((x) => x.number === 11);
+      i.labels = i.labels.filter((l) => l.name !== 'tessl');
+      gh.state.links['labelled:11'] = true;
+    },
+    'linked pull request': (gh) => (gh.state.links[11] = [{ event: 'cross-referenced' }]),
+  };
+  for (const [name, change] of Object.entries(after)) {
+    const gh = fakeGitHub({
+      issues: [backlogIssue(11), backlogIssue(12)],
+      comments: { 11: [claimed(EARLIER, 11)] },
+    });
+    const first = await dispatch(gh, DSLOT);
+    assert.equal(first.status, 'dispatched', name);
+    assert.equal(first.issue, 11, name);
+    // The current slot is bound to the recovered issue before its label, and
+    // the earlier claim stays in the history.
+    assert.deepEqual(writes(gh), [
+      ['comment', 11],
+      ['addLabel', 11, 'tessl'],
+    ]);
+    assert.equal(gh.state.comments[11][0].body, claimMarker(EARLIER, 11));
+    assert.match(gh.state.comments[11][1].body, new RegExp(claimMarker(DSLOT, 11)));
+    change(gh);
+    const again = await dispatch(gh, DSLOT);
+    assert.equal(again.issue, 11, name);
+    assert.ok(!gh.calls.some((c) => c[1] === 12), name);
+  }
+});
+
+test('an uncertain bind of a recovery slot is read back, and a missing bind labels nothing', async () => {
+  let gh = fakeGitHub({
+    issues: [backlogIssue(11), backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+  });
+  const post = gh.comment;
+  gh.comment = async (n, b) => {
+    await post(n, b);
+    throw new Error('timeout');
+  };
+  let r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'dispatched');
+  assert.equal(r.issue, 11);
+  gh = fakeGitHub({
+    issues: [backlogIssue(11), backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+  });
+  gh.comment = async () => {
+    throw new Error('timeout');
+  };
+  r = await dispatch(gh, DSLOT);
+  assert.equal(r.status, 'blocked');
+  assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'));
+});
+
+test('a batch file keeps its slot across a six-hour boundary, so a rerun fills that slot', async () => {
+  const file = { slot: SLOT, candidates: candidates(18) };
+  const gh = fakeGitHub({ failCreateAt: 8 });
+  const before = readBatch(file, new Date('2026-10-31T05:50:00Z'));
+  assert.equal(before.slot, SLOT);
+  assert.equal((await produceBacklog(gh, before.slot, before.candidates)).status, 'partial');
+  // The rerun is after 06:00 London: the file's slot still decides.
+  const after = readBatch(file, new Date('2026-10-31T06:10:00Z'));
+  assert.equal(after.slot, SLOT);
+  const gh2 = fakeGitHub({ issues: gh.state.issues });
+  const r = await produceBacklog(gh2, after.slot, after.candidates);
+  assert.equal(r.status, 'complete');
+  assert.equal(r.slot, SLOT);
+  assert.equal(gh2.state.issues.length, 18);
+  assert.deepEqual(
+    gh2.calls.filter((c) => c[0] === 'createIssue').map((c) => c[1]),
+    file.candidates.slice(7).map((c) => c.title),
+  );
+  // Once that slot is complete, the same file files nothing in any later run.
+  const gh3 = fakeGitHub({ issues: gh2.state.issues });
+  assert.equal((await produceBacklog(gh3, after.slot, after.candidates)).status, 'complete');
+  assert.deepEqual(writes(gh3), []);
+});
+
+test('a batch slot that is malformed, unscheduled or in the future is refused', () => {
+  const now = new Date('2026-10-31T06:10:00Z');
+  assert.equal(readBatch(candidates(18), now).slot, 'backlog-2026-10-31T06');
+  for (const slot of [
+    undefined,
+    'backlog-2026-10-31T03',
+    'dispatch-2026-10-31T0000',
+    'backlog-2026-10-31T12',
+  ])
+    assert.ok(readBatch({ slot, candidates: candidates(18) }, now).error, String(slot));
 });

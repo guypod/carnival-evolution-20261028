@@ -7,12 +7,14 @@ visual repair schedules stay as they are.
 | Schedule (Europe/London)                   | `native-intake` `MODE` | Does                                                              |
 | ------------------------------------------ | ---------------------- | ----------------------------------------------------------------- |
 | `native-backlog-six-hourly` 00, 06, 12, 18 | `backlog`              | files exactly 18 distinct `auto backlog` issues, no `tessl`       |
-| `native-dispatch-twenty-minutes` `*/20`    | `dispatch`             | arms auto-merge on gated Tessl PRs, then labels one backlog issue |
+| `native-dispatch-twenty-minutes` `*/20`    | `dispatch`             | merges gated Tessl PRs at their exact head, then labels one issue |
 
 `native-intake` holds `carnival-app-writer` (limit 1, queued) like every app
 writer, so it never runs beside an implementation, shepherd, visual repair or
 learner run. All writes go through `native.mjs`; its decisions are tested
-with fixture adapters in `native.test.mjs## Admission
+with fixture adapters in `native.test.mjs`.
+
+## Admission
 
 The only way a backlog issue starts work is the existing `github-issue-labelled`
 trigger, which needs a `tessl` label added by user 1106394 (type `User`) on an
@@ -32,6 +34,10 @@ reads the label event and counts the dispatch only if the actor is user 1106394.
   A slot is complete when all 18 indexes exist. A retry files only the
   missing ones; rerunning the original 18-item file maps item `i` to index
   `i`. An uncertain create is read back before moving on.
+- Batch file: `{ "slot": "backlog-<date>T<hh>", "candidates": [18 items] }`.
+  The slot is the one the batch was written for, so a rerun after a six-hour
+  boundary fills that slot, not the new one. It must be a scheduled slot no
+  later than the current one. A bare array means the current slot.
 - Claim marker, in a bot comment:
   `<!-- carnival-dispatch:claim:v1 slot=dispatch-<date>T<hhmm> issue=<n> -->`.
   Claims are read from every comment in the repository, so closing an issue
@@ -41,7 +47,11 @@ reads the label event and counts the dispatch only if the actor is user 1106394.
     queue busy, without reading the rest of the backlog;
   - a claim that never got its label, from any slot, is finished later,
     unless a person has since held, assigned or commented on the issue, in
-    which case it is released and the next issue is considered;
+    which case it is released and the next issue is considered. Before
+    labelling a recovered issue, the current slot writes its own claim on
+    it, keeping the earlier claim, so a retry of the current slot resumes
+    that issue even after it closes, loses its label or gets a pull request,
+    and never claims a second;
   - an issue that was labelled `tessl` and then unlabelled was taken back and
     is never relabelled;
   - an uncertain claim or label write is read back before anything else.
@@ -71,14 +81,12 @@ into `main`, labelled `tessl`, when:
   no other check or status on it failed or is still running;
 - every listing was read to its last page.
 
-`mergeOne` uses GitHub's own auto-merge. It first needs the repository's
-`allow_auto_merge` setting. That is `false` today, and turning it on needs the
-administration permission that `tessl-app[bot]` does not have, so it returns
-`blocked` with `AUTO_MERGE_BLOCKER` and merges nothing. With the setting on,
-it gates twice and arms auto-merge with `expectedHeadOid` set to the gated
-head, so GitHub refuses if the head moved and still enforces its own required
-checks. If GitHub refuses to arm, including for a PR already in clean status,
-that is reported and nothing merges another way. It never submits a review.
+`mergeOne` gates twice, then merges with GitHub's atomic merge API
+(`PUT pulls/<n>/merge`) with `sha` set to the head both gates saw, so GitHub
+refuses if the head moved. It never arms GitHub's auto-merge: this repository
+has no branch rules, so an armed pull request could merge a later push that
+no gate saw. If GitHub refuses the merge, that is reported and nothing merges
+another way. It never submits a review.
 
 A merge is not shipped. `deploy <sha>` reports `deployed-needs-sanity` only
 when the Pages run's `deploy` job succeeded for that commit, and shipping
@@ -91,8 +99,10 @@ just a 200 response.
   Tessl syncs `tessl.json`. `tessl doctor --automations` validates the file
   locally only.
 - Until an owner label route exists, dispatch writes nothing and reports the
-  missing capability. Until `allow_auto_merge` is on, the merge controller
-  merges nothing and reports that setting.
+  missing capability.
+- Listings are read through one `gh` call capped at 64 MiB. Past that cap
+  the call fails, the listing counts as incomplete and the run blocks
+  without writing. It never treats a partial listing as complete.
 - The producer captures and looks at the carnival with
   `scripts/visual/run-capture.sh` before it files anything.
 - To verify without a duplicate run, wait for the first scheduled slot and

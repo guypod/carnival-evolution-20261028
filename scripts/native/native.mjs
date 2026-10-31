@@ -7,10 +7,9 @@
 //             by the owner's own label route, so the existing owner-only
 //             github-issue-labelled trigger starts the run. There is no direct
 //             action trigger. Without an owner label route it fails closed.
-//   merge     in the same run, arm GitHub auto-merge for a Tessl pull request,
-//             pinned to its exact head, only on an authentic reviewer pass and
-//             green CI for that head, and only when the repository allows
-//             auto-merge.
+//   merge     in the same run, merge a Tessl pull request atomically, pinned
+//             to its exact head, only on an authentic reviewer pass and green
+//             CI for that head. GitHub's auto-merge is never armed.
 //
 // Native GitHub writes come from tessl-app[bot] (BOT_ID). The
 // github-issue-labelled trigger accepts only the owner (sender id OWNER_ID,
@@ -163,6 +162,25 @@ export function validateCandidates(candidates, existing) {
     scopes.set(s, `item ${i}`);
   });
   return errors;
+}
+
+const SLOT_RE = /^backlog-(\d{4}-\d{2}-\d{2})T(00|06|12|18)$/;
+
+/**
+ * The slot and candidates of a batch file. A batch file records the slot it
+ * was written for, `{ slot, candidates }`, so a rerun after a six-hour
+ * boundary fills that slot rather than a new one. The slot must be a
+ * scheduled backlog slot no later than `now`'s. A bare array is the current
+ * slot's batch.
+ */
+export function readBatch(json, now) {
+  const current = backlogSlot(now);
+  if (Array.isArray(json)) return { slot: current, candidates: json };
+  const slot = json?.slot;
+  if (typeof slot !== 'string' || !SLOT_RE.test(slot))
+    return { error: 'batch slot is not a scheduled backlog slot' };
+  if (slot > current) return { error: `batch slot ${slot} is later than ${current}` };
+  return { slot, candidates: json.candidates };
 }
 
 /** The issue body for one backlog item, ending with its durable marker. */
@@ -357,18 +375,8 @@ export async function dispatch(adapter, slot) {
     if (!prs.complete) return { status: 'blocked', reason: `links of #${issue.number} incomplete` };
     const fresh = await adapter.getIssue(issue.number);
     if (ineligible(fresh, comments.items, prs.items)) continue;
-    try {
-      await adapter.comment(
-        issue.number,
-        `Dispatcher slot \`${slot}\` hands this to Tessl.\n\n${claimMarker(slot, issue.number)}\n<!-- tessl-factory -->`,
-      );
-    } catch {
-      // Uncertain: the claim may have landed. Read the history before deciding.
-      const again = await adapter.listClaimComments();
-      const landed = again.complete && claimHistory(again.items).get(issue.number);
-      if (!landed?.slots.includes(slot))
-        return { status: 'blocked', issue: issue.number, reason: 'claim write uncertain' };
-    }
+    const bound = await bindSlot(adapter, slot, issue.number);
+    if (bound) return bound;
     return finish(adapter, slot, issue.number, 'claimed');
   }
   return { status: 'idle', reason: 'no eligible backlog issue' };
@@ -376,6 +384,27 @@ export async function dispatch(adapter, slot) {
 
 export const MISSING_LABEL_ROUTE =
   'no owner-authenticated label route: the github-issue-labelled trigger starts a run only for a tessl label added by user 1106394, and native-intake has only the tessl-app[bot] GitHub identity, so a label it adds starts nothing';
+
+/**
+ * Write this slot's claim on an issue, so the slot is bound to it before any
+ * label. An uncertain write is read back; returns a blocked result when the
+ * claim cannot be confirmed, or null when it is in the history.
+ */
+async function bindSlot(adapter, slot, number) {
+  try {
+    await adapter.comment(
+      number,
+      `Dispatcher slot \`${slot}\` hands this to Tessl.\n\n${claimMarker(slot, number)}\n<!-- tessl-factory -->`,
+    );
+  } catch {
+    // Uncertain: the claim may have landed. Read the history before deciding.
+    const again = await adapter.listClaimComments();
+    const landed = again.complete && claimHistory(again.items).get(number);
+    if (!landed?.slots.includes(slot))
+      return { status: 'blocked', issue: number, reason: 'claim write uncertain' };
+  }
+  return null;
+}
 
 async function finish(adapter, slot, number, how) {
   const fresh = await adapter.getIssue(number);
@@ -393,6 +422,13 @@ async function finish(adapter, slot, number, how) {
   const held = heldBack(fresh, comments.items);
   if (held)
     return { status: how === 'recovered' ? 'released' : 'stopped', issue: number, reason: held };
+  // A recovered claim belongs to an earlier slot. Bind this slot to it first,
+  // keeping the earlier claim, so a retry of this slot resumes this issue
+  // whatever happens to it after the label, and never claims a second.
+  if (how === 'recovered') {
+    const bound = await bindSlot(adapter, slot, number);
+    if (bound) return bound;
+  }
   try {
     await adapter.labelAsOwner(number, TRIGGER_LABEL);
   } catch {
@@ -466,7 +502,7 @@ export function provenance(pr, issue) {
 }
 
 /**
- * Whether a pull request may be armed for auto-merge now, from a snapshot of its
+ * Whether a pull request may be merged now, from a snapshot of its
  * current state. Every listing must be complete. Returns { merge, reasons }.
  */
 export function mergeGate(s) {
@@ -543,22 +579,15 @@ export function mergeGate(s) {
   return { merge: reasons.length === 0, reasons, head };
 }
 
-export const AUTO_MERGE_BLOCKER =
-  'repository setting allow_auto_merge is false; turning it on needs the administration:write repository permission, which tessl-app[bot] does not have (GET repos/guypod/carnival-evolution-20261028 reports admin false, and administration reads return 403)';
-
 /**
- * Re-read, gate, re-read again, then arm GitHub's own auto-merge pinned to
- * the head the gate saw (expectedHeadOid), so GitHub refuses if the head
- * moved and never merges an unreviewed commit. Auto-merge needs the
- * repository's allow_auto_merge setting; with it off this refuses with that
- * blocker and does not merge another way. GitHub refusing to arm (for
- * example a pull request already in clean status) is reported, not worked
- * around. It never submits a review.
+ * Re-read and gate twice, then merge with GitHub's atomic merge pinned to the
+ * head the gates saw (the merge API's `sha`), so GitHub refuses if the head
+ * moved. GitHub's auto-merge is never armed: with no branch rules in this
+ * repository, an armed pull request could merge a later, ungated push. A
+ * refusal is reported and nothing merges another way. It never submits a
+ * review.
  */
 export async function mergeOne(adapter, number) {
-  const settings = await adapter.repoSettings();
-  if (settings?.allow_auto_merge !== true)
-    return { status: 'blocked', number, reasons: [AUTO_MERGE_BLOCKER] };
   const first = mergeGate(await adapter.snapshot(number));
   if (!first.merge) return { status: 'refused', number, reasons: first.reasons };
   const second = mergeGate(await adapter.snapshot(number));
@@ -568,9 +597,10 @@ export async function mergeOne(adapter, number) {
       number,
       reasons: second.reasons.length ? second.reasons : ['head moved'],
     };
-  const armed = await adapter.enableAutoMerge(number, second.head);
-  if (armed.enabled) return { status: 'armed', number, head: second.head, live: 'pending' };
-  return { status: 'refused', number, reasons: [armed.message ?? 'auto-merge refused'] };
+  const merged = await adapter.squashMerge(number, second.head);
+  if (merged.merged)
+    return { status: 'merged', number, head: second.head, sha: merged.sha, live: 'pending' };
+  return { status: 'refused', number, reasons: [merged.message ?? 'merge refused'] };
 }
 
 /**
@@ -671,24 +701,6 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
       };
     },
     repoSettings: async () => JSON.parse(gh(['api', base])),
-    enableAutoMerge: async (n, sha) => {
-      try {
-        const id = JSON.parse(gh(['api', `${base}/pulls/${n}`])).node_id;
-        gh([
-          'api',
-          'graphql',
-          '-f',
-          'query=mutation($id:ID!,$sha:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,expectedHeadOid:$sha,mergeMethod:SQUASH}){clientMutationId}}',
-          '-f',
-          `id=${id}`,
-          '-f',
-          `sha=${sha}`,
-        ]);
-        return { enabled: true };
-      } catch (e) {
-        return { enabled: false, message: String(e.stderr ?? e.message).slice(0, 300) };
-      }
-    },
     squashMerge: async (n, sha) => {
       try {
         const out = gh(
@@ -726,7 +738,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.error('refusing: set CARNIVAL_APP_WRITER_HELD=1 only inside the native-intake action');
     process.exit(3);
   } else if (command === 'backlog') {
-    print(await produceBacklog(adapter, backlogSlot(now), JSON.parse(readFileSync(arg, 'utf8'))));
+    const batch = readBatch(JSON.parse(readFileSync(arg, 'utf8')), now);
+    if (batch.error) print({ status: 'blocked', reason: batch.error });
+    else print(await produceBacklog(adapter, batch.slot, batch.candidates));
   } else if (command === 'dispatch') {
     print(await dispatch(adapter, dispatchSlot(now)));
   } else if (command === 'merge') {

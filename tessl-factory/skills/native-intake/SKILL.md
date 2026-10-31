@@ -1,6 +1,6 @@
 ---
 name: native-intake
-description: Run the carnival's native creative intake. MODE=backlog files exactly 18 distinct enhancement issues labelled `auto backlog` (never `tessl`) for the current six-hour London slot. MODE=dispatch arms GitHub auto-merge for Tessl pull requests that pass the evolution merge gate on their exact current head, then has one eligible backlog issue labelled `tessl` through the owner's label route, failing closed when there is none. Use only from the native-intake schedules or a manual verification trigger.
+description: Run the carnival's native creative intake. MODE=backlog files exactly 18 distinct enhancement issues labelled `auto backlog` (never `tessl`) for the current six-hour London slot. MODE=dispatch merges Tessl pull requests that pass the evolution merge gate on their exact current head, atomically pinned to that head, then has one eligible backlog issue labelled `tessl` through the owner's label route, failing closed when there is none. Use only from the native-intake schedules or a manual verification trigger.
 ---
 
 # Native intake
@@ -13,7 +13,9 @@ action only, run the script with `CARNIVAL_APP_WRITER_HELD=1`. That variable
 stops an accidental local run. It is not a security boundary.
 
 Everything you write is public. Never include private logs, run artifacts,
-credentials or anything from outsi## MODE=backlog (00:00, 06:00, 12:00, 18:00 Europe/London)
+credentials or anything from outside this repository's public record.
+
+## MODE=backlog (00:00, 06:00, 12:00, 18:00 Europe/London)
 
 1. `node scripts/native/native.mjs slot` gives the `backlog` slot. If its
    18 items already exist, `backlog` reports `complete` and writes nothing.
@@ -28,8 +30,11 @@ credentials or anything from outsi## MODE=backlog (00:00, 06:00, 12:00, 18:00 Eu
    and never claim to have seen a screen you did not capture.
 3. Also read `WORKSHOP.md`, the game READMEs and every issue, open or closed
    (`gh api --paginate 'repos/guypod/carnival-evolution-20261028/issues?state=all&per_page=100' --jq '.[] | [.number, .state, .title] | @tsv'`, which has no cap).
-4. Write 18 candidates to a file outside the clone as a JSON array of
-   `{title, scope, body, evidence}`, with item `i` for index `i`. Mix sizes
+4. Write the batch to a file outside the clone as
+   `{"slot": "<the backlog slot from step 1>", "candidates": [...]}`, with 18
+   candidates `{title, scope, body, evidence}` and item `i` for index `i`.
+   The slot stays fixed for this batch, even if the run crosses a six-hour
+   boundary. Mix sizes
    and kinds: small polish, accessibility and feel fixes as well as larger
    reworks of a game or the midway. New games are allowed but should be the
    exception, and items must not repeat one formula across booths. Each one
@@ -43,8 +48,9 @@ credentials or anything from outsi## MODE=backlog (00:00, 06:00, 12:00, 18:00 Eu
 5. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs backlog <file>`.
    It refuses duplicates by title or scope, never adds `tessl`, files each
    missing index with a durable marker, and reconciles an uncertain create
-   by re-reading before moving on. After a crash, rerun the same file: item
-   `i` still maps to index `i`, so only the missing ones are filed. When it
+   by re-reading before moving on. After a crash, rerun the same file: it
+   names its own slot and item `i` still maps to index `i`, so only that
+   slot's missing ones are filed. When it
    reports `partial` with errors, fix the candidates it names and run it
    once more. Never pad, and never claim the slot is complete unless it says
    `complete`. Report the remaining count.
@@ -56,11 +62,9 @@ credentials or anything from outsi## MODE=backlog (00:00, 06:00, 12:00, 18:00 Eu
    whose newest `tessl-reviewer[bot]` review on the exact head carries
    `approved=true` (advisory findings allowed) and matches the reviewer's own
    check run on that head, with green `check` CI and no request for changes
-   still standing, it arms GitHub auto-merge pinned to that head. It needs the
-   repository's `allow_auto_merge` setting; while that is off it reports
-   `blocked` with the setting and permission needed, and merges nothing. It
-   never submits a review, never relaxes a required check, and never merges
-   another way.
+   still standing, it gates again and merges atomically with that head as the
+   expected SHA. It never arms GitHub auto-merge, never submits a review,
+   never relaxes a required check, and never merges another way.
 2. A PR counts as shipped only after it merged, `node scripts/native/native.mjs
 deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
    has been checked in a browser on the live site or that exact commit
