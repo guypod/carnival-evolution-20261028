@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  badgeColors,
   BARREL_LENGTH,
   CANNON,
   JET_LIFE,
@@ -433,5 +434,27 @@ describe('water cannon challenge modes', () => {
     state = applyAction(state, action as { type: 'start' });
     expect(state.tank).toBe(TANK_SIZE);
     expect(state.shots).toHaveLength(0);
+  });
+});
+
+describe('badge contrast', () => {
+  function luminance(hex: string) {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function contrast(a: string, b: string) {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  it('keeps the mode and streak text at least 4.5:1 against the box, with or without a multiplier', () => {
+    for (const streak of [0, 1, 2, 5]) {
+      const badge = badgeColors(streak);
+      expect(contrast(badge.mode, badge.box)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(badge.streak, badge.box)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
