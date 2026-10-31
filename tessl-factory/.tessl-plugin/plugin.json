@@ -3,5 +3,10 @@
   "version": "0.1.0",
   "description": "The carnival's own maintenance skills for scheduled factory loops.",
   "private": true,
-  "skills": ["skills/test-health", "skills/visual-repair", "skills/review-lens-improvement"]
+  "skills": [
+    "skills/test-health",
+    "skills/visual-repair",
+    "skills/review-lens-improvement",
+    "skills/native-intake"
+  ]
 }
