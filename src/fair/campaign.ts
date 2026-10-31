@@ -1,0 +1,339 @@
+/**
+ * Travelling fair campaign: an optional three-stop tour inside Run Your Own
+ * Fair. Each stop blocks different squares of the plaza, so the buildable
+ * topology changes, and sends a different crowd through the gate: its own mix
+ * of families and thrill seekers, arriving with its own needs. The player
+ * packs equipment under a capacity budget, arranges it, and runs Opening Day.
+ * A modest reputation carries to the next stop. Plain functions, so travel,
+ * retries, impossible layouts and saves test without a browser. The sandbox
+ * save under FAIR_KEY is never read or written here.
+ */
+import {
+  ENTRANCE,
+  PIECES,
+  PIECE_NAME,
+  inBounds,
+  isEntrance,
+  key,
+  type Cell,
+  type Layout,
+  type Piece,
+} from './fair';
+import { openGates, type Outcome } from './opening-day';
+import type { Crowd, Sim } from './visitors';
+
+export const CAMPAIGN_KEY = 'tessl-carnival:fair-campaign';
+export const CAMPAIGN_VERSION = 1;
+
+export type StopId = 'riverside' | 'market' | 'hilltop';
+
+export type Stop = {
+  id: StopId;
+  name: string;
+  /** Squares that cannot be built on or walked: water, market stalls, rock. */
+  blocked: readonly string[];
+  /** How many pieces the wagons can carry to this stop. */
+  capacity: number;
+  /** What visitors here care about most, told before packing. It describes `crowd`. */
+  priority: string;
+  /** Who arrives at this stop's Opening Day: the share of families, and how each kind feels on arrival. */
+  crowd: Crowd;
+  /** Extra weight a served or happy group earns here, by what mattered. */
+  weight: { served: number; happy: number };
+};
+
+export const STOPS: readonly Stop[] = [
+  {
+    id: 'riverside',
+    name: 'Riverside meadow',
+    blocked: ['3,0', '3,1', '4,1', '4,2', '5,2', '5,3', '6,3', '6,4'],
+    capacity: 14,
+    priority:
+      'A river cuts the meadow. About four in five groups are families, and they arrive tired from the walk: without a bench on a connected path, they go home.',
+    crowd: {
+      family: 0.8,
+      start: {
+        thrill: { fun: 60, rest: 40, thirst: 20 },
+        family: { fun: 20, rest: 75, thirst: 35 },
+      },
+    },
+    weight: { served: 1, happy: 2 },
+  },
+  {
+    id: 'market',
+    name: 'Market square',
+    blocked: ['2,1', '2,2', '5,1', '5,2', '2,4', '5,4'],
+    capacity: 12,
+    priority:
+      'Market stalls crowd the square. Shoppers of every kind arrive thirsty: without refreshments on a connected path, they go home.',
+    crowd: {
+      family: 0.5,
+      start: {
+        thrill: { fun: 45, rest: 10, thirst: 70 },
+        family: { fun: 20, rest: 35, thirst: 75 },
+      },
+    },
+    weight: { served: 2, happy: 1 },
+  },
+  {
+    id: 'hilltop',
+    name: 'Hilltop green',
+    blocked: ['1,0', '2,0', '1,5', '2,5', '4,0', '4,5', '6,1', '6,2', '6,4', '7,3'],
+    capacity: 10,
+    priority:
+      'A rocky hill with narrow tracks. About four in five groups are thrill seekers who climb up for the games: without a game stall on a connected path, they go home.',
+    crowd: {
+      family: 0.2,
+      start: {
+        thrill: { fun: 85, rest: 10, thirst: 20 },
+        family: { fun: 60, rest: 30, thirst: 30 },
+      },
+    },
+    weight: { served: 2, happy: 2 },
+  },
+];
+
+export type Packing = Readonly<Record<Piece, number>>;
+export const EMPTY_PACKING: Packing = { path: 0, game: 0, food: 0, bench: 0, tree: 0 };
+
+export const packedCount = (p: Packing) => PIECES.reduce((n, piece) => n + p[piece], 0);
+
+export function stopById(id: StopId): Stop {
+  return STOPS.find((s) => s.id === id)!;
+}
+
+export const isBlocked = (stop: Stop, c: Cell) => stop.blocked.includes(key(c));
+
+export type Change<T> = { ok: true; value: T } | { ok: false; reason: string };
+
+/** Packs one more of a piece, refusing past the stop's wagon capacity. */
+export function pack(stop: Stop, packing: Packing, piece: Piece): Change<Packing> {
+  if (packedCount(packing) >= stop.capacity)
+    return { ok: false, reason: `The wagons are full: ${stop.capacity} pieces at most.` };
+  return { ok: true, value: { ...packing, [piece]: packing[piece] + 1 } };
+}
+
+/** Leaves one packed piece at home, refusing one that is already placed at the stop. */
+export function unpack(packing: Packing, piece: Piece, layout: Layout = {}): Change<Packing> {
+  if (packing[piece] === 0)
+    return { ok: false, reason: `No ${PIECE_NAME[piece].toLowerCase()} is packed.` };
+  if (Object.values(layout).filter((p) => p === piece).length >= packing[piece])
+    return {
+      ok: false,
+      reason: `Every packed ${PIECE_NAME[piece].toLowerCase()} is placed. Remove one from the site first.`,
+    };
+  return { ok: true, value: { ...packing, [piece]: packing[piece] - 1 } };
+}
+
+/** Places a packed piece at the stop, refusing blocked squares and pieces left at home. */
+export function placeAtStop(
+  stop: Stop,
+  packing: Packing,
+  layout: Layout,
+  cell: Cell,
+  piece: Piece,
+): Change<Layout> {
+  if (!inBounds(cell)) return { ok: false, reason: 'That spot is off the site.' };
+  if (isEntrance(cell)) return { ok: false, reason: 'The entrance must stay clear.' };
+  if (isBlocked(stop, cell))
+    return { ok: false, reason: `Nothing can be built there at ${stop.name}.` };
+  const used =
+    Object.values(layout).filter((p) => p === piece).length - (layout[key(cell)] === piece ? 1 : 0);
+  if (used >= packing[piece])
+    return {
+      ok: false,
+      reason: `Every packed ${PIECE_NAME[piece].toLowerCase()} is already placed.`,
+    };
+  return { ok: true, value: { ...layout, [key(cell)]: piece } };
+}
+
+/** Why a layout does not fit this stop's ground and wagons, or undefined when it does. */
+export function fitProblem(stop: Stop, packing: Packing, layout: Layout): string | undefined {
+  if (packedCount(packing) > stop.capacity) return `More than ${stop.capacity} pieces are packed.`;
+  for (const [k, piece] of Object.entries(layout)) {
+    if (stop.blocked.includes(k))
+      return `A ${PIECE_NAME[piece].toLowerCase()} sits on blocked ground.`;
+    if (k === key(ENTRANCE)) return 'The entrance must stay clear.';
+  }
+  for (const piece of PIECES) {
+    const used = Object.values(layout).filter((p) => p === piece).length;
+    if (used > packing[piece])
+      return `More ${PIECE_NAME[piece].toLowerCase()}s are placed than packed.`;
+  }
+  return undefined;
+}
+
+/** Why a layout cannot open at this stop, or undefined when it can. */
+export function layoutProblem(stop: Stop, packing: Packing, layout: Layout): string | undefined {
+  const misfit = fitProblem(stop, packing, layout);
+  if (misfit) return misfit;
+  if (!Object.values(layout).some((p) => p === 'game' || p === 'food' || p === 'bench'))
+    return 'Place at least one stall or bench before opening.';
+  return undefined;
+}
+
+export type Campaign = {
+  version: typeof CAMPAIGN_VERSION;
+  /** How many stops are passed; STOPS.length means the tour is complete. */
+  stop: number;
+  /** The stop the player chose to travel to next, if they have chosen. */
+  at?: StopId;
+  reputation: number;
+  /** Keepsakes earned, one per stop passed. */
+  keepsakes: StopId[];
+  packing: Packing;
+  layout: Layout;
+};
+
+export const NEW_CAMPAIGN: Campaign = {
+  version: CAMPAIGN_VERSION,
+  stop: 0,
+  reputation: 0,
+  keepsakes: [],
+  packing: EMPTY_PACKING,
+  layout: {},
+};
+
+/** Each point of reputation lets the wagons carry one more piece, up to three. */
+export const capacityFor = (stop: Stop, campaign: Campaign) =>
+  stop.capacity + Math.min(3, campaign.reputation);
+
+export const complete = (c: Campaign) => c.stop >= STOPS.length;
+
+/** The stop as the wagons see it, with reputation's extra capacity applied. */
+export const withCapacity = (stop: Stop, c: Campaign): Stop => ({
+  ...stop,
+  capacity: capacityFor(stop, c),
+});
+
+/** Stops not yet passed, in tour order. */
+export const unvisited = (c: Campaign) => STOPS.filter((s) => !c.keepsakes.includes(s.id));
+
+/** The stop being played: the one chosen, else the first not yet passed. */
+export const currentStop = (c: Campaign): Stop | undefined =>
+  complete(c) ? undefined : c.at ? stopById(c.at) : unvisited(c)[0];
+
+/** Chooses the next stop, with empty wagons. Refuses a stop already passed. */
+export function chooseStop(c: Campaign, id: StopId): Change<Campaign> {
+  if (complete(c)) return { ok: false, reason: 'The tour is complete.' };
+  if (c.keepsakes.includes(id))
+    return { ok: false, reason: `The fair has already played ${stopById(id).name}.` };
+  return { ok: true, value: { ...c, at: id, packing: EMPTY_PACKING, layout: {} } };
+}
+
+/**
+ * Opens the gates at a stop: the same seeded Opening Day, with the stop's own
+ * crowd. It takes no forecast, so a sandbox forecast never reaches a campaign day.
+ */
+export const openStop = (stop: Stop, layout: Layout): Sim =>
+  openGates(layout, undefined, stop.crowd);
+
+/** Whether a campaign action waits while the gates are open. Only travel and packing do; pause, finish and end early reach the day. */
+export const waitsForGates = (name: string) => /^(go|pack|unpack)-/.test(name);
+
+/** Reputation a day earns at a stop, from what the simulation measured. */
+export function reputationEarned(stop: Stop, o: Outcome): number {
+  if (!o.complete || !o.success) return 0;
+  return Math.max(
+    1,
+    Math.round((o.served * stop.weight.served + o.happy * stop.weight.happy) / 10),
+  );
+}
+
+/** Records a day. A success travels on with a keepsake; anything else stays for a retry with the layout kept. */
+export function recordDay(c: Campaign, o: Outcome): Campaign {
+  const stop = currentStop(c);
+  if (!stop) return c;
+  const earned = reputationEarned(stop, o);
+  if (earned === 0) return c;
+  return {
+    ...c,
+    stop: c.stop + 1,
+    reputation: c.reputation + earned,
+    keepsakes: [...c.keepsakes, stop.id],
+    at: undefined,
+    packing: EMPTY_PACKING,
+    layout: {},
+  };
+}
+
+/** Reads a stored campaign defensively, or undefined when it is not a valid version-1 campaign. */
+export function parseCampaign(raw: unknown): Campaign | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const d = raw as Record<string, unknown>;
+  if (d.version !== CAMPAIGN_VERSION) return undefined;
+  if (!Number.isInteger(d.stop) || (d.stop as number) < 0 || (d.stop as number) > STOPS.length)
+    return undefined;
+  if (!Number.isInteger(d.reputation) || (d.reputation as number) < 0) return undefined;
+  const ids = STOPS.map((s) => s.id);
+  if (
+    !Array.isArray(d.keepsakes) ||
+    d.keepsakes.length !== d.stop ||
+    new Set(d.keepsakes).size !== d.keepsakes.length ||
+    !d.keepsakes.every((k) => ids.includes(k as StopId))
+  )
+    return undefined;
+  // `at` came after the first saves: a save without it simply has no stop chosen yet.
+  if (d.at !== undefined && (!ids.includes(d.at as StopId) || d.keepsakes.includes(d.at)))
+    return undefined;
+  if (!d.packing || typeof d.packing !== 'object' || !d.layout || typeof d.layout !== 'object')
+    return undefined;
+  const packing = { ...EMPTY_PACKING };
+  for (const piece of PIECES) {
+    const n = (d.packing as Record<string, unknown>)[piece] ?? 0;
+    if (!Number.isInteger(n) || (n as number) < 0) return undefined;
+    packing[piece] = n as number;
+  }
+  const layout: Record<string, Piece> = {};
+  for (const [k, piece] of Object.entries(d.layout as Record<string, unknown>)) {
+    const m = /^(0|[1-9]\d*),(0|[1-9]\d*)$/.exec(k);
+    if (!m || !PIECES.includes(piece as Piece)) return undefined;
+    if (!inBounds({ x: Number(m[1]), y: Number(m[2]) })) return undefined;
+    layout[k] = piece as Piece;
+  }
+  const c: Campaign = {
+    version: CAMPAIGN_VERSION,
+    stop: d.stop as number,
+    reputation: d.reputation as number,
+    keepsakes: d.keepsakes as StopId[],
+    packing,
+    layout,
+  };
+  // A first-checkpoint save with work in progress was playing the first stop not yet passed.
+  const started = Object.values(packing).some((n) => n > 0) || Object.keys(layout).length > 0;
+  const at = (d.at as StopId | undefined) ?? (started ? unvisited(c)[0]?.id : undefined);
+  return at ? { ...c, at } : c;
+}
+
+type CampaignStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+export function createCampaignStore(storage: CampaignStorage | undefined) {
+  /** The saved campaign, or a new one when nothing valid is saved. Never overwrites a bad save on load. */
+  function load(): Campaign {
+    try {
+      const raw = storage?.getItem(CAMPAIGN_KEY);
+      return (raw && parseCampaign(JSON.parse(raw))) || NEW_CAMPAIGN;
+    } catch {
+      return NEW_CAMPAIGN;
+    }
+  }
+  function save(c: Campaign): boolean {
+    try {
+      if (!storage) return false;
+      storage.setItem(CAMPAIGN_KEY, JSON.stringify(c));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /** Resets only the campaign. The sandbox plaza and scores are untouched. */
+  function reset(): boolean {
+    try {
+      storage?.removeItem(CAMPAIGN_KEY);
+      return Boolean(storage);
+    } catch {
+      return false;
+    }
+  }
+  return { load, save, reset };
+}
