@@ -8,8 +8,8 @@ Putt round a three-hole course of walls and bumpers in as few strokes as you can
 2. Aim: click or tap anywhere on the green to point the dashed aim line at that
    spot, or turn it with Left/Right.
 3. Set the power: click or tap the **Power** meter below the green, or use
-   Up/Down. The meter and the length of the aim line show the power, from 10%
-   to 100%.
+   Up/Down. The meter, its percentage readout and the length of the aim line
+   show the power, from 10% to 100%.
 4. Press **Putt** (click or tap it, or press Space/Enter). The ball rolls,
    slows with friction and bounces off the edges, the wooden walls and the
    red bumpers. You can't aim or putt again until it stops.

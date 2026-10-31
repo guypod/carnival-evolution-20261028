@@ -9,6 +9,7 @@ import {
   MAX_STROKES,
   METER,
   METER_LABEL,
+  METER_READOUT,
   SINK_SPEED,
   aimAt,
   beginRound,
@@ -366,6 +367,14 @@ describe('controls', () => {
       expect(row[i - 1].x + row[i - 1].w).toBeLessThan(row[i].x);
     }
     for (const box of row) expect(box.y).toBeGreaterThan(COURSE.y + COURSE.h);
+  });
+
+  it('backs the power percentage with a box inside the meter', () => {
+    expect(METER_READOUT.x).toBeGreaterThan(METER.x);
+    expect(METER_READOUT.y).toBeGreaterThan(METER.y);
+    expect(METER_READOUT.x + METER_READOUT.w).toBeLessThan(METER.x + METER.w);
+    expect(METER_READOUT.y + METER_READOUT.h).toBeLessThan(METER.y + METER.h);
+    expect(METER_READOUT.x + METER_READOUT.w / 2).toBe(METER.x + METER.w / 2);
   });
 
   it('putts from the action button only while aiming', () => {
