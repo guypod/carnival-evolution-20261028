@@ -87,11 +87,12 @@ that runs as that app can write these records. Nothing narrower is claimed.
   or removing `auto backlog` or `tessl` never hides one:
   - a slot that already has a claim never claims a second issue;
   - an open claimed issue labelled `tessl` with no pull request yet keeps the
-    queue busy, without reading the rest of the backlog, while it has an
-    admission record, while its label is the owner's, or for 90 minutes after
-    the bot's label so its `admit` run can come off the writer queue. After
-    that, a bot label with no admission was refused: the queue moves on and
-    that issue is never relabelled;
+    queue busy, without reading the rest of the backlog, while its label is
+    the owner's, for 90 minutes after the bot's label so its `admit` run can
+    come off the writer queue, and for 3 hours after its admission record so
+    its run can open a pull request. After that the run was refused or ended
+    without a pull request: the queue moves on and that issue is never
+    relabelled;
   - a backlog item without a journal entry whose digest matches its current
     content is skipped, since `admit` would refuse it;
   - a claim that never got its label, from any slot, is finished later,

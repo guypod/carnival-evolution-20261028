@@ -194,7 +194,8 @@ export function readBatch(json, now) {
     return { error: 'batch slot is not a scheduled backlog slot' };
   if (slot > current) return { error: `batch slot ${slot} is later than ${current}` };
   const [, date] = SLOT_RE.exec(slot);
-  if (new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date)
+  const day = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== date)
     return { error: `batch slot ${slot} is not a calendar date` };
   return { slot, candidates: json.candidates };
 }
@@ -515,6 +516,8 @@ export async function dispatch(adapter, slot, now = new Date()) {
 
 /** How long a bot label may wait for its admit run before it counts as refused. */
 export const ADMIT_GRACE_MS = 90 * 60_000;
+/** How long an admitted issue may wait for its pull request before it counts as stopped. */
+export const RUN_GRACE_MS = 3 * 60 * 60_000;
 
 /**
  * Whether a claimed, labelled issue with no pull request still holds the
@@ -526,8 +529,17 @@ export const ADMIT_GRACE_MS = 90 * 60_000;
 async function awaitingRun(adapter, number, now) {
   const comments = await adapter.listComments(number);
   if (!comments.complete) return { status: 'blocked', reason: `comments of #${number} incomplete` };
-  if (readAdmissions(comments.items).some((a) => a.issue === number))
-    return { status: 'busy', waitingOn: number };
+  // An admitted run holds the queue for a bounded time. If it ends without a
+  // pull request (failed, timed out, never accepted), the queue moves on.
+  const admittedAt = comments.items
+    .filter((c) => readAdmissions([c]).some((a) => a.issue === number))
+    .map((c) => c.created_at)
+    .sort()
+    .at(-1);
+  if (admittedAt !== undefined) {
+    const age = now - new Date(admittedAt);
+    return Number.isNaN(age) || age < RUN_GRACE_MS ? { status: 'busy', waitingOn: number } : null;
+  }
   const events = await adapter.listEvents(number);
   if (!events.complete) return { status: 'blocked', reason: `events of #${number} incomplete` };
   const at = events.items

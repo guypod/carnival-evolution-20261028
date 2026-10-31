@@ -1,6 +1,6 @@
 ---
 name: native-intake
-description: Run the carnival's native creative intake. MODE=backlog files exactly 18 distinct enhancement issues labelled `auto backlog` (never `tessl`) for the current six-hour London slot. MODE=dispatch merges Tessl pull requests that pass the evolution merge gate on their exact current head, atomically pinned to that head, then labels one claimed backlog issue `tessl` as the bot. MODE=admit runs the deterministic admission check on that bot label and alone hands an admitted issue to implement-github-issue. Use only from the native-intake schedules or a manual verification trigger.
+description: Run the carnival's native creative intake. MODE=backlog files exactly 18 distinct enhancement issues labelled `auto backlog` (never `tessl`) for the current six-hour London slot. MODE=dispatch merges Tessl pull requests that pass the evolution merge gate on their exact current head, atomically pinned to that head, then labels one claimed backlog issue `tessl` as the bot. MODE=admit runs the deterministic admission check on that bot label and alone hands an admitted issue to implement-github-issue. Use only from the native-intake schedules, the native-bot-backlog-labelled trigger (MODE=admit), or a manual verification trigger.
 ---
 
 # Native intake

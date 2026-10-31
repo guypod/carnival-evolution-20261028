@@ -1553,8 +1553,12 @@ test('a bot-labelled claim never admitted stops holding the queue after the grac
       request: 'r',
     }),
   });
-  r = await dispatch(gh, DSLOT, new Date('2026-10-31T03:00:00Z'));
+  r = await dispatch(gh, DSLOT, new Date('2026-10-31T00:50:00Z'));
   assert.deepEqual(r, { status: 'busy', waitingOn: 11 });
+  // An admitted run that never opened a pull request stops holding it after the run grace.
+  r = await dispatch(gh, 'dispatch-2026-10-31T0400', new Date('2026-10-31T04:00:00Z'));
+  assert.equal(r.status, 'dispatched');
+  assert.equal(r.issue, 12);
   // Past the grace with no admission: refused, so the next issue goes and #11 is left alone.
   gh = world();
   r = await dispatch(gh, DSLOT, new Date('2026-10-31T03:00:00Z'));
@@ -1602,4 +1606,12 @@ test('journal recovery certifies only the batch content still on the issue, neve
   r = await produceBacklog(gh2, SLOT, file);
   assert.equal(r.status, 'complete');
   assert.deepEqual(writes(gh2), [['comment', first.number]]);
+});
+
+test('a batch slot with an impossible month is refused, not a crash', () => {
+  const r = readBatch(
+    { slot: 'backlog-2026-00-10T00', candidates: [] },
+    new Date('2026-10-31T12:00:00Z'),
+  );
+  assert.match(r.error, /calendar date/);
 });
