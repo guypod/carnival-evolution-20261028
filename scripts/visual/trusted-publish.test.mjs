@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -508,4 +510,56 @@ test('an unchanged head with a current authorized pass is not recaptured', () =>
     ),
     false,
   );
+});
+
+test('a hung GitHub call is bounded, never a success, and never retried', async () => {
+  // Before: ghApi used spawnSync with no timeout, so a stalled check-run
+  // create, blob upload, readback or failure PATCH held dispatch forever.
+  // After: each call has a finite bound inside one publication budget.
+  const { ghApi, GH_LIMITS, resetGhBudget, upload, readback } =
+    await import('./trusted-publish.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'gh-hang-'));
+  const log = join(dir, 'calls');
+  writeFileSync(join(dir, 'gh'), `#!/bin/sh\necho "$*" >>${log}\nexec sleep 30\n`, {
+    mode: 0o755,
+  });
+  const PATH = process.env.PATH;
+  process.env.PATH = `${dir}:${PATH}`;
+  const saved = { ...GH_LIMITS };
+  Object.assign(GH_LIMITS, { call: 0.3, total: 0.8 });
+  const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []);
+  try {
+    for (const [name, attempt] of [
+      ['create', () => ghApi('POST', 'repos/x/check-runs', { name: 'browser-flow' })],
+      ['upload', () => upload('evidence/a/b', { 'a.png': Buffer.from('x') })],
+      ['readback', () => readback('a'.repeat(40), 'evidence/a/b')],
+      ['finalize', () => ghApi('PATCH', 'repos/x/check-runs/1', { conclusion: 'success' })],
+      ['failure PATCH', () => ghApi('PATCH', 'repos/x/check-runs/1', {}, { final: true })],
+    ]) {
+      resetGhBudget();
+      rmSync(log, { force: true });
+      const t = Date.now();
+      await assert.rejects(attempt(), /timed out/, name);
+      assert.ok(Date.now() - t < 2000, `${name} returned within its bound`);
+      assert.equal(calls().length, 1, `${name} sent exactly one call, no replay`);
+    }
+    // Writes say their outcome is unknown, and are not retried.
+    resetGhBudget();
+    await assert.rejects(ghApi('POST', 'repos/x/git/commits', {}), /outcome unknown, not retried/);
+    // The whole publication shares one budget: once it is spent, no call is sent.
+    GH_LIMITS.total = 0.5;
+    resetGhBudget();
+    rmSync(log, { force: true });
+    await assert.rejects(ghApi('GET', 'a'), /timed out/);
+    await assert.rejects(ghApi('GET', 'b'), /timed out/);
+    await assert.rejects(ghApi('GET', 'c'), /budget spent/);
+    assert.equal(calls().length, 2);
+    // The failure PATCH still gets its own bounded call after the budget.
+    await assert.rejects(ghApi('PATCH', 'd', {}, { final: true }), /timed out/);
+    assert.equal(calls().length, 3);
+  } finally {
+    process.env.PATH = PATH;
+    Object.assign(GH_LIMITS, saved);
+    resetGhBudget();
+  }
 });

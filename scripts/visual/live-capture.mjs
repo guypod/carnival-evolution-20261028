@@ -508,11 +508,9 @@ async function main() {
   } finally {
     if (checkId && step !== 'published') {
       const { failCheckRun } = await import('./flow-check.mjs');
-      await ghApi(
-        'PATCH',
-        `repos/${REPO}/check-runs/${checkId}`,
-        failCheckRun(o.flow, step, 1),
-      ).catch(() => console.error(`check run ${checkId} stays in progress; shipState refuses`));
+      await ghApi('PATCH', `repos/${REPO}/check-runs/${checkId}`, failCheckRun(o.flow, step, 1), {
+        final: true,
+      }).catch(() => console.error(`check run ${checkId} stays in progress; shipState refuses`));
     }
   }
 }

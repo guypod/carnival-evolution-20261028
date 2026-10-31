@@ -1977,6 +1977,85 @@ export function reconcile(shas, read, budget = Infinity) {
   });
 }
 
+/** Where the owed sweep keeps its progress, on the evidence branch. */
+export const OWED_LEDGER_PATH = 'state/owed-ledger.json';
+
+/**
+ * A parsed owed ledger, or null when it is not one. The ledger is keyed by
+ * immutable merge sha: { version: 1, merges: { <sha>: { seen, visited,
+ * verified, observed } } }. `seen` and `visited` are sweep numbers,
+ * `verified` is the last shipped result ({ state, at, keys }) and
+ * `observed` the last read ({ state, at, owed }), kept apart so a failed read
+ * never overwrites an established result.
+ */
+export function parseOwedLedger(json) {
+  if (json?.version !== 1 || !Number.isInteger(json.sweep) || json.sweep < 0) return null;
+  if (typeof json.merges !== 'object' || json.merges === null || Array.isArray(json.merges))
+    return null;
+  for (const [sha, e] of Object.entries(json.merges))
+    if (!/^[0-9a-f]{40}$/.test(sha) || !Number.isInteger(e?.seen) || !Number.isInteger(e?.visited))
+      return null;
+  return json;
+}
+
+/**
+ * One fair, bounded owed sweep. `ledger` is the parsed ledger, or null when
+ * none exists yet. The `budget` merges read are those whose last visit (or,
+ * if never visited, first sighting) is oldest, so a merge waits at most
+ * ceil(merges / budget) sweeps and newly arriving commits queue behind it.
+ * Shipped merges are revisited in turn, never every sweep. A merge not read
+ * this sweep keeps its last verified result; with none it is
+ * `verification-unread`. Returns { merges, ledger }, the ledger to save.
+ */
+export function fairReconcile(
+  shas,
+  read,
+  budget,
+  ledger,
+  now = new Date().toISOString(),
+  rec = reconcile,
+) {
+  const sweep = (ledger?.sweep ?? 0) + 1;
+  const known = { ...(ledger?.merges ?? {}) };
+  for (const sha of shas) known[sha] ??= { seen: sweep, visited: -1 };
+  const turn = (sha) => Math.max(known[sha].visited, known[sha].seen - 1);
+  const order = shas
+    .map((sha, i) => ({ sha, i }))
+    .sort((a, b) => turn(a.sha) - turn(b.sha) || b.i - a.i);
+  const pick = new Set(order.slice(0, budget).map((o) => o.sha));
+  const results = rec(
+    shas.filter((sha) => pick.has(sha)),
+    read,
+  );
+  const runsUnread = results.length > 0 && results.every((r) => r.state === 'unknown');
+  const bySha = new Map(results.map((r) => [r.sha, r]));
+  const merges = {};
+  const out = shas.map((sha) => {
+    const prev = known[sha];
+    const r = bySha.get(sha);
+    if (!r) {
+      merges[sha] = prev;
+      return prev.verified?.state === 'shipped'
+        ? { sha, state: 'shipped', keys: prev.verified.keys ?? [], verifiedAt: prev.verified.at }
+        : { sha, state: 'verification-unread', owed: ['not reconciled this sweep'] };
+    }
+    const observed = { state: r.state, at: now, owed: r.owed ?? [] };
+    const verified =
+      r.state === 'shipped' ? { state: r.state, at: now, keys: r.keys ?? [] } : prev.verified;
+    // A sweep whose Pages listing failed made no progress: the merge keeps its turn.
+    merges[sha] = {
+      ...prev,
+      visited: runsUnread ? prev.visited : sweep,
+      observed,
+      ...(verified ? { verified } : {}),
+    };
+    if (r.state !== 'shipped' && prev.verified?.state === 'shipped')
+      return { ...r, verified: prev.verified };
+    return r;
+  });
+  return { merges: out, ledger: { version: 1, sweep, merges } };
+}
+
 /**
  * Every merge on main since the gate began that is not shipped, oldest
  * first: [{ sha, state, owed, keys }]. Main's own history is the persistent
@@ -2017,6 +2096,68 @@ function pages(path) {
     return { items: JSON.parse(out).flat(), complete: true };
   } catch {
     return { items: [], complete: false };
+  }
+}
+
+/**
+ * The owed ledger at the evidence branch tip: { parent, ledger }, ledger null
+ * when the file does not exist yet, or { error } when the tip or the file
+ * cannot be read or is not a ledger.
+ */
+function readOwedLedger() {
+  let parent;
+  try {
+    parent = JSON.parse(gh(['api', `repos/${REPOSITORY}/git/ref/heads/${EVIDENCE_BRANCH}`])).object
+      .sha;
+  } catch {
+    return { error: 'ledger-unread: evidence branch tip unread' };
+  }
+  let raw;
+  try {
+    raw = gh(['api', `repos/${REPOSITORY}/contents/${OWED_LEDGER_PATH}?ref=${parent}`]);
+  } catch (e) {
+    if (/HTTP 404/.test(String(e.stderr ?? ''))) return { parent, ledger: null };
+    return { error: 'ledger-unread: ledger file unread' };
+  }
+  try {
+    const ledger = parseOwedLedger(JSON.parse(Buffer.from(JSON.parse(raw).content, 'base64')));
+    return ledger ? { parent, ledger } : { error: 'ledger-invalid' };
+  } catch {
+    return { error: 'ledger-invalid' };
+  }
+}
+
+/**
+ * Saves the ledger on top of `parent` with a fast-forward ref update, the
+ * branch's compare-and-swap: if another writer moved the tip, the update is
+ * refused and nothing is retried. A lost or uncertain write only repeats
+ * reads next sweep, since every shipped result is read again in turn.
+ */
+function writeOwedLedger(parent, ledger) {
+  const api = (method, path, body) =>
+    JSON.parse(gh(['api', '-X', method, path, '--input', '-'], JSON.stringify(body)));
+  try {
+    const base = JSON.parse(gh(['api', `repos/${REPOSITORY}/git/commits/${parent}`])).tree.sha;
+    const blob = api('POST', `repos/${REPOSITORY}/git/blobs`, {
+      content: Buffer.from(JSON.stringify(ledger)).toString('base64'),
+      encoding: 'base64',
+    });
+    const tree = api('POST', `repos/${REPOSITORY}/git/trees`, {
+      base_tree: base,
+      tree: [{ path: OWED_LEDGER_PATH, mode: '100644', type: 'blob', sha: blob.sha }],
+    });
+    const commit = api('POST', `repos/${REPOSITORY}/git/commits`, {
+      message: `Owed ledger: sweep ${ledger.sweep}`,
+      tree: tree.sha,
+      parents: [parent],
+    });
+    api('PATCH', `repos/${REPOSITORY}/git/refs/heads/${EVIDENCE_BRANCH}`, {
+      sha: commit.sha,
+      force: false,
+    });
+    return `saved sweep ${ledger.sweep}`;
+  } catch {
+    return 'ledger-write-uncertain: not retried; the next sweep re-reads the tip';
   }
 }
 
@@ -2474,9 +2615,22 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
     if (!commits.complete) print({ status: 'unknown', reason: 'commit listing incomplete' });
     else {
-      // Newest first, so the budget reaches recent merges; older ones stay owed.
+      // The ledger decides which merges this sweep reads, oldest turn first.
       const shas = commits.items.flat().map((c) => c.sha);
-      print(owedMerges(reconcile(shas, liveReader(), OWED_BUDGET)).reverse());
+      const saved = readOwedLedger();
+      if (saved.error) {
+        // An unreadable or invalid ledger is never replaced: reconcile without
+        // it, save nothing, and say so.
+        const { merges } = fairReconcile(shas, liveReader(), OWED_BUDGET, null);
+        print({ ledger: saved.error, owed: owedMerges(merges).reverse() });
+      } else {
+        const { merges, ledger } = fairReconcile(shas, liveReader(), OWED_BUDGET, saved.ledger);
+        // Only the writer-key holder (the native-intake action) saves progress.
+        const note = held
+          ? writeOwedLedger(saved.parent, ledger)
+          : 'not saved: writer key not held';
+        print({ ledger: note, owed: owedMerges(merges).reverse() });
+      }
     }
   } else if (command === 'deploy') {
     const [r] = reconcile([arg], liveReader());

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { liveIdentity } from '../visual/live-identity.mjs';
@@ -37,6 +37,8 @@ import {
   liveDir,
   LIVE_URL,
   owedMerges,
+  fairReconcile,
+  parseOwedLedger,
   evidenceMarker,
   AUTHORITY_PATH,
   REPOSITORY,
@@ -2879,6 +2881,69 @@ test('owed: one deploy-history read per sweep, jobs cached per run, bounded merg
   assert.equal(owedMerges(unread).length, C);
 });
 
+test('owed ledger: older and shipped merges are revisited fairly, and kept', () => {
+  // Before: every sweep read the newest 60 merges, so older ones were never
+  // read again and a shipped merge became verification-unread for good.
+  const sha = (n) => n.toString(16).padStart(40, '0');
+  let shas = Array.from({ length: 150 }, (_, i) => sha(150 - i)); // newest first
+  const shipped = new Set([sha(1), sha(2), sha(3)]);
+  let failing = false;
+  const visits = new Map();
+  const rec = (picked) =>
+    picked.map((s) => {
+      visits.set(s, (visits.get(s) ?? 0) + 1);
+      if (failing) return { sha: s, state: 'unknown', owed: ['runs listing incomplete'] };
+      return shipped.has(s)
+        ? { sha: s, state: 'shipped', keys: ['k'] }
+        : { sha: s, state: 'deployed-verification-owed', owed: ['live flow'] };
+    });
+  let ledger = null;
+  const sweep = () => {
+    const r = fairReconcile(shas, {}, 60, ledger, 't', rec);
+    assert.ok(parseOwedLedger(r.ledger), 'the saved ledger parses');
+    ledger = JSON.parse(JSON.stringify(r.ledger)); // round-trip like the branch file
+    return r.merges;
+  };
+  sweep();
+  sweep();
+  let last = sweep();
+  // Three sweeps of 60 reach all 150, the oldest included.
+  assert.ok(shas.every((s) => visits.get(s) >= 1));
+  assert.equal(last.find((m) => m.sha === sha(1)).state, 'shipped');
+  // New merges arrive every sweep; the oldest are still read again.
+  for (let k = 0; k < 6; k++) {
+    shas = [...Array.from({ length: 20 }, (_, i) => sha(1000 + k * 20 + i)), ...shas];
+    last = sweep();
+  }
+  assert.ok(visits.get(sha(1)) >= 3, 'the oldest shipped merge was revisited');
+  assert.ok(visits.get(sha(70)) >= 3, 'an older pending merge was revisited');
+  // A shipped merge not read this sweep keeps its verified result.
+  const unreadShipped = last.filter((m) => shipped.has(m.sha));
+  assert.ok(unreadShipped.every((m) => m.state === 'shipped'));
+  // A failed sweep neither moves progress nor erases a verified success.
+  const before = JSON.stringify(Object.entries(ledger.merges).map(([s, e]) => [s, e.visited]));
+  failing = true;
+  const failed = sweep();
+  failing = false;
+  assert.equal(
+    JSON.stringify(Object.entries(ledger.merges).map(([s, e]) => [s, e.visited])),
+    before,
+  );
+  assert.ok(
+    Object.values(ledger.merges).filter((e) => e.verified?.state === 'shipped').length === 3,
+  );
+  const s1 = failed.find((m) => m.sha === sha(1));
+  assert.ok(s1.state === 'shipped' || s1.verified?.state === 'shipped');
+  // A lost or uncertain write is the same as replaying the old ledger: no merge
+  // is skipped, it is only read again.
+  const stale = fairReconcile(shas, {}, 60, null, 't', rec).merges;
+  assert.equal(stale.length, shas.length);
+  assert.ok(stale.every((m) => m.state !== 'shipped' || shipped.has(m.sha)));
+  // An invalid ledger is refused, never treated as progress.
+  for (const bad of [null, {}, { version: 1, sweep: 1, merges: { x: {} } }, { version: 2 }])
+    assert.equal(parseOwedLedger(bad), null);
+});
+
 test('live identity: only a byte-for-byte match of the merge build counts', async () => {
   const dist = mkdtempSync(join(tmpdir(), 'dist-'));
   mkdirSync(join(dist, 'assets'));
@@ -2936,6 +3001,52 @@ test('live capture never runs merged code on the writer host', () => {
   const skill = readFileSync('tessl-factory/skills/native-intake/SKILL.md', 'utf8');
   assert.doesNotMatch(skill, /run-flow\.sh <dir> <flow> --live/);
   assert.match(skill, /browser-flow-live-owed/);
+});
+
+test('legacy run-flow.sh --publish refuses before Vite or a check run', () => {
+  // Before: --publish opened a check run with the host's gh credentials, then
+  // started the candidate's own Vite on that host. After: it exits 3 before
+  // either, so the obsolete instruction cannot run candidate code.
+  const repo = mkdtempSync(join(tmpdir(), 'run-flow-publish-'));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  mkdirSync(join(repo, 'scripts/visual'), { recursive: true });
+  mkdirSync(join(repo, 'node_modules/.bin'), { recursive: true });
+  mkdirSync(join(repo, 'bin'));
+  const here = new URL('../visual/', import.meta.url).pathname;
+  for (const f of ['run-flow.sh', 'flow-check.mjs', 'setup-browser.sh'])
+    writeFileSync(join(repo, 'scripts/visual', f), execFileSync('cat', [join(here, f)]));
+  const marker = join(repo, 'ran');
+  for (const tool of ['bin/gh', 'node_modules/.bin/vite'])
+    writeFileSync(join(repo, tool), `#!/bin/sh\necho ${tool} >>${marker}\n`, { mode: 0o755 });
+  writeFileSync(join(repo, '.gitignore'), 'ran\n');
+  git('add', '-A');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x');
+  let status = 0;
+  let stderr = '';
+  try {
+    execFileSync(
+      'bash',
+      [join(repo, 'scripts/visual/run-flow.sh'), join(repo, 'out'), FLOW, '--publish'],
+      {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        env: {
+          PATH: `${join(repo, 'bin')}:${process.env.PATH}`,
+          CARNIVAL_BROWSER_DIR: join(repo, 'b'),
+        },
+      },
+    );
+  } catch (e) {
+    status = e.status;
+    stderr = String(e.stderr);
+  }
+  assert.equal(status, 3);
+  assert.match(stderr, /--publish is disabled/);
+  assert.equal(existsSync(marker), false, 'neither gh nor vite ran');
+  assert.equal(existsSync(join(repo, 'out')), false, 'no attempt directory was made');
+  const readme = readFileSync('scripts/native/README.md', 'utf8');
+  assert.doesNotMatch(readme, /run-flow\.sh <out dir> <flow> --publish/);
 });
 
 test('advisory: a cut-short file listing, and inherited names, fail closed', () => {

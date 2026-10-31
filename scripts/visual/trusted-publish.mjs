@@ -580,22 +580,58 @@ async function main() {
     if (staging && o.publish) rmSync(staging, { recursive: true, force: true });
     if (checkId && step !== 'published') {
       const { failCheckRun } = await import('./flow-check.mjs');
-      await gh('PATCH', `repos/${REPO}/check-runs/${checkId}`, failCheckRun(o.flow, step, 1)).catch(
-        () => console.error(`check run ${checkId} stays in progress; the gate refuses`),
-      );
+      await ghApi('PATCH', `repos/${REPO}/check-runs/${checkId}`, failCheckRun(o.flow, step, 1), {
+        final: true,
+      }).catch(() => console.error(`check run ${checkId} stays in progress; the gate refuses`));
     }
   }
 }
 
-export async function ghApi(method, path, body) {
+/**
+ * Bounds on GitHub calls: each call gets at most `call` seconds, and every
+ * call of one publication shares `total` seconds from the first. The one
+ * failure PATCH that concludes the check gets its own `call` seconds past
+ * that, so a hung call can never hold dispatch for longer than
+ * total + call.
+ */
+export const GH_LIMITS = { call: 60, total: 600 };
+let ghDeadline;
+
+/**
+ * One GitHub API call, bounded. A timeout or any other failure throws; it is
+ * never a success. A write that timed out may or may not have landed, so the
+ * error says so, and nothing here retries it: check run, blob, tree, commit
+ * and ref writes are never replayed. The caller concludes the check as a
+ * failure, and the gate reads the newest attempt, so an uncertain one fails
+ * closed. `final` marks the failure PATCH, which may run past the budget.
+ */
+export async function ghApi(method, path, body, { final = false, run = spawnSync } = {}) {
+  const now = Date.now();
+  ghDeadline ??= now + GH_LIMITS.total * 1000;
+  const left = final ? GH_LIMITS.call * 1000 : Math.min(GH_LIMITS.call * 1000, ghDeadline - now);
+  if (left <= 0) throw new Error(`gh ${method} ${path} not sent: publication budget spent`);
   const args = ['api', '-X', method, path];
   if (body) args.push('--input', '-');
-  const r = spawnSync('gh', args, {
+  const r = run('gh', args, {
     input: body ? JSON.stringify(body) : undefined,
     encoding: 'utf8',
+    timeout: left,
+    killSignal: 'SIGKILL',
+    maxBuffer: 64 * 1024 * 1024,
   });
-  if (r.status !== 0) throw new Error(`gh ${method} ${path} failed`);
+  const write = method !== 'GET';
+  if (r.error?.code === 'ETIMEDOUT' || r.signal)
+    throw new Error(
+      `gh ${method} ${path} timed out after ${left} ms${write ? ': outcome unknown, not retried' : ''}`,
+    );
+  if (r.status !== 0)
+    throw new Error(`gh ${method} ${path} failed${write ? ': outcome unknown, not retried' : ''}`);
   return JSON.parse(r.stdout || '{}');
+}
+
+/** Starts a new publication budget (for tests; each CLI run starts fresh). */
+export function resetGhBudget() {
+  ghDeadline = undefined;
 }
 
 /** Commits the files to the evidence branch through the API, on top of its current tip. */

@@ -291,22 +291,22 @@ evidence), `tessl-factory/` or `skills/`, a Markdown file under `docs/`, or a
 top-level `.md` file. App source renamed into `docs/`, or deleted, is still
 an app change.
 
-`scripts/visual/run-flow.sh <out dir> <flow> --publish` produces this evidence
-on the checked-out, committed head. It first creates the flow's check run in
-progress, then sets up headless Chromium with `setup-browser.sh`, serves the
-checkout, plays the flow from `scripts/visual/flow.mjs` (for example
-`mini-putt-hole-next`, which finishes a hole and presses Next), pushes the
-screenshots to the evidence branch and concludes the check run. Any exit
-before that, such as a browser setup failure, an unknown flow, a missing
-screenshot or a failed upload, concludes it as a failure. Each attempt writes
-into a new `attempt.XXXXXX` directory made inside the output folder, so an
-earlier report is never read and nothing the caller left there is removed. A
-symlink or a file as the output folder is refused. A flow that exits non-zero
-publishes nothing.
-The file listing counts as complete only when it holds every file the pull
-request reports. The dispatch
-mode of `tessl-factory/skills/native-intake` runs it for every required flow
-before the merge sweep.
+Only `scripts/visual/trusted-publish.mjs`, run from a clean checkout of the
+operator record's reviewed wrapper `W` (see "Trusted publisher" below),
+produces this evidence. It runs the pinned capture primitives in isolated
+containers, never the candidate's Vite on the host, and writes the
+provenance the gate needs. The file listing counts as complete only when it
+holds every file the pull request reports. The dispatch mode of
+`tessl-factory/skills/native-intake` runs that wrapper for every required
+flow before the merge sweep once the record is installed, and until then
+reports each flow as owed.
+
+`scripts/visual/run-flow.sh <out dir> <flow>` is a local developer mode
+only: it serves the checkout with its own Vite and plays the flow into a new
+`attempt.XXXXXX` directory. It never publishes, and nothing it writes is
+evidence. `run-flow.sh --publish` and `--live` are disabled: they exit 3
+before any checkout check, Vite, network read or check run, because they ran
+candidate code on the host that holds the GitHub credentials.
 
 ### Isolated capture (not yet authoritative)
 
@@ -387,8 +387,9 @@ before and after the flow. That identity report is retained as
 `scripts/visual/run-flow.sh --live` no longer records that run: it refuses
 (exit 3), because it built and ran the merge on the host that holds the writer
 key. Its replacement is the mediated capture in
-`scripts/visual/live-capture.mjs`, built and tested but not yet wired into
-dispatch, so every live flow is still reported as
+`scripts/visual/live-capture.mjs`, which dispatch runs from the record's
+wrapper `W`. With no authority anchor installed it exits 3 before any build or
+check run, so every live flow is still reported as
 `browser-flow-live-owed: <merge>:<flow>` and nothing reaches `shipped`.
 
 - The manifest is `index.html` plus every file under `assets/` of the isolated
@@ -426,6 +427,31 @@ listed after its pull request leaves the open list. Once a newer deployment
 replaces a merge, the live site can no longer match that merge's build, so it
 cannot be verified any more. It is reported as `superseded-verification-owed`,
 never `shipped`, and stays listed until a person signs it off.
+
+Each sweep reads at most `OWED_BUDGET` (60) merges, chosen fairly by the
+owed ledger, `state/owed-ledger.json` on `factory-state/browser-evidence`.
+It is keyed by merge sha and records, for each merge, the sweep it was last
+read in, its last verified result (`verified`: state, time, keys) and its last
+observation (`observed`), kept apart so a failed read never erases a shipped
+result. The merges read are the ones whose turn is oldest, so every merge,
+shipped ones included, is read again within ceil(merges / 60) sweeps however
+many new merges arrive. A merge not read this sweep keeps its verified result,
+or is `verification-unread`. A sweep whose Pages listing failed moves no
+merge's turn. Only the writer-key holder saves the ledger, through a
+fast-forward ref update on the branch tip it read: if another writer moved the
+tip, or the result is uncertain, nothing is retried and the next sweep starts
+from the tip it reads. A lost save only repeats reads. An unreadable or
+invalid ledger is reported (`ledger-unread`, `ledger-invalid`), never
+replaced, and that sweep reconciles as if no ledger existed.
+
+Publication calls are bounded. Every GitHub call in `trusted-publish.mjs` and
+`live-capture.mjs` (check-run create, upload, readback, final and failure
+PATCH) has a 60 s limit inside one 600 s budget per publication, with the
+failure PATCH allowed one more 60 s call (`GH_LIMITS`). A timeout or error is
+a failure, never a success. Writes that time out are reported as outcome
+unknown and are never retried, so no check run or evidence commit is created
+twice. The newest attempt then fails or stays in progress, and the gate
+refuses.
 
 ### Trusted publisher (awaiting independent review)
 
