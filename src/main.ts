@@ -369,21 +369,31 @@ function renderMidway() {
         <a href="https://tessl.io/devcon?utm_source=carnival&amp;utm_medium=midway-credit&amp;utm_campaign=tessl-carnival" target="_blank" rel="noopener">AI DevCon NYC</a>
       </p>
       <div class="midway-panels">
-        <div class="midway-toggles">
-          <button type="button" class="help-toggle" aria-expanded="false" aria-controls="midway-help-panel">
-            ❔ Help
-          </button>
-          <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
-            🗺️ Guide
-          </button>
-          <button type="button" class="tour-start" aria-controls="welcome-tour" hidden>👋 Start tour</button>
-          <button type="button" class="photo-toggle" aria-expanded="false" aria-controls="photo-mode">📷 Photo</button>
-        </div>
-        <div class="midway-view" role="group" aria-label="Map view">
-          <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
-          <button type="button" class="view-reset" aria-label="Reset the map view">Reset view</button>
-          <button type="button" class="view-in" aria-label="Zoom the map in">+</button>
-          <button type="button" class="view-locate" aria-keyshortcuts="L">Find me (L)</button>
+        <div class="midway-toolbar">
+          <div class="midway-toggles">
+            <button type="button" class="help-toggle" aria-expanded="false" aria-controls="midway-help-panel">
+              ❔<span class="toolbar-label"> Help</span>
+            </button>
+            <button type="button" class="guide-toggle" aria-expanded="false" aria-controls="visitor-guide">
+              🗺️<span class="toolbar-label"> Guide</span>
+            </button>
+            <button type="button" class="tour-start" aria-controls="welcome-tour" aria-label="Start tour" hidden>
+              👋<span class="toolbar-label"> Start tour</span>
+            </button>
+            <button type="button" class="photo-toggle" aria-expanded="false" aria-controls="photo-mode" aria-label="Photo">
+              📷<span class="toolbar-label"> Photo</span>
+            </button>
+          </div>
+          <div class="midway-view" role="group" aria-label="Map view">
+            <button type="button" class="view-out" aria-label="Zoom the map out">−</button>
+            <button type="button" class="view-reset" aria-label="Reset the map view">
+              <span class="toolbar-label">Reset view</span><span class="toolbar-icon" aria-hidden="true">⟲</span>
+            </button>
+            <button type="button" class="view-in" aria-label="Zoom the map in">+</button>
+            <button type="button" class="view-locate" aria-label="Find me (L)" aria-keyshortcuts="L">
+              <span class="toolbar-label">Find me (L)</span><span class="toolbar-icon" aria-hidden="true">📍</span>
+            </button>
+          </div>
         </div>
         <p class="locate-status" role="status" aria-live="polite"></p>
         <button type="button" class="discovery-hint" hidden></button>

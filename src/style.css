@@ -178,6 +178,62 @@ kbd {
   gap: 6px;
 }
 
+/* On wide screens the toolbar is just its two rows; phones fold it into one. */
+.midway-toolbar {
+  display: contents;
+}
+
+.toolbar-icon {
+  display: none;
+}
+
+/*
+ * Phone width: Help, Guide, the tour, Photo and the map view share one row of
+ * icon buttons. Each keeps its accessible name in aria-label, and the
+ * next-landmark hint shrinks to one line under the row.
+ */
+@media (max-width: 560px) {
+  .midway-toolbar {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+    max-width: 100%;
+  }
+
+  .midway-toggles,
+  .midway-view {
+    gap: 4px;
+  }
+
+  .toolbar-label {
+    display: none;
+  }
+
+  .toolbar-icon {
+    display: inline;
+  }
+
+  .midway-toolbar button,
+  .midway-toolbar .help-toggle,
+  .midway-toolbar .guide-toggle,
+  .midway-toolbar .tour-start {
+    min-width: 32px;
+    padding: 4px 6px;
+  }
+
+  .help-toggle[aria-expanded='true']::after,
+  .guide-toggle[aria-expanded='true']::after {
+    content: '✕';
+  }
+
+  .discovery-hint {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 .midway-view button,
 .midway-ferry button,
 .midway-homeward button {
@@ -2925,7 +2981,7 @@ kbd {
    and the photo panel stay. */
 body[data-photo='on'] .midway-help,
 body[data-photo='on'] .midway-credit,
-body[data-photo='on'] .midway-panels > :not(.midway-view, .photo-mode, .midway-toggles),
+body[data-photo='on'] .midway-panels > :not(.midway-toolbar, .photo-mode),
 body[data-photo='on'] .midway-toggles > :not(.photo-toggle),
 body[data-photo='on'] .midway > :not(.midway-map, .midway-panels, .photo-frame-outline) {
   display: none !important;
