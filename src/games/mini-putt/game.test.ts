@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ACTION_BUTTON,
   BALL_RADIUS,
+  BUMPER_LABEL,
   COURSE,
   CUP_RADIUS,
   HELP,
@@ -11,6 +12,7 @@ import {
   METER_LABEL,
   SINK_SPEED,
   aimAt,
+  bumperLabelAt,
   beginRound,
   changePower,
   clampPower,
@@ -66,6 +68,40 @@ describe('holes', () => {
           const inX = p.x >= wall.x - BALL_RADIUS && p.x <= wall.x + wall.w + BALL_RADIUS;
           const inY = p.y >= wall.y - BALL_RADIUS && p.y <= wall.y + wall.h + BALL_RADIUS;
           expect(inX && inY).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('labels every bumper on the green, clear of walls, the tee and the cup', () => {
+    expect(BUMPER_LABEL).toBe('Bumper');
+    const halfWidth = 30;
+    const height = 14;
+    for (const hole of HOLES) {
+      for (const bumper of hole.bumpers) {
+        const label = bumperLabelAt(bumper);
+        const box = { x: label.x - halfWidth, y: label.y - height, w: halfWidth * 2, h: height };
+        expect(box.y).toBeGreaterThan(bumper.y + bumper.r);
+        expect(box.x).toBeGreaterThan(COURSE.x);
+        expect(box.x + box.w).toBeLessThan(COURSE.x + COURSE.w);
+        expect(box.y + box.h).toBeLessThan(COURSE.y + COURSE.h);
+        for (const wall of hole.walls) {
+          const apart =
+            box.x + box.w < wall.x ||
+            box.x > wall.x + wall.w ||
+            box.y + box.h < wall.y ||
+            box.y > wall.y + wall.h;
+          expect(apart).toBe(true);
+        }
+        for (const other of hole.bumpers) {
+          const nx = Math.min(Math.max(other.x, box.x), box.x + box.w);
+          const ny = Math.min(Math.max(other.y, box.y), box.y + box.h);
+          expect(Math.hypot(other.x - nx, other.y - ny)).toBeGreaterThan(other.r);
+        }
+        for (const p of [hole.start, hole.cup]) {
+          const nx = Math.min(Math.max(p.x, box.x), box.x + box.w);
+          const ny = Math.min(Math.max(p.y, box.y), box.y + box.h);
+          expect(Math.hypot(p.x - nx, p.y - ny)).toBeGreaterThan(CUP_RADIUS + BALL_RADIUS);
         }
       }
     }
@@ -145,6 +181,28 @@ describe('physics', () => {
     collideBumper(state, bumper);
     expect(state.ball.y).toBeCloseTo(200 - 30 - BALL_RADIUS);
     expect(state.velocity.y).toBeLessThan(0);
+  });
+
+  it('bounces the ball off the hole 3 bumper without a stroke or points', () => {
+    const state = playing(2);
+    const scoreBefore = totalScore(state);
+    const bumper = HOLES[2].bumpers[0];
+    state.ball = { x: bumper.x - bumper.r - BALL_RADIUS - 20, y: bumper.y };
+    state.angle = 0;
+    state.power = 0.5;
+    putt(state);
+    let bounced = false;
+    for (let i = 0; i < 400 && state.phase === 'rolling'; i++) {
+      step(state, 0.005);
+      if (state.velocity.x < 0) bounced = true;
+      const gap = Math.hypot(state.ball.x - bumper.x, state.ball.y - bumper.y);
+      expect(gap).toBeGreaterThanOrEqual(bumper.r + BALL_RADIUS - 1e-9);
+    }
+    expect(bounced).toBe(true);
+    expect(state.phase).toBe('aiming');
+    expect(state.strokes).toBe(1);
+    expect(state.results).toHaveLength(2);
+    expect(totalScore(state)).toBe(scoreBefore);
   });
 
   it('never lets the ball through the wall on hole 1', () => {

@@ -49,6 +49,16 @@ export interface Hole {
   bumpers: readonly Bumper[];
 }
 
+/** The word drawn under every bumper on the green. */
+export const BUMPER_LABEL = 'Bumper';
+/** How far below a bumper's edge its label's baseline sits. */
+export const BUMPER_LABEL_GAP = 16;
+
+/** Where a bumper's label is drawn: centred under it, baseline `BUMPER_LABEL_GAP` below. */
+export function bumperLabelAt(bumper: Bumper): Point {
+  return { x: bumper.x, y: bumper.y + bumper.r + BUMPER_LABEL_GAP };
+}
+
 export const HOLES: readonly Hole[] = [
   {
     start: { x: 120, y: 255 },
@@ -444,6 +454,11 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
     ctx.beginPath();
     ctx.arc(bumper.x, bumper.y, bumper.r * 0.45, 0, Math.PI * 2);
     ctx.fill();
+    const label = bumperLabelAt(bumper);
+    ctx.fillStyle = colors.text;
+    ctx.font = canvasFont('small', 'bold');
+    ctx.textAlign = 'center';
+    ctx.fillText(BUMPER_LABEL, label.x, label.y);
   }
 
   // The tee and the cup with its flag.
@@ -569,6 +584,11 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
         `Each hole sunk scores ${POINTS_PER_STROKE} for every stroke under ${MAX_STROKES + 1}.`,
         WIDTH / 2,
         295,
+      );
+      ctx.fillText(
+        'Red bumpers just bounce the ball away: they cost nothing and score nothing.',
+        WIDTH / 2,
+        330,
       );
     } else {
       ctx.fillText(`Total strokes ${totalStrokes(state)}`, WIDTH / 2, 190);

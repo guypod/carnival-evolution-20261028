@@ -13,6 +13,12 @@ Putt round a three-hole course of walls and bumpers in as few strokes as you can
 4. Press **Putt** (click or tap it, or press Space/Enter). The ball rolls,
    slows with friction and bounces off the edges, the wooden walls and the
    red bumpers. You can't aim or putt again until it stops.
+
+   The red bumpers are the red discs with a cream centre, labelled **Bumper**
+   on the green (three on hole 2, one on hole 3). They are obstacles, not
+   targets or hazards: the ball bounces off them like off a wall, and hitting
+   one costs no stroke and scores nothing. The start card says the same.
+
 5. The ball drops into the cup only when it is over the cup and moving slowly
    enough. A fast ball rolls straight over.
 6. When the hole ends, press **Next** (or Space/Enter) for the next hole. After
