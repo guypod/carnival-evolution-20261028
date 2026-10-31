@@ -2,8 +2,14 @@
 // the record the native merge gate reads (evidenceMarker in native.mjs).
 //
 //   node scripts/visual/flow-check.mjs <flow.json> <head> <evidence commit> <dir>
+//   node scripts/visual/flow-check.mjs --start <flow> <head>
+//   node scripts/visual/flow-check.mjs --fail <flow> <step> <exit status>
 import { readFileSync } from 'node:fs';
 import { BROWSER_CHECK, evidenceMarker, flowExternalId } from '../native/native.mjs';
+
+// run-flow.sh --live sets browser-flow-live; the default is the premerge check.
+const NAME = process.env.FLOW_CHECK_NAME ?? BROWSER_CHECK;
+const idOf = (flow) => (NAME === BROWSER_CHECK ? flowExternalId(flow) : `${NAME}:${flow}`);
 
 /** The check run for a flow report: success only when every check passed. */
 export function flowCheckRun(report, head, evidenceCommit, dir) {
@@ -17,8 +23,8 @@ export function flowCheckRun(report, head, evidenceCommit, dir) {
   };
   const lines = report.checks.map((c) => `- ${c.result}: ${c.check}`);
   return {
-    name: BROWSER_CHECK,
-    external_id: flowExternalId(report.flow),
+    name: NAME,
+    external_id: idOf(report.flow),
     head_sha: head,
     status: 'completed',
     conclusion: pass ? 'success' : 'failure',
@@ -31,8 +37,39 @@ export function flowCheckRun(report, head, evidenceCommit, dir) {
   };
 }
 
+/** The in-progress check run an attempt opens before setup or capture begins. */
+export function startCheckRun(flow, head) {
+  return {
+    name: NAME,
+    external_id: idOf(flow),
+    head_sha: head,
+    status: 'in_progress',
+    output: { title: `${flow}: running`, summary: 'Browser flow attempt started.' },
+  };
+}
+
+/** The failure that concludes an attempt which stopped before publishing a pass. */
+export function failCheckRun(flow, step, status) {
+  return {
+    status: 'completed',
+    conclusion: 'failure',
+    output: {
+      title: `${flow}: failed at ${step}`,
+      summary: `The attempt stopped at ${step} with exit status ${status}. No evidence was published.`,
+    },
+  };
+}
+
 if (process.argv[1]?.endsWith('flow-check.mjs')) {
-  const [file, head, commit, dir] = process.argv.slice(2);
-  const report = JSON.parse(readFileSync(file, 'utf8'));
-  console.log(JSON.stringify(flowCheckRun(report, head, commit, dir)));
+  const [first, ...rest] = process.argv.slice(2);
+  if (first === '--start') console.log(JSON.stringify(startCheckRun(rest[0], rest[1])));
+  else if (first === '--fail') console.log(JSON.stringify(failCheckRun(...rest)));
+  else {
+    const [head, commit, dir] = rest;
+    const report = JSON.parse(readFileSync(first, 'utf8'));
+    // The body concludes the attempt's own check run, so it carries no head.
+    const body = flowCheckRun(report, head, commit, dir);
+    delete body.head_sha;
+    console.log(JSON.stringify(body));
+  }
 }

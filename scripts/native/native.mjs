@@ -1430,6 +1430,32 @@ export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
   return job?.conclusion === 'success' ? 'deployed-needs-sanity' : 'merged-not-deployed';
 }
 
+/** The check run, on the merge commit, that records a flow played on the live site. */
+export const LIVE_CHECK = 'browser-flow-live';
+
+/**
+ * Whether a merge has shipped: { state, owed }. A deploy alone is never
+ * shipped, and neither is premerge evidence. Every flow the merge's changed
+ * files need must also have the factory's own newest browser-flow-live run on
+ * the merge commit, concluded success. Until then each is owed, and anything
+ * no flow covers stays owed for good, so it ships only with a person's QA.
+ */
+export function shipState(mergeSha, deploy, files, checks) {
+  if (deploy !== 'deployed-needs-sanity') return { state: deploy, owed: [] };
+  const required = needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] };
+  const owed = [...required.owed];
+  const mine = (checks ?? [])
+    .filter((c) => c.name === LIVE_CHECK && c.head_sha === mergeSha && c.app?.id === BOT_APP_ID)
+    .sort((a, b) => a.id - b.id);
+  for (const flow of required.flows) {
+    const run = mine.filter((c) => c.external_id === `${LIVE_CHECK}:${flow}`).at(-1);
+    if (!run) owed.push(`live flow ${flow} not played`);
+    else if (run.status !== 'completed') owed.push(`live flow ${flow} still running`);
+    else if (run.conclusion !== 'success') owed.push(`live flow ${flow} ${run.conclusion}`);
+  }
+  return { state: owed.length ? 'deployed-verification-owed' : 'shipped', owed };
+}
+
 // ---------- gh and tessl adapter ----------
 
 function gh(args, input) {
@@ -1701,7 +1727,8 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
 //   node scripts/native/native.mjs dispatch                 label one issue as the bot
 //   node scripts/native/native.mjs admit <trigger-events>   admit a bot-labelled issue
 //   node scripts/native/native.mjs merge                    gate and merge open tessl PRs
-//   node scripts/native/native.mjs deploy <sha>             merged or live
+//   node scripts/native/native.mjs flows <pr>               the browser flows a PR owes
+//   node scripts/native/native.mjs deploy <sha>             merged, deployed or shipped
 //
 // backlog, dispatch and merge write to GitHub. Run them only inside the
 // native-intake action, which holds the carnival-app-writer key.
@@ -1714,7 +1741,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const adapter = ghAdapter({ writerKeyHeld: held });
   if (command === 'slot') {
     print({ backlog: backlogSlot(now), dispatch: dispatchSlot(now), london: londonParts(now) });
-  } else if (!held && command !== 'deploy') {
+  } else if (!held && command !== 'deploy' && command !== 'flows') {
     console.error('refusing: set CARNIVAL_APP_WRITER_HELD=1 only inside the native-intake action');
     process.exit(3);
   } else if (command === 'backlog') {
@@ -1747,24 +1774,48 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       }
       print(results);
     }
+  } else if (command === 'flows') {
+    // The flows a pull request's head needs, and what no flow covers yet.
+    const files = pages(`repos/${REPOSITORY}/pulls/${arg}/files?per_page=100`);
+    print(needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] });
   } else if (command === 'deploy') {
     const runs = pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`);
     if (!runs.complete) print({ status: 'unknown', reason: 'runs listing incomplete' });
-    else
-      print({
-        sha: arg,
-        state: deployState(
-          arg,
-          runs.items.flatMap((p) => p.workflow_runs ?? p),
-          (run) => {
-            const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
-            return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
-          },
-        ),
-      });
+    else {
+      const deploy = deployState(
+        arg,
+        runs.items.flatMap((p) => p.workflow_runs ?? p),
+        (run) => {
+          const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
+          return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
+        },
+      );
+      // The merge commit's own file list: the commits API stops at 300 files,
+      // so a full page counts as incomplete and owes every flow.
+      let files = { complete: false, items: [] };
+      try {
+        const c = JSON.parse(gh(['api', `repos/${REPOSITORY}/commits/${arg}`]));
+        files = { complete: (c.files ?? []).length < 300, items: c.files ?? [] };
+      } catch {
+        // stays incomplete
+      }
+      const checks = pages(`repos/${REPOSITORY}/commits/${arg}/check-runs?filter=all&per_page=100`);
+      const live = checks.complete
+        ? shipState(
+            arg,
+            deploy,
+            files,
+            checks.items.flatMap((p) => p.check_runs ?? p),
+          )
+        : {
+            state: deploy === 'deployed-needs-sanity' ? 'deployed-verification-owed' : deploy,
+            owed: ['check listing incomplete'],
+          };
+      print({ sha: arg, deploy, ...live });
+    }
   } else {
     console.error(
-      'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | deploy <sha>',
+      'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | flows <pr> | deploy <sha>',
     );
     process.exit(2);
   }

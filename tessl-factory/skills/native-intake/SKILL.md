@@ -58,21 +58,38 @@ credentials or anything from outside this repository's public record.
 
 ## MODE=dispatch (every 20 minutes Europe/London)
 
-1. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs merge`. For an
+1. Browser evidence first. For each open, non-draft Tessl PR on a
+   same-repository `tessl/issue-<n>` branch, run
+   `node scripts/native/native.mjs flows <pr>`. It derives the flows from
+   every changed path, old and new, and lists in `owed` whatever no flow
+   covers. If `owed` is not empty, the PR cannot merge: report each entry as
+   a repair (add the flow to `scripts/visual/flow.mjs` and `GAME_FLOWS` in
+   `scripts/native/native.mjs`, in its own change). Do not substitute another
+   game's flow or claim the change was played. Otherwise check out the PR's
+   exact head in a detached worktree, confirm `HEAD` is that head, run
+   `npm ci`, then `scripts/visual/run-flow.sh <dir> <flow> --publish` for each
+   listed flow. The script opens the `browser-flow` check run in progress
+   before setup and concludes it as a failure on any error. Look at the
+   screenshots it wrote. Never edit or push the PR branch here.
+2. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs merge`. For an
    open Tessl PR whose source issue, branch and single `Closes` line agree,
    whose newest `tessl-reviewer[bot]` review on the exact head carries
    `approved=true` (advisory findings allowed) and matches the reviewer's own
-   check run on that head, with green `check` CI and no request for changes
+   check run on that head, with green `check` CI, the newest passing
+   `browser-flow` attempt for every required flow and no request for changes
    still standing, it gates again and merges atomically with that head as the
    expected SHA. It never arms GitHub auto-merge, never submits a review,
    never relaxes a required check, and never merges another way.
-2. A PR counts as shipped only after it merged, `node scripts/native/native.mjs
-deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
-   has been checked in a browser on the live site or that exact commit
-   (`VISUAL_REV=<sha> scripts/visual/run-capture.sh <dir> <route>`), with the
-   screenshots looked at. A 200 response or the page title alone is not app
-   QA. Otherwise report the QA still owed. Never say merged means live.
-3. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs dispatch`.
+3. A PR counts as shipped only when `node scripts/native/native.mjs deploy
+<merge sha>` reports `state: shipped`. `deployed-verification-owed` lists
+   what is still owed. For each flow it lists, run
+   `scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` from a
+   checkout of the merge commit. That plays the flow on the live site and
+   records a `browser-flow-live` check run on the merge commit, then run
+   `deploy` again. Owed entries no flow covers stay owed, and you report
+   them. A 200 response, the page title or premerge evidence is never app
+   QA. Never say merged means live.
+4. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs dispatch`.
    It claims one eligible backlog issue for the slot and adds `tessl` as
    `tessl-app[bot]`. That label starts no implementation by itself: it fires
    the `native-bot-backlog-labelled` trigger, which runs MODE=admit. Never

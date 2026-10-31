@@ -2,6 +2,7 @@
 // GitHub and tessl that records every call, so these tests show which writes
 // each decision makes. They are not a test of the live platform.
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import {
   BACKLOG_LABEL,
@@ -23,6 +24,7 @@ import {
   browserEvidence,
   needsBrowserEvidence,
   requiredFlows,
+  shipState,
   evidenceMarker,
   mergeOne,
   produceBacklog,
@@ -2359,4 +2361,83 @@ test('attempts: an attempt that failed before naming its flow refuses', () => {
   assert.deepEqual(browserEvidence(HEAD, [browserRun(), unknown], shots, REQ), [
     'browser-flow attempt 70 for an unknown flow did not pass',
   ]);
+});
+
+test('attempts: an opened attempt refuses until it concludes, and a setup failure stays a failure', async () => {
+  const { startCheckRun, failCheckRun } = await import('../visual/flow-check.mjs');
+  const start = startCheckRun(FLOW, HEAD);
+  assert.equal(start.status, 'in_progress');
+  assert.equal(start.external_id, `browser-flow:${FLOW}`);
+  const opened = { ...start, id: 80, app: { id: BOT_APP_ID } };
+  assert.deepEqual(browserEvidence(HEAD, [browserRun(), opened], shots, REQ), [
+    `browser-flow evidence for ${FLOW} still running`,
+  ]);
+  for (const step of ['browser-setup', 'flow', 'evidence-upload']) {
+    const failed = { ...opened, ...failCheckRun(FLOW, step, 1) };
+    assert.equal(failed.conclusion, 'failure');
+    assert.deepEqual(browserEvidence(HEAD, [browserRun(), failed], shots, REQ), [
+      `browser-flow evidence for ${FLOW} failure`,
+    ]);
+  }
+});
+
+// ---------- shipped ----------
+
+test('shipped: a deploy alone, or premerge evidence, never ships', () => {
+  const MERGE = 'c'.repeat(40);
+  const files = changed('src/games/mini-putt/game.ts');
+  const live = (extra = {}) => ({
+    id: 90,
+    name: 'browser-flow-live',
+    external_id: `browser-flow-live:${FLOW}`,
+    app: { id: BOT_APP_ID },
+    head_sha: MERGE,
+    status: 'completed',
+    conclusion: 'success',
+    ...extra,
+  });
+  assert.deepEqual(shipState(MERGE, 'deploying', files, []), { state: 'deploying', owed: [] });
+  assert.deepEqual(shipState(MERGE, 'deployed-needs-sanity', files, []), {
+    state: 'deployed-verification-owed',
+    owed: [`live flow ${FLOW} not played`],
+  });
+  // The premerge browser-flow run on the merge commit is not live evidence.
+  const premerge = browserRun({ head_sha: MERGE });
+  assert.equal(
+    shipState(MERGE, 'deployed-needs-sanity', files, [premerge]).state,
+    'deployed-verification-owed',
+  );
+  assert.deepEqual(shipState(MERGE, 'deployed-needs-sanity', files, [live()]), {
+    state: 'shipped',
+    owed: [],
+  });
+  assert.deepEqual(
+    shipState(MERGE, 'deployed-needs-sanity', files, [
+      live(),
+      live({ id: 91, conclusion: 'failure' }),
+    ]).owed,
+    [`live flow ${FLOW} failure`],
+  );
+  assert.equal(
+    shipState(MERGE, 'deployed-needs-sanity', files, [live({ app: { id: 1 } })]).state,
+    'deployed-verification-owed',
+  );
+  // A game with no flow stays owed after deployment.
+  assert.deepEqual(
+    shipState(MERGE, 'deployed-needs-sanity', changed('src/games/skee-ball/game.ts'), [live()])
+      .owed,
+    ['no browser flow for src/games/skee-ball/'],
+  );
+  assert.deepEqual(shipState(MERGE, 'deployed-needs-sanity', changed('scripts/native/x.mjs'), []), {
+    state: 'shipped',
+    owed: [],
+  });
+});
+
+test('live attempts carry the live check name', () => {
+  const out = execFileSync('node', ['scripts/visual/flow-check.mjs', '--start', FLOW, HEAD], {
+    encoding: 'utf8',
+    env: { ...process.env, FLOW_CHECK_NAME: 'browser-flow-live' },
+  });
+  assert.deepEqual(JSON.parse(out).external_id, `browser-flow-live:${FLOW}`);
 });

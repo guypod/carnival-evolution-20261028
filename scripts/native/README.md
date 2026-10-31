@@ -251,31 +251,49 @@ into `main`, labelled `tessl`, when:
 ### Browser-flow evidence
 
 A reviewer's `approved=true` and comments on the issue or PR are not browser
-evidence. For an app change, the gate needs the newest `browser-flow` check
-run created by the factory app (app 4096310) on the exact head, completed with
-`success`, whose output carries one `carnival-browser-flow:v1` record that:
+evidence. `requiredFlows` reads every changed path, the new name and, for a
+rename, the old one. A change in `src/games/<game>/` needs that game's flows
+from `GAME_FLOWS`, and a game with none is owed a flow: the gate refuses, and
+the repair is to add the flow to `scripts/visual/flow.mjs` and `GAME_FLOWS`.
+One game's pass never stands in for another's. A change to the flow scripts
+replays every flow. Other app code (`src/` outside the games, `index.html`,
+`package.json`) also replays every flow, and stays owed because no flow plays
+every screen it reaches. An unread file listing owes everything.
+`node scripts/native/native.mjs flows <pr>` prints `{ flows, owed }`.
 
-- names that head;
-- lists at least one changed flow, every one with `result: pass`;
-- lists screenshots under `evidence/<head>/`, retained at a recorded commit
-  that is on `factory-state/browser-evidence`, each of whose bytes, read back
-  by the controller, hash to the recorded sha256.
+For each required flow, the gate reads the newest `browser-flow` check run
+created by the factory app (app 4096310) on the exact head with
+`external_id: browser-flow:<flow>`. That attempt decides, so a newer attempt
+that failed or is still running is never masked by an older pass. It must be
+completed with `success`, and its output must carry one
+`carnival-browser-flow:v1` record that:
 
-Missing, stale (another head), failed, still running, forged (another app),
-recordless, off-branch or digest-mismatched evidence refuses the merge, and so does an
-unread file listing. The one exception is a complete changed-file listing in
-which every file is infrastructure that no screen draws with: under
-`scripts/` other than `scripts/visual/` (which produces the evidence),
-`tessl-factory/` or `skills/`, a Markdown file under `docs/`, or a top-level
-`.md` file. Anything else, including `index.html`, `src/`, `package.json` and
-images under `docs/`, is an app change.
+- names that head and that flow;
+- lists every check with `result: pass`;
+- lists screenshots under `evidence/<head>/<flow>/`, retained at a recorded
+  commit that is on `factory-state/browser-evidence`, each of whose bytes,
+  read back by the controller, hash to the recorded sha256.
+
+A factory attempt on the head for a flow `GAME_FLOWS` does not know also
+refuses unless it succeeded. Missing, stale (another head), failed, still
+running, forged (another app), recordless, off-branch or digest-mismatched
+evidence refuses the merge. The one exception is a complete changed-file
+listing in which every path, old and new, is infrastructure that no screen
+draws with: under `scripts/` other than `scripts/visual/` (which produces the
+evidence), `tessl-factory/` or `skills/`, a Markdown file under `docs/`, or a
+top-level `.md` file. App source renamed into `docs/`, or deleted, is still
+an app change.
 
 `scripts/visual/run-flow.sh <out dir> <flow> --publish` produces this evidence
-on the checked-out, committed head: it sets up headless Chromium with
-`setup-browser.sh`, serves the checkout, plays the flow from
-`scripts/visual/flow.mjs` (for example `mini-putt-hole-next`, which finishes a
-hole and presses Next), pushes the screenshots to the evidence branch and
-creates the check run. A failed flow is published as a failure.
+on the checked-out, committed head. It first creates the flow's check run in
+progress, then sets up headless Chromium with `setup-browser.sh`, serves the
+checkout, plays the flow from `scripts/visual/flow.mjs` (for example
+`mini-putt-hole-next`, which finishes a hole and presses Next), pushes the
+screenshots to the evidence branch and concludes the check run. Any exit
+before that, such as a browser setup failure, an unknown flow, a missing
+screenshot or a failed upload, concludes it as a failure. The dispatch
+mode of `tessl-factory/skills/native-intake` runs it for every required flow
+before the merge sweep.
 
 `mergeOne` gates twice, then merges with GitHub's atomic merge API
 (`PUT pulls/<n>/merge`) with `sha` set to the head both gates saw, so GitHub
@@ -284,11 +302,16 @@ has no branch rules, so an armed pull request could merge a later push that
 no gate saw. If GitHub refuses the merge, that is reported and nothing merges
 another way. It never submits a review.
 
-A merge is not shipped. `deploy <sha>` reports `deployed-needs-sanity` only
-when the Pages run's `deploy` job succeeded for that commit, and shipping
-also needs the changed flow checked in a real browser on that commit, not
-just a 200 response. Pre-merge browser evidence does not count for that:
-post-deployment verification stays owed until the deployed flow passes.
+A merge is not shipped. `deploy <sha>` prints `deploy`, the Pages state
+(`deployed-needs-sanity` only when the Pages run's `deploy` job succeeded for
+that commit), and `state` with `owed`. `state` is `shipped` only when every
+flow the merge commit's files need has the factory's newest
+`browser-flow-live` check run on the merge commit concluded `success`.
+`scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` records that run
+by playing the flow on the live site. Until then the state is
+`deployed-verification-owed` and lists what is owed. A 200 response, the page
+title and premerge evidence never count, and anything no flow covers stays
+owed.
 
 ## Activation and limits
 
