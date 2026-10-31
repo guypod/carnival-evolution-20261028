@@ -5,7 +5,8 @@ Ring the bottles as they slide along three shelves. You have ten rings.
 ## How to play
 
 - Move the mouse (or your finger) to aim, then click or tap to throw. You can
-  also steer the aim with the arrow keys and press Space to throw.
+  also steer the aim with the arrow keys and press Space to throw. During a
+  round a line above the thrower says so.
 - The dashed arc and the gold ring show exactly where your ring will land.
   A ring lands where it was aimed, half a second after you throw it, so lead the
   moving bottles. The line under the awning says so: lead moving bottles by half
