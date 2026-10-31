@@ -9,6 +9,9 @@ Whack the moles as they pop out of six numbered holes. You have 30 seconds.
   Enter and Space work that link instead of starting the round.
 - One mole is up at a time. Click or tap it, or press the key for its hole:
   `1` `2` `3` on the top row and `4` `5` `6` on the bottom row.
+- A mole is a cream face with a dark outline, sitting in a dark hole in a
+  brown mound. A whacked mole squashes flat, shows **BONK!** and springs back
+  as it ducks.
 - A mole stays up for 1.2 seconds, then ducks away. The next mole pops up a
   quarter of a second after the last one leaves or is whacked.
 - The top of the screen shows the time left, your score, and your streak with
@@ -43,7 +46,7 @@ still work.
 
 - `game.ts`: the game logic (`createState`, `startRound`, `beginRound`, `whack`, `step`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isStartKey`, `seededRng`,
-  `isGoldenSpawn`, `milestoneText`, `holeForKey`, `holeAt`) and the `moleMayhem`
+  `isGoldenSpawn`, `milestoneText`, `squash`, `holeForKey`, `holeAt`) and the `moleMayhem`
   entry the midway registers. `createState` takes an rng so tests can choose
   where moles pop.
 - `game.test.ts`: tests for the game logic.

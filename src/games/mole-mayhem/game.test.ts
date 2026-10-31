@@ -22,6 +22,7 @@ import {
   multiplier,
   saveFinalScore,
   seededRng,
+  squash,
   startRound,
   step,
   takeFinalScore,
@@ -481,5 +482,28 @@ describe('mole mayhem', () => {
     saveFinalScore(state, (score) => saved.push(score));
     saveFinalScore(state, (score) => saved.push(score));
     expect(saved).toEqual([POINTS_PER_HIT]);
+  });
+});
+
+describe('squash', () => {
+  it('leaves a mole that is up at full size', () => {
+    expect(squash(0)).toEqual({ x: 1, y: 1 });
+  });
+
+  it('flattens a mole most at the hit and eases back as the bonk ends', () => {
+    const atHit = squash(BONK_TIME);
+    const later = squash(BONK_TIME / 3);
+    expect(atHit.y).toBeLessThan(later.y);
+    expect(later.y).toBeLessThan(1);
+    expect(atHit.x).toBeGreaterThan(later.x);
+    expect(later.x).toBeGreaterThan(1);
+  });
+
+  it('shows the squash on the hole a hit just whacked', () => {
+    const state = createState(() => 0);
+    startRound(state);
+    step(state, 0.01);
+    expect(whack(state, 0)).toBe('hit');
+    expect(squash(state.holes[0].bonk).y).toBeLessThan(1);
   });
 });
