@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { linkSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -9,6 +19,9 @@ import {
   FLOWS,
   LIMITS,
   parseArgs,
+  alreadyCaptured,
+  capture,
+  primitive,
   NODE_IMAGE,
   PLAYWRIGHT_IMAGE,
   checkoutProblems,
@@ -20,7 +33,13 @@ import {
   stage,
   validateReport,
 } from './trusted-publish.mjs';
-import { AUTHORITY_PATH, BOUNDARY, REPOSITORY, authorityProblems } from '../native/native.mjs';
+import {
+  AUTHORITY_PATH,
+  BOT_APP_ID,
+  BOUNDARY,
+  REPOSITORY,
+  authorityProblems,
+} from '../native/native.mjs';
 
 const FLOW = 'mini-putt-hole-next';
 const SHA = 'a'.repeat(40);
@@ -335,4 +354,84 @@ test('publishing refuses an authority without an anchor or a supported run', () 
       invocationProblems(o, 'e'.repeat(40), { complete: true, record: undefined, problems }).join(),
       new RegExp(problems[0].split(' ').slice(0, 3).join(' ')),
     );
+});
+
+test('a primitive past its deadline is killed with every container it started', () => {
+  const runner = mkdtempSync(join(tmpdir(), 'runner-'));
+  mkdirSync(join(runner, 'scripts/visual'), { recursive: true });
+  // Before: spawnSync waited with no deadline, so a Vite config that never
+  // resolves held the writer key until the action timed out.
+  writeFileSync(join(runner, 'scripts/visual/hang.sh'), 'sleep 600\n');
+  const homes = () => readdirSync(tmpdir()).filter((n) => n.startsWith('carnival-home-')).length;
+  const h0 = homes();
+  let ps = 0;
+  const killed = [];
+  const run = (cmd, args, opts) => {
+    if (cmd === 'docker' && args[0] === 'ps') return { stdout: ps++ ? 'old\nnew\n' : 'old\n' };
+    if (cmd === 'docker' && args[0] === 'kill')
+      return (killed.push(...args.slice(1)), { status: 0 });
+    return spawnSync(cmd, args, opts);
+  };
+  const t0 = Date.now();
+  assert.equal(primitive(runner, 'hang.sh', [], { seconds: 1, run }), 124);
+  assert.ok(Date.now() - t0 < 15_000);
+  // Only the container that appeared during this step is stopped.
+  assert.deepEqual(killed, ['new']);
+  // The private HOME is removed after both a timeout and a success.
+  writeFileSync(join(runner, 'scripts/visual/ok.sh'), 'exit 0\n');
+  assert.equal(
+    primitive(runner, 'ok.sh', [], {
+      seconds: 5,
+      run: (c, a, o) => (c === 'docker' ? { stdout: '' } : spawnSync(c, a, o)),
+    }),
+    0,
+  );
+  assert.equal(homes(), h0);
+  rmSync(runner, { recursive: true, force: true });
+});
+
+test('capture removes its disposable workspace on success and failure', () => {
+  const caps = () => readdirSync(tmpdir()).filter((n) => n.startsWith('carnival-capture-')).length;
+  const c0 = caps();
+  for (let i = 0; i < 3; i++)
+    assert.throws(() => capture({ runner: '/nonexistent', candidate: SHA, flow: FLOW }));
+  // Repeated failures leave nothing behind.
+  assert.equal(caps(), c0);
+});
+
+test('an unchanged head with a current authorized pass is not recaptured', () => {
+  const o = { candidate: SHA, flow: FLOW };
+  const run = (id, conclusion, prov) => ({
+    id,
+    name: 'browser-flow',
+    external_id: `browser-flow:${FLOW}`,
+    head_sha: SHA,
+    app: { id: BOT_APP_ID },
+    status: 'completed',
+    conclusion,
+    output: { text: `<!-- carnival-browser-flow:v1 ${JSON.stringify({ provenance: prov })} -->` },
+  });
+  const prov = { authorityCommit: 'a'.repeat(40), wrapper: WRAPPER, candidate: SHA };
+  assert.equal(alreadyCaptured([run(1, 'success', prov)], o, WRAPPER, 'a'.repeat(40)), true);
+  // The newest failed attempt is never skipped over.
+  assert.equal(
+    alreadyCaptured([run(1, 'success', prov), run(2, 'failure', prov)], o, WRAPPER, 'a'.repeat(40)),
+    false,
+  );
+  // A pass under another anchor or wrapper is recaptured.
+  assert.equal(alreadyCaptured([run(1, 'success', prov)], o, WRAPPER, 'b'.repeat(40)), false);
+  assert.equal(
+    alreadyCaptured([run(1, 'success', { ...prov, wrapper: SHA })], o, WRAPPER, 'a'.repeat(40)),
+    false,
+  );
+  assert.equal(alreadyCaptured([run(1, 'success', prov)], o, WRAPPER, undefined), false);
+  assert.equal(
+    alreadyCaptured(
+      [run(1, 'success', prov, { app: { id: 1 } })].map((r) => ({ ...r, app: { id: 1 } })),
+      o,
+      WRAPPER,
+      'a'.repeat(40),
+    ),
+    false,
+  );
 });

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { liveIdentity } from '../visual/live-identity.mjs';
@@ -2784,6 +2784,31 @@ test('live attempts carry the live check name', () => {
     env: { ...process.env, FLOW_CHECK_NAME: 'browser-flow-live' },
   });
   assert.deepEqual(JSON.parse(out).external_id, `browser-flow-live:${FLOW}`);
+});
+
+test('live capture never runs merged code on the writer host', () => {
+  // Before: dispatch ran run-flow.sh --live from the merge checkout, which ran
+  // the merge's Vite build and scripts with the writer key. After: --live
+  // refuses before any build, network read or check run, and dispatch only
+  // reports live flows as owed.
+  const out = mkdtempSync(join(tmpdir(), 'live-'));
+  let status = 0;
+  let stderr = '';
+  try {
+    execFileSync('bash', ['scripts/visual/run-flow.sh', out, FLOW, '--live', HEAD], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: { PATH: process.env.PATH },
+    });
+  } catch (e) {
+    status = e.status;
+    stderr = String(e.stderr);
+  }
+  assert.equal(status, 3);
+  assert.match(stderr, /--live is disabled/);
+  const skill = readFileSync('tessl-factory/skills/native-intake/SKILL.md', 'utf8');
+  assert.doesNotMatch(skill, /run-flow\.sh <dir> <flow> --live/);
+  assert.match(skill, /browser-flow-live-owed/);
 });
 
 test('advisory: a cut-short file listing, and inherited names, fail closed', () => {

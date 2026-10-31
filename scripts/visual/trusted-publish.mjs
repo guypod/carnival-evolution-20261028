@@ -44,6 +44,7 @@ import {
   openSync,
   readSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,6 +58,7 @@ import {
   NODE_IMAGE,
   PLAYWRIGHT_IMAGE,
   REPOSITORY as REPO,
+  BOT_APP_ID,
   authorityProblems,
   trustedAuthority,
   triggerEvents,
@@ -294,19 +296,81 @@ function git(dir, args) {
   return r.status === 0 ? r.stdout.trim() : `error: ${r.stderr.trim()}`;
 }
 
-/** Runs a pinned primitive with a fixed environment: no image or path override passes in. */
-function primitive(runner, name, args) {
-  const env = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: privateDir('carnival-home-') };
-  const r = spawnSync('bash', [join(runner, 'scripts/visual', name), ...args], {
-    env,
-    stdio: ['ignore', 'inherit', 'inherit'],
-  });
-  return r.status;
+/** Elapsed-time cap per primitive, and for a whole capture, in seconds. */
+export const DEADLINES = { step: 600, total: 900 };
+
+/** Ids of running containers from the capture images, so a timeout can stop exactly the new ones. */
+function captureContainers(run = spawnSync) {
+  const r = run(
+    'docker',
+    [
+      'ps',
+      '-q',
+      '--no-trunc',
+      '--filter',
+      `ancestor=${NODE_IMAGE}`,
+      '--filter',
+      `ancestor=${PLAYWRIGHT_IMAGE}`,
+    ],
+    { encoding: 'utf8' },
+  );
+  return new Set((r.stdout ?? '').split('\n').filter(Boolean));
+}
+
+/**
+ * Runs a pinned primitive with a fixed environment: no image or path override
+ * passes in. `timeout` runs it in its own process group and kills the whole
+ * group at the deadline; any container it started is then stopped explicitly,
+ * because killing the docker client leaves its container running. A timeout
+ * is a failure. Its private HOME is removed afterwards.
+ */
+export function primitive(runner, name, args, { seconds = DEADLINES.step, run = spawnSync } = {}) {
+  const home = privateDir('carnival-home-');
+  const env = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: home };
+  const before = captureContainers(run);
+  try {
+    const r = run(
+      'timeout',
+      [
+        '-k',
+        '10',
+        String(Math.max(1, Math.floor(seconds))),
+        'bash',
+        join(runner, 'scripts/visual', name),
+        ...args,
+      ],
+      { env, stdio: ['ignore', 'inherit', 'inherit'] },
+    );
+    if (r.status === 124 || r.status === 137 || r.status === null) {
+      const left = [...captureContainers(run)].filter((id) => !before.has(id));
+      if (left.length) run('docker', ['kill', ...left], { stdio: 'ignore' });
+      return 124;
+    }
+    return r.status;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 /** Captures one flow on one candidate with the pinned runner, and validates it. */
-export function capture({ runner, candidate, flow }) {
+export function capture(o) {
   const base = privateDir('carnival-capture-');
+  try {
+    return captureIn(base, o);
+  } finally {
+    // Dependencies, the exported candidate, the build and the report are
+    // disposable: only the validated, staged copy outlives the capture.
+    rmSync(base, { recursive: true, force: true });
+  }
+}
+
+function captureIn(base, { runner, candidate, flow }) {
+  const started = Date.now();
+  const left = () => Math.min(DEADLINES.step, DEADLINES.total - (Date.now() - started) / 1000);
+  const step = (name, args) => {
+    if (left() < 1) return 124;
+    return primitive(runner, name, args, { seconds: left() });
+  };
   const images = {};
   for (const img of [NODE_IMAGE, PLAYWRIGHT_IMAGE]) {
     const r = spawnSync('docker', ['image', 'inspect', '--format', '{{.Id}}', img], {
@@ -318,10 +382,10 @@ export function capture({ runner, candidate, flow }) {
   }
   const deps = join(base, 'deps');
   const work = join(base, 'build');
-  if (primitive(runner, 'isolated-deps.sh', [runner, deps]) !== 0)
+  if (step('isolated-deps.sh', [runner, deps]) !== 0)
     throw Object.assign(new Error('dependency snapshot failed'), { step: 'deps' });
   const gitDir = git(runner, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  const built = primitive(runner, 'isolated-build.sh', [gitDir, candidate, work, deps]);
+  const built = step('isolated-build.sh', [gitDir, candidate, work, deps]);
   if (built === 5)
     throw Object.assign(new Error('candidate dependencies differ from the runner: owed'), {
       step: 'build',
@@ -337,7 +401,7 @@ export function capture({ runner, candidate, flow }) {
   }
   const report = join(base, 'report');
   mkdirSync(report, { mode: 0o700 });
-  const ran = primitive(runner, 'isolated-browser.sh', [
+  const ran = step('isolated-browser.sh', [
     PLAYWRIGHT_IMAGE,
     harness,
     join(deps, 'pw'),
@@ -349,7 +413,7 @@ export function capture({ runner, candidate, flow }) {
   const validated = validateReport(report, flow);
   if (validated.problems.length)
     throw Object.assign(new Error(validated.problems.join('; ')), { step: 'validate' });
-  return { base, images, staged: stage(validated, flow) };
+  return { images, staged: stage(validated, flow) };
 }
 
 export function parseArgs(argv) {
@@ -389,6 +453,40 @@ export function invocationProblems(o, wrapper, authority) {
   return problems;
 }
 
+/**
+ * Whether the newest factory browser-flow attempt for this candidate and flow
+ * already passed under the same anchor and wrapper, so recapturing would only
+ * repeat it. A newer failed or running attempt is never skipped; the gate
+ * still validates the passing record in full.
+ */
+export function alreadyCaptured(checks, o, wrapper, anchor) {
+  const newest = (checks ?? [])
+    .filter(
+      (c) =>
+        c.name === 'browser-flow' &&
+        c.head_sha === o.candidate &&
+        c.app?.id === BOT_APP_ID &&
+        c.external_id === `browser-flow:${o.flow}`,
+    )
+    .sort((a, b) => a.id - b.id)
+    .at(-1);
+  if (newest?.status !== 'completed' || newest.conclusion !== 'success') return false;
+  const m = /<!-- carnival-browser-flow:v1 (\{.*?\}) -->/s.exec(newest.output?.text ?? '');
+  let rec;
+  try {
+    rec = m ? JSON.parse(m[1]) : undefined;
+  } catch {
+    return false;
+  }
+  const p = rec?.provenance;
+  return (
+    !!anchor &&
+    p?.authorityCommit === anchor &&
+    p?.wrapper === wrapper &&
+    p?.candidate === o.candidate
+  );
+}
+
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   const self = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -406,7 +504,20 @@ async function main() {
     process.exit(2);
   }
   const gh = ghApi;
+  if (o.publish) {
+    const runs = await gh(
+      'GET',
+      `repos/${REPO}/commits/${o.candidate}/check-runs?check_name=browser-flow&filter=all&per_page=100`,
+    );
+    if (alreadyCaptured(runs.check_runs, o, wrapper, authority?.anchor)) {
+      console.log(
+        `${o.flow} already passed on ${o.candidate} under this authority: not recaptured`,
+      );
+      return;
+    }
+  }
   let checkId;
+  let staging;
   if (o.publish) {
     const { startCheckRun } = await import('./flow-check.mjs');
     checkId = (await gh('POST', `repos/${REPO}/check-runs`, startCheckRun(o.flow, o.candidate))).id;
@@ -414,6 +525,7 @@ async function main() {
   let step = 'capture';
   try {
     const { images, staged } = capture(o);
+    staging = staged.dir;
     const prov = provenance({ ...o, wrapper, images, authority });
     console.log(JSON.stringify({ staging: staged.dir, provenance: prov }, null, 2));
     if (!o.publish) return;
@@ -424,6 +536,7 @@ async function main() {
     console.error(`${e.step ?? step}: ${e.message}`);
     process.exitCode = 1;
   } finally {
+    if (staging && o.publish) rmSync(staging, { recursive: true, force: true });
     if (checkId && step !== 'published') {
       const { failCheckRun } = await import('./flow-check.mjs');
       await gh('PATCH', `repos/${REPO}/check-runs/${checkId}`, failCheckRun(o.flow, step, 1)).catch(

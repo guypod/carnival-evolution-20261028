@@ -112,13 +112,13 @@ credentials or anything from outside this repository's public record.
    never relaxes a required check, and never merges another way.
 3. A PR counts as shipped only when `node scripts/native/native.mjs deploy
 <merge sha>` reports `state: shipped`. `deployed-verification-owed` lists
-   what is still owed. For each flow it lists, run
-   `scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` from a
-   checkout of the merge commit. That plays the flow on the live site and
-   records a `browser-flow-live` check run on the merge commit, then run
-   `deploy` again. Owed entries no flow covers stay owed, and you report
-   them. The live run plays only when the site serves that merge's own build,
-   so it fails once a newer merge has deployed. Also run
+   what is still owed. Report each listed flow as `browser-flow-live-owed:
+<merge sha>:<flow>` with the reason "no reviewed live broker". Never run
+   `scripts/visual/run-flow.sh`, Vite, `npm` or any other script from a merge
+   checkout: merged code would run on this host with the writer key. Live
+   capture waits for an independently reviewed, pinned broker that serves
+   only the exact public Pages assets to a no-network browser container; until
+   an operator names one, live flows stay owed and nothing ships. Also run
    `node scripts/native/native.mjs owed` and report every merge it lists,
    including `superseded-verification-owed` ones, as browser QA still owed:
    never as shipped. A 200 response, the page title or premerge evidence is

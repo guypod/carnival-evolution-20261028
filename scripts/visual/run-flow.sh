@@ -34,10 +34,11 @@ CHECKED_OUT=$HEAD
 LIVE=
 export FLOW_CHECK_NAME=browser-flow
 if [ "$PUBLISH" = --live ]; then
-  HEAD=${4:?usage: run-flow.sh <out dir> <flow> --live <merge sha>}
-  LIVE=https://guypod.github.io/carnival-evolution-20261028/
-  FLOW_CHECK_NAME=browser-flow-live
-  PUBLISH=--publish
+  # Live capture built and served the merge on the host that holds the writer
+  # key. It stays off until a reviewed, pinned broker replaces it: refuse
+  # before touching the network, a build or a check run.
+  echo "run-flow.sh --live is disabled: live capture needs the reviewed mediated broker; owed" >&2
+  exit 3
 fi
 # A report or screenshot left by an earlier run must never be published: each
 # attempt gets its own new directory, and the caller's directory is never
