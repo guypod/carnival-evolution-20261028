@@ -10,8 +10,10 @@ Ring the bottles as they slide along three shelves. You have ten rings.
   A ring lands where it was aimed, half a second after you throw it, so lead the
   moving bottles. The line under the awning says so: lead moving bottles by half
   a second, and gold bottles score double.
-- The bottom right shows how many rings you have left. The round ends when the
-  last ring lands.
+- You throw from the cream hand on a post at the bottom centre. Beside it, a
+  peg holds the rings you have left: it loses one ring with every throw, and the
+  bottom right shows the same count as text. The round ends when the last ring
+  lands.
 - On the end screen, click, tap or press Space to play another round.
 
 ## Scoring
@@ -41,5 +43,5 @@ final score is saved to the carnival's score board once, when the round ends.
 ## Files
 
 - `game.ts`: the game logic (`createState`, `goldenIndex`, `toss`, `step`,
-  `bottleAt`, `takeFinalScore`, `steerAim`) and the `ringToss` entry the midway registers.
+  `bottleAt`, `takeFinalScore`, `steerAim`, `ringStack`) and the `ringToss` entry the midway registers.
 - `game.test.ts`: tests for the game logic.
