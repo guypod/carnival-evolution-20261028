@@ -33,6 +33,10 @@ import {
   readItem,
   readJournal,
   requestId,
+  executionState,
+  launchRuns,
+  runLabel,
+  issueUrl,
 } from './native.mjs';
 
 const bot = { id: BOT_ID, login: 'tessl-app[bot]', type: 'Bot' };
@@ -136,6 +140,19 @@ function fakeGitHub({
     labelActor: async (n) => state.links[`actor:${n}`],
     linkedPullRequests: async (n) => ({ complete: true, items: state.links[n] ?? [] }),
     listEvents: async (n) => ({ complete: true, items: state.links[`events:${n}`] ?? [] }),
+  };
+  // Tessl launch runs, as launchRuns returns them: state.runs, filtered the
+  // way the API filters them. failRuns makes every listing incomplete.
+  state.runs = [];
+  adapter.launchRuns = async ({ status, issue }) => {
+    calls.push(['launchRuns', status ?? `issue:${issue}`]);
+    if (adapter.failRuns) return { items: [], complete: false };
+    return {
+      complete: true,
+      items: state.runs.filter(
+        (r) => (!status || r.status === status) && (issue === undefined || r.issue === issue),
+      ),
+    };
   };
   if (!ownerRoute) delete adapter.labelAsBot;
   return adapter;
@@ -1555,7 +1572,11 @@ test('a bot-labelled claim never admitted stops holding the queue after the grac
   });
   r = await dispatch(gh, DSLOT, new Date('2026-10-31T00:50:00Z'));
   assert.deepEqual(r, { status: 'busy', waitingOn: 11 });
-  // An admitted run that never opened a pull request stops holding it after the run grace.
+  // Age alone never frees it: with no run visible, it still holds the queue.
+  r = await dispatch(gh, 'dispatch-2026-10-31T0400', new Date('2026-10-31T04:00:00Z'));
+  assert.notEqual(r.status, 'dispatched');
+  // Its own run ended without a pull request: the queue moves on.
+  gh.state.runs.push({ id: 'run-11', status: 'failed', label: runLabel('r'), issue: 11 });
   r = await dispatch(gh, 'dispatch-2026-10-31T0400', new Date('2026-10-31T04:00:00Z'));
   assert.equal(r.status, 'dispatched');
   assert.equal(r.issue, 12);
@@ -1614,4 +1635,196 @@ test('a batch slot with an impossible month is refused, not a crash', () => {
     new Date('2026-10-31T12:00:00Z'),
   );
   assert.match(r.error, /calendar date/);
+});
+
+// ---------- actual execution state ----------
+//
+// A missing branch is not proof that no implementation is queued or running.
+// admit and dispatch read Tessl's launch runs and fail closed.
+
+const OWN = requestId(40, LABEL_EVENT);
+const implRun = (id, status, extra = {}) => ({
+  id,
+  status,
+  label: 'implement-github-issue',
+  skill: 'tessl-labs/factory@0.6.0#implement-github-issue',
+  ...extra,
+});
+
+test('admit defers, without a record or handoff, while another implementation is queued or running', async () => {
+  for (const phase of ['queued', 'starting', 'running']) {
+    const gh = admitWorld();
+    // An owner or manual run for #40, before any branch exists.
+    gh.state.runs.push(implRun('foreign-1', 'pending', { phase, issue: 40 }));
+    const r = await admit(gh, labelledEvent(), NOW);
+    assert.equal(r.status, 'deferred', JSON.stringify(r));
+    assert.match(r.reasons.join(), /foreign-1/);
+    assert.deepEqual(handoffs(gh), []);
+    assert.ok(!gh.calls.some((c) => c[0] === 'comment'), 'no record');
+  }
+  // A pending run in this repository whose issue cannot be told still defers.
+  const gh = admitWorld();
+  gh.state.runs.push(implRun('foreign-2', 'pending', { label: 'implement-github-issue other' }));
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'deferred');
+  assert.deepEqual(handoffs(gh), []);
+});
+
+test('admit refuses when any earlier implementation run exists for the issue, whatever its outcome', async () => {
+  for (const status of ['completed', 'failed', 'cancelled']) {
+    const gh = admitWorld();
+    gh.state.runs.push(implRun('foreign-3', status, { issue: 40 }));
+    await refusedWith(gh, labelledEvent(), /earlier implementation run foreign-3/);
+  }
+});
+
+test('admit fails closed when the run listing is incomplete or denied', async () => {
+  const gh = admitWorld();
+  gh.failRuns = true;
+  await refusedWith(gh, labelledEvent(), /implementation runs incomplete/);
+});
+
+test('admit: its own stable request already queued or running is reconciled, never re-triggered', async () => {
+  const gh = admitWorld();
+  gh.triggerImplementation = async () => {
+    throw new Error('socket hang up');
+  };
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'uncertain');
+  // The uncertain handoff did land: its run is queued under the same key.
+  const gh2 = admitWorld({ comments: gh.state.comments[40] });
+  gh2.state.runs.push(implRun('own-1', 'pending', { label: runLabel(OWN), issue: 40 }));
+  const r = await admit(gh2, labelledEvent(), NOW);
+  assert.equal(r.status, 'admitted');
+  assert.equal(r.how, 'already running');
+  assert.equal(r.request, OWN);
+  assert.deepEqual(handoffs(gh2), []);
+  assert.ok(!gh2.calls.some((c) => c[0] === 'comment'), 'no second record');
+});
+
+test('admit: its own run that already ended is never restarted, success or failure', async () => {
+  for (const status of ['completed', 'failed', 'cancelled']) {
+    const gh = admitWorld();
+    gh.state.runs.push(implRun('own-2', status, { label: runLabel(OWN), issue: 40 }));
+    await refusedWith(gh, labelledEvent(), /own run own-2 already ended/);
+  }
+});
+
+test('admit with no conflicting run hands off once under its stable key, after reading runs', async () => {
+  const gh = admitWorld();
+  // Another repository's or another action's runs are not conflicts.
+  gh.state.runs.push({ id: 's', status: 'pending', label: 'shepherd', skill: 'x#shepherd' });
+  const r = await admit(gh, labelledEvent(), NOW);
+  assert.equal(r.status, 'admitted');
+  assert.deepEqual(handoffs(gh), [['handoff', 40, OWN]]);
+  const order = gh.calls
+    .filter((c) => ['launchRuns', 'comment', 'handoff'].includes(c[0]))
+    .map((c) => c[0]);
+  assert.deepEqual(order, ['launchRuns', 'launchRuns', 'comment', 'handoff']);
+});
+
+test('executionState: classification is explicit and fails closed', () => {
+  const ok = (items) => ({ complete: true, items });
+  assert.equal(executionState(ok([]), { complete: false, items: [] }, OWN).state, 'unknown');
+  assert.equal(executionState(ok([]), ok([]), OWN).state, 'clear');
+  const own = implRun('o', 'pending', { label: runLabel(OWN) });
+  assert.equal(executionState(ok([own]), ok([own]), OWN).state, 'own-pending');
+  // Its own pending run wins over a foreign one, so a retry never stalls on itself.
+  assert.equal(
+    executionState(ok([own, implRun('f', 'pending')]), ok([own]), OWN).state,
+    'own-pending',
+  );
+});
+
+test('dispatch claims nothing new while an implementation or admission run is pending, however old', async () => {
+  for (const run of [
+    implRun('impl', 'pending'),
+    { id: 'adm', status: 'pending', label: 'native-bot-backlog-labelled #11', skill: 'x' },
+  ]) {
+    const gh = fakeGitHub({ issues: [backlogIssue(11)] });
+    gh.state.runs.push(run);
+    const r = await dispatch(gh, DSLOT, new Date('2026-11-02T00:00:00Z'));
+    assert.equal(r.status, 'busy', JSON.stringify(r));
+    assert.deepEqual(writes(gh), []);
+  }
+  const gh = fakeGitHub({ issues: [backlogIssue(11)] });
+  gh.failRuns = true;
+  assert.equal((await dispatch(gh, DSLOT)).status, 'blocked');
+  assert.deepEqual(writes(gh), []);
+});
+
+test('a labelled claim whose admit run is still queued past the admit grace keeps holding the queue', async () => {
+  const waiting = backlogIssue(11, { labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }] });
+  const gh = fakeGitHub({
+    issues: [waiting, backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+  });
+  gh.state.links['events:11'] = [
+    { event: 'labeled', label: { name: 'tessl' }, actor: bot, created_at: '2026-10-31T00:00:00Z' },
+  ];
+  gh.state.runs.push({ id: 'adm', status: 'pending', label: 'native-bot-backlog-labelled #11' });
+  const r = await dispatch(gh, DSLOT, new Date('2026-10-31T06:00:00Z'));
+  assert.deepEqual(r, { status: 'busy', waitingOn: 11 });
+  assert.deepEqual(writes(gh), []);
+});
+
+test('an admitted claim with no visible run after the run grace is blocked for a person, not idle', async () => {
+  const waiting = backlogIssue(11, { labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }] });
+  const gh = fakeGitHub({
+    issues: [waiting, backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+  });
+  gh.state.comments[11].push({
+    user: bot,
+    performed_via_github_app: { id: BOT_APP_ID },
+    created_at: '2026-10-31T00:00:00Z',
+    body: admissionMarker({
+      issue: 11,
+      node: 'n',
+      slot: EARLIER,
+      digest: 'f'.repeat(64),
+      event: 1,
+      request: 'r',
+    }),
+  });
+  const r = await dispatch(gh, DSLOT, new Date('2026-10-31T05:00:00Z'));
+  assert.equal(r.status, 'blocked');
+  assert.match(r.reason, /no run for r is visible/);
+  assert.deepEqual(writes(gh), []);
+});
+
+test('launchRuns reads every page, keeps only this repository, and fails closed on a bad page', () => {
+  const repo = 'https://github.com/guypod/carnival-evolution-20261028';
+  const run = (id, repoUrl = repo) => ({
+    id,
+    type: 'launch-run',
+    attributes: {
+      status: 'pending',
+      label: 'implement-github-issue',
+      config: { repoUrl, skillRef: 'tessl-labs/factory@0.6.0#implement-github-issue' },
+      liveness: { phase: 'queued' },
+    },
+  });
+  const paths = [];
+  const pagesOf = {
+    1: {
+      links: { next: 'https://api.tessl.io/experimental/launch-runs?page%5Bafter%5D=c2' },
+      data: [run('a'), run('x', 'https://github.com/other/repo')],
+    },
+    2: { links: { next: null }, data: [run('b')] },
+  };
+  const call = (path) => (paths.push(path), JSON.stringify(pagesOf[paths.length]));
+  const r = launchRuns({ issue: 40 }, call);
+  assert.equal(r.complete, true);
+  assert.deepEqual(
+    r.items.map((i) => i.id),
+    ['a', 'b'],
+  );
+  assert.match(decodeURIComponent(paths[0]), /filter\[linkType\]=github_issue/);
+  assert.ok(decodeURIComponent(paths[0]).includes(`filter[linkValue]=${issueUrl(40)}`));
+  assert.equal(paths[1], '/experimental/launch-runs?page%5Bafter%5D=c2');
+  // A failing or malformed page makes the whole listing incomplete.
+  const failing = () => {
+    throw new Error('HTTP 403');
+  };
+  assert.deepEqual(launchRuns({ status: 'pending' }, failing), { items: [], complete: false });
+  assert.equal(launchRuns({ status: 'pending' }, () => '{"error":{}}').complete, false);
 });

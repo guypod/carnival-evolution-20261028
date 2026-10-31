@@ -46,15 +46,49 @@ hold:
   claim history;
 - there is no linked pull request, no `tessl/issue-<n>` branch, and no
   admission for a different label event;
+- Tessl's launch runs (below) show no other implementation run queued or
+  running in this repository, and none in any state linked to this issue;
 - every listing was read to its last page.
+
+A missing branch is not proof that nothing is running. `admit` reads the
+actual runs with `tessl api /experimental/launch-runs`, every page: the
+`status=pending` runs, kept to this repository, and every run linked to the
+issue (`filter[linkType]=github_issue`, `filter[linkValue]=<issue url>`). An
+implementation run is one labelled `implement-github-issue` or whose skill is
+`#implement-github-issue`. Its own run is the one labelled
+`implement-github-issue <its request id>`. Before any write:
+
+| What the runs show                                 | `admit`                                          |
+| -------------------------------------------------- | ------------------------------------------------ |
+| a listing failed, was denied or is malformed       | `refused`: runs incomplete                       |
+| its own request's run is queued or running         | `admitted`, `already running`: no new handoff    |
+| its own request's run ended, whatever the outcome  | `refused`: never restarted                       |
+| another implementation run is queued or running    | `deferred`: no record, no handoff; exits at once |
+| another implementation run for this issue ever ran | `refused`: not the issue's first run             |
+| none of these                                      | writes the record and hands off                  |
+
+`deferred` exits at once and never waits holding the writer key. The issue
+keeps its label, and a later dispatch sees it as still held (below). Nothing
+retries the admission automatically.
+
+**The gap.** `tessl action trigger` answers once the request is recorded,
+before Tessl admits it to a launch run. The API documents no listing of
+action requests before admission: `/experimental/launch-runs` shows a run
+only once it exists. So a request someone else made in the last moments,
+not yet admitted, is invisible to `admit`. Closing it needs a read of
+recorded, not yet admitted action requests for the project, filterable by
+action and linked issue. Until then the check covers every run that exists.
 
 On a pass it writes one admission record, then calls
 `tessl action trigger implement-github-issue --request-id carnival-admit:<repo id>:<n>:<label event id>`
-with `GITHUB_ISSUE_NUMBER` and `GITHUB_ISSUE_LABEL=tessl`. It returns as soon
-as Tessl accepts the request, so it never waits on the run it starts while
-holding the writer key. That action keeps its own queued writer key. A retry
-reuses the record and the same request id, so Tessl starts no second run.
-Once the branch exists, a retry hands off nothing.
+with `GITHUB_ISSUE_NUMBER` and `GITHUB_ISSUE_LABEL=tessl`, plus
+`--label-fragment <request id>` and `--link github_issue=<issue url>` so the
+run can be found by its key and its issue. It returns as soon as Tessl
+accepts the request, so it never waits on the run it starts while holding
+the writer key. That action keeps its own queued writer key. A retry reuses
+the record and the same request id, so Tessl starts no second run; when its
+run is already visible, a retry hands off nothing. Once the branch exists, a
+retry hands off nothing.
 
 Provenance is GitHub's own `performed_via_github_app.id` (4096310, the
 Tessl app's App id, not an installation id) on the bot's comments, plus the
@@ -86,13 +120,23 @@ that runs as that app can write these records. Nothing narrower is claimed.
   Claims are read from every comment in the repository, so closing an issue
   or removing `auto backlog` or `tessl` never hides one:
   - a slot that already has a claim never claims a second issue;
+  - no new issue is claimed while any implementation run or
+    `native-bot-backlog-labelled` admit run is queued or running in this
+    repository, however long it has queued, and an incomplete run listing
+    blocks dispatch;
   - an open claimed issue labelled `tessl` with no pull request yet keeps the
-    queue busy, without reading the rest of the backlog, while its label is
-    the owner's, for 90 minutes after the bot's label so its `admit` run can
-    come off the writer queue, and for 3 hours after its admission record so
-    its run can open a pull request. After that the run was refused or ended
-    without a pull request: the queue moves on and that issue is never
-    relabelled;
+    queue busy, without reading the rest of the backlog. Time alone never
+    frees it; the runs decide:
+    - its label is the owner's: busy;
+    - admitted: busy until its own run (by request id) is seen to end, then
+      the queue moves on. If no run for its request is visible 3 hours after
+      the admission record, dispatch reports `blocked` for a person, and
+      stays blocked, rather than calling it idle;
+    - the bot's label, never admitted: busy for 90 minutes, then, with no
+      admit run still pending, `admit` refused it and the queue moves on.
+
+    That issue is never relabelled;
+
   - a backlog item without a journal entry whose digest matches its current
     content is skipped, since `admit` would refuse it;
   - a claim that never got its label, from any slot, is finished later,

@@ -84,11 +84,14 @@ deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
 1. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs admit <repository root>/.cloud-launch/trigger-events.json`.
    Run it once and report its JSON. It reads the issue, its comments, its
    events, the repository's claim history, linked pull requests and the
-   `tessl/issue-<n>` branch fresh, and refuses unless every check passes. On
+   `tessl/issue-<n>` branch fresh, plus Tessl's launch runs through
+   `tessl api /experimental/launch-runs`, and refuses unless every check
+   passes. It defers, writing nothing, while another implementation run is
+   queued or running, and never hands off twice under its own key. On
    a pass it writes one admission record and hands off with
    `tessl action trigger implement-github-issue` and a request id keyed by
    the label event, then returns without waiting for that run.
-2. `refused` and `blocked` are final for this run: never hand off any other
+2. `refused`, `deferred` and `blocked` are final for this run: never hand off any other
    way, never relabel, never edit the issue, and never retry with a weaker
    check. `uncertain` means the admission write or the handoff call failed
    without an answer: rerun the same command once. It reads its own record

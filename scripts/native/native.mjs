@@ -483,6 +483,12 @@ export async function dispatch(adapter, slot, now = new Date()) {
     const r = await finish(adapter, slot, claim.issue, 'recovered');
     if (r.status !== 'released') return r;
   }
+  // Never start a new issue while any implementation or admission is queued
+  // or running, however long it has queued: a run is proof, age is not.
+  const pending = await adapter.launchRuns({ status: 'pending' });
+  if (!pending.complete) return { status: 'blocked', reason: 'implementation runs incomplete' };
+  if (pending.items.some(isImplementation) || admitPending(pending))
+    return { status: 'busy', reason: 'an implementation or admission run is queued or running' };
   const listed = await adapter.listIssues({ state: 'open', label: BACKLOG_LABEL });
   if (!listed.complete) return { status: 'blocked', reason: 'backlog listing incomplete' };
   const sorted = [...listed.items]
@@ -521,24 +527,43 @@ export const RUN_GRACE_MS = 3 * 60 * 60_000;
 
 /**
  * Whether a claimed, labelled issue with no pull request still holds the
- * queue: it has an admission (its run is going), or its admit run may still
- * be queued behind the writer key. Returns the busy or blocked result, or
- * null when admission never happened within the grace, so the issue is not
- * running and the queue moves on. That issue is never relabelled.
+ * queue, read from its actual launch runs, never from elapsed time alone.
+ * Returns the busy or blocked result, or null when the runs show nothing for
+ * it is queued or running, so the queue moves on. That issue is never
+ * relabelled.
+ *   - Any pending implementation run in the repository, or a pending admit
+ *     run for this issue: busy.
+ *   - Admitted: its own run (by request id) ended, so the queue moves on. No
+ *     run visible yet: busy within the run grace, since an accepted request
+ *     may not be admitted yet; after it, blocked for a person, not idle.
+ *   - The owner's own label: busy, as the owner trigger's run.
+ *   - The bot's label, no admission, no pending admit run: busy within the
+ *     admit grace, then refused, so the queue moves on.
  */
 async function awaitingRun(adapter, number, now) {
+  const pending = await adapter.launchRuns({ status: 'pending' });
+  const linked = await adapter.launchRuns({ issue: number });
+  if (!pending.complete || !linked.complete)
+    return { status: 'blocked', reason: `implementation runs of #${number} incomplete` };
+  if (pending.items.some(isImplementation) || admitPending(pending))
+    return { status: 'busy', waitingOn: number };
   const comments = await adapter.listComments(number);
   if (!comments.complete) return { status: 'blocked', reason: `comments of #${number} incomplete` };
-  // An admitted run holds the queue for a bounded time. If it ends without a
-  // pull request (failed, timed out, never accepted), the queue moves on.
-  const admittedAt = comments.items
+  const admissions = comments.items
     .filter((c) => readAdmissions([c]).some((a) => a.issue === number))
-    .map((c) => c.created_at)
-    .sort()
-    .at(-1);
-  if (admittedAt !== undefined) {
-    const age = now - new Date(admittedAt);
-    return Number.isNaN(age) || age < RUN_GRACE_MS ? { status: 'busy', waitingOn: number } : null;
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
+  const admitted = admissions.at(-1);
+  if (admitted !== undefined) {
+    const { request } = readAdmissions([admitted])[0];
+    const exec = executionState(pending, linked, request);
+    if (exec.state === 'own-ended') return null;
+    const age = now - new Date(admitted.created_at);
+    if (Number.isNaN(age) || age < RUN_GRACE_MS) return { status: 'busy', waitingOn: number };
+    return {
+      status: 'blocked',
+      issue: number,
+      reason: `#${number} was admitted but no run for ${request} is visible; a person checks it`,
+    };
   }
   const events = await adapter.listEvents(number);
   if (!events.complete) return { status: 'blocked', reason: `events of #${number} incomplete` };
@@ -662,6 +687,62 @@ export function readAdmissions(comments) {
 }
 
 export const requestId = (issue, eventId) => `carnival-admit:${REPOSITORY_ID}:${issue}:${eventId}`;
+
+// ---------- execution state ----------
+//
+// A missing branch or a local flag is not proof that no implementation is
+// queued or running. These read Tessl's launch runs, through
+// `tessl api /experimental/launch-runs`, every page: the pending runs of this
+// repository, and every run linked to the issue. The handoff labels its run
+// `implement-github-issue <request id>` and links it to the issue, so the
+// app's own request is told apart from any other run by its stable key.
+//
+// Not covered: a request Tessl has accepted (202) but not yet admitted to a
+// launch run. The API documents no listing of action requests before
+// admission, so such a request is invisible here until its run exists.
+
+export const IMPLEMENT_ACTION = 'implement-github-issue';
+export const ADMIT_TRIGGER = 'native-bot-backlog-labelled';
+export const issueUrl = (n) => `https://github.com/${REPOSITORY}/issues/${n}`;
+export const runLabel = (request) => `${IMPLEMENT_ACTION} ${request}`;
+
+const isImplementation = (run) =>
+  run.label === IMPLEMENT_ACTION ||
+  run.label?.startsWith(`${IMPLEMENT_ACTION} `) ||
+  run.skill?.endsWith(`#${IMPLEMENT_ACTION}`);
+
+/**
+ * What the launch runs say about starting implementation for issue n under
+ * `request`. Fails closed: an incomplete listing is unknown, never clear.
+ *   unknown: a listing was incomplete or unreadable;
+ *   own-pending: the app's own request already has a queued or running run;
+ *   own-ended: the app's own run finished (any outcome) and is never restarted;
+ *   foreign-pending: another implementation run in this repository is queued
+ *     or running; which issue it is for cannot be told, so wait;
+ *   foreign-history: another implementation run for this issue exists, in any
+ *     state, so this is not the issue's first run;
+ *   clear: no implementation run but none of the above.
+ */
+export function executionState(pending, linked, request) {
+  if (!pending?.complete || !linked?.complete) return { state: 'unknown' };
+  const own = (r) => r.label === runLabel(request);
+  const all = [...pending.items, ...linked.items];
+  const mine = all.filter(own);
+  if (mine.some((r) => r.status === 'pending')) return { state: 'own-pending', run: mine[0].id };
+  if (mine.length) return { state: 'own-ended', run: mine[0].id, status: mine[0].status };
+  const foreign = pending.items.find((r) => isImplementation(r) && !own(r));
+  if (foreign) return { state: 'foreign-pending', run: foreign.id };
+  const earlier = linked.items.find((r) => isImplementation(r) && !own(r));
+  if (earlier) return { state: 'foreign-history', run: earlier.id, status: earlier.status };
+  return { state: 'clear' };
+}
+
+/**
+ * Whether any admit run is still queued or running. Its label cannot be
+ * relied on to name the issue, so any pending one holds the queue.
+ */
+const admitPending = (pending) =>
+  pending.items.some((r) => r.status === 'pending' && r.label?.startsWith(ADMIT_TRIGGER));
 
 const isBot = (u) => u?.id === BOT_ID && u?.type === 'Bot' && u?.login === BOT_LOGIN;
 
@@ -796,6 +877,35 @@ export async function admit(adapter, events, now = new Date()) {
     if (prior.length) return { status: 'admitted', issue: n, how: 'already running', ...record };
     return { status: 'refused', issue: n, reasons: ['an implementation branch already exists'] };
   }
+  // No branch proves nothing: read the actual runs before any write or handoff.
+  const exec = executionState(
+    await adapter.launchRuns({ status: 'pending' }),
+    await adapter.launchRuns({ issue: n }),
+    record.request,
+  );
+  if (exec.state === 'unknown')
+    return { status: 'refused', issue: n, reasons: ['implementation runs incomplete'] };
+  if (exec.state === 'own-pending')
+    return { status: 'admitted', issue: n, how: 'already running', run: exec.run, ...record };
+  if (exec.state === 'own-ended')
+    return {
+      status: 'refused',
+      issue: n,
+      reasons: [`its own run ${exec.run} already ended (${exec.status}); never restarted`],
+    };
+  if (exec.state === 'foreign-history')
+    return {
+      status: 'refused',
+      issue: n,
+      reasons: [`an earlier implementation run ${exec.run} (${exec.status}) exists for this issue`],
+    };
+  // Another run is queued or running: exit now, never wait holding the writer key.
+  if (exec.state === 'foreign-pending')
+    return {
+      status: 'deferred',
+      issue: n,
+      reasons: [`implementation run ${exec.run} is queued or running`],
+    };
   if (!prior.length) {
     try {
       await adapter.comment(
@@ -1056,6 +1166,50 @@ function labelHistory(n, label) {
   return { complete: r.complete, actor: last?.actor, eventId: last?.id };
 }
 
+/** Every page of `tessl api /experimental/launch-runs` for this repository. */
+export function launchRuns({ status, issue }, call = tesslApi) {
+  const q = new URLSearchParams({ 'page[size]': '100' });
+  if (status) q.set('status', status);
+  if (issue !== undefined) {
+    q.set('filter[linkType]', 'github_issue');
+    q.set('filter[linkValue]', issueUrl(issue));
+  }
+  const repo = `https://github.com/${REPOSITORY}`;
+  const items = [];
+  let path = `/experimental/launch-runs?${q}`;
+  try {
+    for (let page = 0; path; page++) {
+      if (page >= 50) return { items: [], complete: false };
+      const body = JSON.parse(call(path));
+      if (!Array.isArray(body?.data) || !body.links) return { items: [], complete: false };
+      for (const r of body.data) {
+        const a = r.attributes ?? {};
+        if (a.config?.repoUrl?.replace(/\.git$/, '') !== repo) continue;
+        items.push({
+          id: r.id,
+          status: a.status,
+          phase: a.liveness?.phase,
+          label: a.label,
+          skill: a.config?.skillRef,
+        });
+      }
+      const next = body.links.next;
+      path = next ? new URL(next).pathname + new URL(next).search : null;
+    }
+  } catch {
+    return { items: [], complete: false };
+  }
+  return { items, complete: true };
+}
+
+function tesslApi(path) {
+  return execFileSync('tessl', ['api', path], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 120_000,
+  });
+}
+
 export function ghAdapter({ writerKeyHeld = false } = {}) {
   const base = `repos/${REPOSITORY}`;
   return {
@@ -1121,11 +1275,16 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         [
           'action',
           'trigger',
-          'implement-github-issue',
+          IMPLEMENT_ACTION,
           '--project-id',
           PROJECT_ID,
           '--request-id',
           request,
+          // Presentation only: lets launchRuns tell this request's run apart.
+          '--label-fragment',
+          request,
+          '--link',
+          `github_issue=${issueUrl(n)}`,
           '--input',
           `GITHUB_ISSUE_NUMBER=${n}`,
           '--input',
@@ -1134,6 +1293,9 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         ],
         { encoding: 'utf8', timeout: 120_000 },
       ),
+    // Tessl launch runs of this repository, every page: the pending ones, or
+    // every run linked to issue n. Any failed page makes it incomplete.
+    launchRuns: async ({ status, issue }) => launchRuns({ status, issue }),
     linkedPullRequests: async (n) => {
       const r = pages(`${base}/issues/${n}/timeline?per_page=100`);
       return {
