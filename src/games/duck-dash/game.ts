@@ -315,7 +315,7 @@ export const RIVER = { x: 160, y: 80, w: 480, h: 420 } as const;
 const LANE_W = RIVER.w / LANES;
 const TOP_Y = RIVER.y + 10;
 const DUCK_Y = 380;
-const BUTTON_Y = 430;
+export const BUTTON_Y = 430;
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
 
 /** Pixels the river flows per second: the same speed the stars and reeds float. */

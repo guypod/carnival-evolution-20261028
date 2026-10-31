@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   BANK_W,
+  BUTTON_Y,
   HUD_PANEL,
   KEY_HINT,
   RIVER,
@@ -399,12 +400,18 @@ describe('HUD layout', () => {
   it('puts the score panel beside the river, inside the canvas', () => {
     expect(inCanvas(HUD_PANEL)).toBe(true);
     expect(overlaps(HUD_PANEL, riverWithBanks)).toBe(false);
-    expect(RIVER.x - BANK_W - (HUD_PANEL.x + HUD_PANEL.w)).toBeLessThanOrEqual(12);
+    const gap = RIVER.x - BANK_W - (HUD_PANEL.x + HUD_PANEL.w);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(HUD_PANEL.y).toBe(RIVER.y);
   });
 
   it('puts the key hint level with the lane buttons, clear of the river', () => {
     expect(inCanvas(KEY_HINT)).toBe(true);
     expect(overlaps(KEY_HINT, riverWithBanks)).toBe(false);
-    expect(KEY_HINT.x - (RIVER.x + RIVER.w + BANK_W)).toBeLessThanOrEqual(12);
+    const gap = KEY_HINT.x - (RIVER.x + RIVER.w + BANK_W);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(KEY_HINT.y).toBe(BUTTON_Y);
   });
 });
