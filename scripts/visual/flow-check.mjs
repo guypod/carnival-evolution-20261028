@@ -3,13 +3,14 @@
 //
 //   node scripts/visual/flow-check.mjs <flow.json> <head> <evidence commit> <dir>
 import { readFileSync } from 'node:fs';
-import { BROWSER_CHECK, evidenceMarker } from '../native/native.mjs';
+import { BROWSER_CHECK, evidenceMarker, flowExternalId } from '../native/native.mjs';
 
 /** The check run for a flow report: success only when every check passed. */
 export function flowCheckRun(report, head, evidenceCommit, dir) {
   const pass = report.result === 'pass';
   const record = {
     head,
+    flow: report.flow,
     evidenceCommit,
     flows: report.checks.map((c) => ({ name: `${report.flow}: ${c.check}`, result: c.result })),
     screenshots: report.screenshots.map((s) => ({ path: `${dir}/${s.file}`, sha256: s.sha256 })),
@@ -17,6 +18,7 @@ export function flowCheckRun(report, head, evidenceCommit, dir) {
   const lines = report.checks.map((c) => `- ${c.result}: ${c.check}`);
   return {
     name: BROWSER_CHECK,
+    external_id: flowExternalId(report.flow),
     head_sha: head,
     status: 'completed',
     conclusion: pass ? 'success' : 'failure',

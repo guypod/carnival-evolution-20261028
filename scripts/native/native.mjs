@@ -1127,55 +1127,136 @@ const INFRA_ONLY = [
 export const evidenceMarker = (record) =>
   `<!-- carnival-browser-flow:v1 ${JSON.stringify(record)} -->`;
 
+/** Every path a changed file touches: its new name and, for a rename, its old one. */
+const pathsOf = (f) => [f?.filename, f?.previous_filename].filter((p) => typeof p === 'string');
+
 /**
  * Whether the pull request's changed files need browser evidence. Only a
- * complete listing in which every file is infrastructure skips it.
+ * complete listing in which every path, old and new, is infrastructure skips
+ * it: app source renamed to docs, or deleted, still needs it.
  */
 export function needsBrowserEvidence(files) {
   if (!files?.complete || !files.items.length) return true;
-  return files.items.some((f) => !INFRA_ONLY.some((re) => re.test(f.filename ?? '')));
+  return files.items.some((f) => {
+    const paths = pathsOf(f);
+    return !paths.length || paths.some((p) => !INFRA_ONLY.some((re) => re.test(p)));
+  });
 }
 
 /**
- * Why the browser evidence for `head` does not hold, as a list. Evidence is
- * only the factory app's own completed, successful browser-flow check run on
- * the head, whose record names that head, every changed flow as passed, and
- * screenshots whose retained bytes hash to the recorded digests. Reviews and
- * comments never count.
+ * The flows flow.mjs can play, by the game folder they cover. A game without
+ * an entry has no automated flow: a change to it is owed one, never waved
+ * through on another game's evidence.
  */
-export function browserEvidence(head, checks, shots) {
-  const runs = (checks ?? [])
+export const GAME_FLOWS = { 'mini-putt': ['mini-putt-hole-next'] };
+// The flow scripts themselves: a change to them must replay every flow.
+const FLOW_TOOLING = /^scripts\/visual\//;
+
+/**
+ * The flows the changed files need, and what no registered flow covers:
+ * { flows, owed }. Every path, old and new, counts. An incomplete listing
+ * owes everything. `owed` is the repair list: each entry needs a flow added
+ * to flow.mjs and GAME_FLOWS before the pull request can merge.
+ */
+export function requiredFlows(files) {
+  const all = [...new Set(Object.values(GAME_FLOWS).flat())].sort();
+  if (!files?.complete || !files.items.length)
+    return { flows: all, owed: ['changed-file listing incomplete'] };
+  const flows = new Set();
+  const owed = new Set();
+  for (const f of files.items)
+    for (const p of pathsOf(f)) {
+      if (INFRA_ONLY.some((re) => re.test(p))) continue;
+      const game = /^src\/games\/([^/]+)\//.exec(p)?.[1];
+      if (game) {
+        if (GAME_FLOWS[game]) GAME_FLOWS[game].forEach((x) => flows.add(x));
+        else owed.add(`no browser flow for src/games/${game}/`);
+      } else if (FLOW_TOOLING.test(p)) all.forEach((x) => flows.add(x));
+      else {
+        // Shared app code (the midway, src/carnival/, index.html, package.json)
+        // reaches games and screens no flow plays yet: every registered flow
+        // runs, and the rest is owed.
+        all.forEach((x) => flows.add(x));
+        owed.add(`no browser flow covers every screen ${p} reaches`);
+      }
+    }
+  return { flows: [...flows].sort(), owed: [...owed].sort() };
+}
+
+/** The check run external_id that ties a browser-flow attempt to its flow. */
+export const flowExternalId = (flow) => `${BROWSER_CHECK}:${flow}`;
+
+function readRecord(run) {
+  const m = EVIDENCE_RE.exec(run?.output?.text ?? '');
+  try {
+    return m ? JSON.parse(m[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Why the browser evidence for `head` does not hold, as a list. Each required
+ * flow needs the factory app's own browser-flow check run on the head for that
+ * flow (external_id browser-flow:<flow>), and the newest such attempt decides:
+ * a newer failed or unfinished attempt is never masked by an older pass. Its
+ * record must name the head and the flow, every check as passed, and
+ * screenshots whose retained bytes hash to the recorded digests. A factory
+ * attempt on the head with no known flow that did not succeed also refuses.
+ * Reviews and comments never count. `required` defaults to the one flow
+ * registered, for callers that predate coverage.
+ */
+export function browserEvidence(head, checks, shots, required = { flows: [], owed: [] }) {
+  const reasons = [...(required.owed ?? [])];
+  const mine = (checks ?? [])
     .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
     .sort((a, b) => a.id - b.id);
-  const run = runs.at(-1);
-  if (!run) return ['no browser-flow evidence on the head'];
-  if (run.status !== 'completed') return ['browser-flow evidence still running'];
-  if (run.conclusion !== 'success') return [`browser-flow evidence ${run.conclusion}`];
-  const m = EVIDENCE_RE.exec(run.output?.text ?? '');
-  let record;
-  try {
-    record = m && JSON.parse(m[1]);
-  } catch {
-    record = undefined;
+  const known = new Set(Object.values(GAME_FLOWS).flat().map(flowExternalId));
+  for (const c of mine)
+    if (!known.has(c.external_id) && (c.status !== 'completed' || c.conclusion !== 'success'))
+      reasons.push(`browser-flow attempt ${c.id} for an unknown flow did not pass`);
+  const flows = required.flows ?? [];
+  if (!flows.length && !reasons.length) reasons.push('no required browser flow');
+  for (const flow of flows) {
+    const run = mine.filter((c) => c.external_id === flowExternalId(flow)).at(-1);
+    if (!run) {
+      reasons.push(`no browser-flow evidence on the head for ${flow}`);
+      continue;
+    }
+    if (run.status !== 'completed') {
+      reasons.push(`browser-flow evidence for ${flow} still running`);
+      continue;
+    }
+    if (run.conclusion !== 'success') {
+      reasons.push(`browser-flow evidence for ${flow} ${run.conclusion}`);
+      continue;
+    }
+    reasons.push(...recordReasons(head, flow, readRecord(run), shots?.[run.id]));
   }
-  if (!record) return ['browser-flow evidence has no record'];
+  return reasons;
+}
+
+function recordReasons(head, flow, record, shots) {
+  if (!record) return [`browser-flow evidence for ${flow} has no record`];
   const reasons = [];
-  if (record.head !== head) reasons.push('browser-flow evidence is for another head');
-  const flows = Array.isArray(record.flows) ? record.flows : [];
-  if (!flows.length) reasons.push('browser-flow evidence names no flow');
-  for (const f of flows)
+  if (record.head !== head) reasons.push(`browser-flow evidence for ${flow} is for another head`);
+  if (record.flow !== flow) reasons.push(`browser-flow evidence is not for ${flow}`);
+  const checks = Array.isArray(record.flows) ? record.flows : [];
+  if (!checks.length) reasons.push(`browser-flow evidence for ${flow} names no check`);
+  for (const f of checks)
     if (f?.result !== 'pass') reasons.push(`browser flow ${f?.name ?? '?'} did not pass`);
   const list = Array.isArray(record.screenshots) ? record.screenshots : [];
-  if (!list.length) reasons.push('browser-flow evidence has no screenshots');
+  if (!list.length) reasons.push(`browser-flow evidence for ${flow} has no screenshots`);
   if (!/^[0-9a-f]{40}$/.test(record.evidenceCommit ?? ''))
-    reasons.push('browser-flow evidence names no retained commit');
-  if (!shots?.complete) reasons.push('retained screenshots not read');
+    reasons.push(`browser-flow evidence for ${flow} names no retained commit`);
+  if (!shots?.complete) reasons.push(`retained screenshots for ${flow} not read`);
   else if (!shots.onEvidenceBranch)
-    reasons.push(`browser-flow evidence commit is not on ${EVIDENCE_BRANCH}`);
+    reasons.push(`browser-flow evidence commit for ${flow} is not on ${EVIDENCE_BRANCH}`);
   else
     for (const sh of list) {
-      if (!String(sh?.path ?? '').startsWith(`evidence/${head}/`) || /[?#]|\.\./.test(sh.path)) {
-        reasons.push(`screenshot ${sh?.path} is not under evidence/${head}/`);
+      const dir = `evidence/${head}/${flow}/`;
+      if (!String(sh?.path ?? '').startsWith(dir) || /[?#]|\.\./.test(sh.path)) {
+        reasons.push(`screenshot ${sh?.path} is not under ${dir}`);
         continue;
       }
       const got = shots.digests?.[sh?.path];
@@ -1299,7 +1380,7 @@ export function mergeGate(s) {
   }
   // An app change also needs the factory's own browser-flow evidence for this head.
   if (needsBrowserEvidence(s.files))
-    reasons.push(...browserEvidence(head, s.checks.items, s.browserShots));
+    reasons.push(...browserEvidence(head, s.checks.items, s.browserShots, requiredFlows(s.files)));
   if (s.combinedStatus && !['success', 'pending'].includes(s.combinedStatus.state))
     reasons.push(`commit status ${s.combinedStatus.state}`);
   if (s.combinedStatus?.state === 'pending' && s.combinedStatus.total_count > 0)
@@ -1372,43 +1453,50 @@ function pages(path) {
 }
 
 /**
- * The sha256 of each screenshot the newest factory browser-flow run on `head`
- * names, read from its retained evidence commit. Any failed read is incomplete.
+ * The sha256 of each screenshot the newest successful factory browser-flow
+ * run of each flow on `head` names, read from its retained evidence commit,
+ * by check run id. Any failed read is incomplete.
  */
 function retainedShots(checks, head) {
-  const run = checks
-    .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
-    .sort((a, b) => a.id - b.id)
-    .at(-1);
-  const m = EVIDENCE_RE.exec(run?.output?.text ?? '');
-  if (!m) return { complete: true, digests: {} };
-  try {
-    const record = JSON.parse(m[1]);
-    if (!/^[0-9a-f]{40}$/.test(record.evidenceCommit ?? '')) return { complete: true, digests: {} };
-    // The commit must be on the evidence branch: identical to or behind its tip.
-    const cmp = JSON.parse(
-      gh(['api', `repos/${REPOSITORY}/compare/${record.evidenceCommit}...${EVIDENCE_BRANCH}`]),
-    );
-    if (!['identical', 'ahead'].includes(cmp.status))
-      return { complete: true, onEvidenceBranch: false, digests: {} };
-    const digests = {};
-    for (const sh of record.screenshots ?? []) {
-      const bytes = execFileSync(
-        'gh',
-        [
-          'api',
-          '-H',
-          'Accept: application/vnd.github.raw',
-          `repos/${REPOSITORY}/contents/${encodeURI(sh.path)}?ref=${record.evidenceCommit}`,
-        ],
-        { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
+  const newest = new Map();
+  for (const c of checks)
+    if (c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
+      if (!newest.has(c.external_id) || c.id > newest.get(c.external_id).id)
+        newest.set(c.external_id, c);
+  const out = {};
+  for (const run of newest.values()) {
+    if (run.conclusion !== 'success') continue;
+    const record = readRecord(run);
+    if (!/^[0-9a-f]{40}$/.test(record?.evidenceCommit ?? '')) continue;
+    try {
+      // The commit must be on the evidence branch: identical to or behind its tip.
+      const cmp = JSON.parse(
+        gh(['api', `repos/${REPOSITORY}/compare/${record.evidenceCommit}...${EVIDENCE_BRANCH}`]),
       );
-      digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
+      if (!['identical', 'ahead'].includes(cmp.status)) {
+        out[run.id] = { complete: true, onEvidenceBranch: false, digests: {} };
+        continue;
+      }
+      const digests = {};
+      for (const sh of record.screenshots ?? []) {
+        const bytes = execFileSync(
+          'gh',
+          [
+            'api',
+            '-H',
+            'Accept: application/vnd.github.raw',
+            `repos/${REPOSITORY}/contents/${encodeURI(sh.path)}?ref=${record.evidenceCommit}`,
+          ],
+          { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
+        );
+        digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
+      }
+      out[run.id] = { complete: true, onEvidenceBranch: true, digests };
+    } catch {
+      out[run.id] = { complete: false, digests: {} };
     }
-    return { complete: true, onEvidenceBranch: true, digests };
-  } catch {
-    return { complete: false, digests: {} };
   }
+  return out;
 }
 
 /** Who last added `label` to issue `n`, read from every page of its events. */

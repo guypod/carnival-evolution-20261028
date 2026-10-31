@@ -22,6 +22,7 @@ import {
   mergeGate,
   browserEvidence,
   needsBrowserEvidence,
+  requiredFlows,
   evidenceMarker,
   mergeOne,
   produceBacklog,
@@ -585,16 +586,19 @@ const reviewerRun = (extra = {}) => ({
 });
 const SHOT = 'c'.repeat(64);
 const EVIDENCE = 'd'.repeat(40);
+const FLOW = 'mini-putt-hole-next';
 const record = (extra = {}) => ({
   head: HEAD,
+  flow: FLOW,
   evidenceCommit: EVIDENCE,
   flows: [{ name: 'mini-putt hole done then Next', result: 'pass' }],
-  screenshots: [{ path: `evidence/${HEAD}/hole-done.png`, sha256: SHOT }],
+  screenshots: [{ path: `evidence/${HEAD}/${FLOW}/hole-done.png`, sha256: SHOT }],
   ...extra,
 });
 const browserRun = (extra = {}) => ({
   id: 50,
   name: 'browser-flow',
+  external_id: `browser-flow:${FLOW}`,
   app: { id: BOT_APP_ID },
   head_sha: HEAD,
   status: 'completed',
@@ -602,11 +606,13 @@ const browserRun = (extra = {}) => ({
   output: { text: evidenceMarker(record()) },
   ...extra,
 });
-const shots = {
+const shotsOf = (one, id = 50) => ({ [id]: one });
+const shots = shotsOf({
   complete: true,
   onEvidenceBranch: true,
-  digests: { [`evidence/${HEAD}/hole-done.png`]: SHOT },
-};
+  digests: { [`evidence/${HEAD}/${FLOW}/hole-done.png`]: SHOT },
+});
+const REQ = { flows: [FLOW], owed: [] };
 const appFiles = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
 const snapshot = (extra = {}) => ({
   writerKeyHeld: true,
@@ -2092,7 +2098,7 @@ refuses(
 refuses(
   'failed browser-flow run',
   snapshot({ checks: withRun(browserRun({ conclusion: 'failure' })) }),
-  /browser-flow evidence failure/,
+  /browser-flow evidence for mini-putt-hole-next failure/,
 );
 refuses(
   'browser-flow run still running',
@@ -2115,7 +2121,7 @@ refuses(
   snapshot({
     checks: withRun(browserRun({ output: { text: evidenceMarker(record({ flows: [] })) } })),
   }),
-  /names no flow/,
+  /names no check/,
 );
 refuses(
   'a record with no screenshots',
@@ -2132,23 +2138,23 @@ refuses(
 refuses(
   'screenshot bytes that do not match the record',
   snapshot({
-    browserShots: {
+    browserShots: shotsOf({
       complete: true,
       onEvidenceBranch: true,
-      digests: { [`evidence/${HEAD}/hole-done.png`]: 'e'.repeat(64) },
-    },
+      digests: { [`evidence/${HEAD}/${FLOW}/hole-done.png`]: 'e'.repeat(64) },
+    }),
   }),
   /does not match its digest/,
 );
 refuses(
   'screenshot not retained',
-  snapshot({ browserShots: { complete: true, onEvidenceBranch: true, digests: {} } }),
+  snapshot({ browserShots: shotsOf({ complete: true, onEvidenceBranch: true, digests: {} }) }),
   /is not retained/,
 );
 refuses(
   'retained screenshots unread',
-  snapshot({ browserShots: { complete: false } }),
-  /retained screenshots not read/,
+  snapshot({ browserShots: shotsOf({ complete: false }) }),
+  /retained screenshots for mini-putt-hole-next not read/,
 );
 refuses(
   'a newer failed browser-flow run replaces an older pass',
@@ -2156,7 +2162,7 @@ refuses(
     checks: withRun(browserRun({ id: 51, conclusion: 'failure' })),
     // the older pass is still listed
   }),
-  /browser-flow evidence failure/,
+  /browser-flow evidence for mini-putt-hole-next failure/,
 );
 refuses(
   'unreadable changed-file listing counts as an app change',
@@ -2170,7 +2176,7 @@ test('browser evidence: an approving review or a PR comment is never evidence', 
   const s = snapshot({ checks: withRun(), comments: [{ body: evidenceMarker(record()) }] });
   const g = mergeGate(s);
   assert.equal(g.merge, false);
-  assert.ok(g.reasons.includes('no browser-flow evidence on the head'));
+  assert.ok(g.reasons.includes(`no browser-flow evidence on the head for ${FLOW}`));
 });
 
 test('browser evidence: only a complete, all-infrastructure file list skips it', () => {
@@ -2190,10 +2196,11 @@ test('browser evidence: only a complete, all-infrastructure file list skips it',
 });
 
 test('browser evidence: an exact-head pass with retained, matching screenshots holds', () => {
-  assert.deepEqual(browserEvidence(HEAD, [browserRun()], shots), []);
-  assert.deepEqual(browserEvidence(HEAD, [browserRun({ output: { text: 'trust me' } })], shots), [
-    'browser-flow evidence has no record',
-  ]);
+  assert.deepEqual(browserEvidence(HEAD, [browserRun()], shots, REQ), []);
+  assert.deepEqual(
+    browserEvidence(HEAD, [browserRun({ output: { text: 'trust me' } })], shots, REQ),
+    [`browser-flow evidence for ${FLOW} has no record`],
+  );
 });
 
 test('browser evidence: a published flow report round-trips through the gate', async () => {
@@ -2205,25 +2212,25 @@ test('browser evidence: a published flow report round-trips through the gate', a
     checks: [{ check: 'Next moves to the next hole', result: 'pass' }],
     screenshots: [{ file: 'hole-done.png', sha256: SHOT }],
   };
-  const body = flowCheckRun(report, HEAD, EVIDENCE, `evidence/${HEAD}`);
+  const body = flowCheckRun(report, HEAD, EVIDENCE, `evidence/${HEAD}/${FLOW}`);
   const run = { ...body, id: 9, app: { id: BOT_APP_ID } };
-  assert.deepEqual(browserEvidence(HEAD, [run], shots), []);
+  assert.deepEqual(browserEvidence(HEAD, [run], shotsOf(shots[50], 9), REQ), []);
   const failed = flowCheckRun(
     { ...report, result: 'fail', checks: [{ check: 'x', result: 'fail' }] },
     HEAD,
     EVIDENCE,
-    `evidence/${HEAD}`,
+    `evidence/${HEAD}/${FLOW}`,
   );
   assert.equal(failed.conclusion, 'failure');
   assert.match(
-    browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots).join(),
+    browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots, REQ).join(),
     /failure/,
   );
 });
 
 refuses(
   'evidence commit not on the evidence branch',
-  snapshot({ browserShots: { complete: true, onEvidenceBranch: false, digests: {} } }),
+  snapshot({ browserShots: shotsOf({ complete: true, onEvidenceBranch: false, digests: {} }) }),
   /not on factory-state\/browser-evidence/,
 );
 refuses(
@@ -2238,11 +2245,11 @@ refuses(
         },
       }),
     ),
-    browserShots: {
+    browserShots: shotsOf({
       complete: true,
       onEvidenceBranch: true,
       digests: { [`evidence/${OLD}/x.png`]: SHOT },
-    },
+    }),
   }),
   /is not under evidence\//,
 );
@@ -2252,4 +2259,104 @@ test('browser evidence: flow scripts and non-markdown docs are app changes', () 
   assert.equal(needsBrowserEvidence(list('scripts/visual/flow.mjs')), true);
   assert.equal(needsBrowserEvidence(list('docs/social-preview.jpg')), true);
   assert.equal(needsBrowserEvidence(list('docs/midway.md', 'scripts/native/native.mjs')), false);
+});
+
+// ---------- required-flow coverage ----------
+
+const changed = (...items) => ({
+  complete: true,
+  items: items.map((f) => (typeof f === 'string' ? { filename: f } : f)),
+});
+
+test('coverage: a Mini Putt pass never satisfies a Skee Ball change', () => {
+  // The Skee Ball fixture: a game with no registered flow.
+  const files = changed('src/games/skee-ball/game.ts', 'src/games/skee-ball/README.md');
+  assert.deepEqual(requiredFlows(files), {
+    flows: [],
+    owed: ['no browser flow for src/games/skee-ball/'],
+  });
+  const g = mergeGate(snapshot({ files }));
+  assert.equal(g.merge, false);
+  assert.ok(g.reasons.includes('no browser flow for src/games/skee-ball/'));
+});
+
+test('coverage: every changed game needs its own flow', () => {
+  const files = changed('src/games/mini-putt/game.ts', 'src/games/skee-ball/game.ts');
+  const g = mergeGate(snapshot({ files }));
+  assert.deepEqual(g.reasons, ['no browser flow for src/games/skee-ball/']);
+  assert.deepEqual(
+    mergeGate(snapshot({ files: changed('src/games/mini-putt/game.ts') })).reasons,
+    [],
+  );
+});
+
+test('coverage: shared app changes run every flow and stay owed', () => {
+  for (const p of ['src/main.ts', 'src/carnival/theme.ts', 'index.html', 'package.json']) {
+    const r = requiredFlows(changed(p));
+    assert.deepEqual(r.flows, [FLOW]);
+    assert.equal(r.owed.length, 1, p);
+    assert.equal(mergeGate(snapshot({ files: changed(p) })).merge, false, p);
+  }
+  // The flow scripts replay every flow but owe nothing more.
+  assert.deepEqual(requiredFlows(changed('scripts/visual/flow.mjs')), { flows: [FLOW], owed: [] });
+  assert.deepEqual(requiredFlows({ complete: false, items: [] }).owed, [
+    'changed-file listing incomplete',
+  ]);
+});
+
+test('coverage: a flow record for another flow does not count', () => {
+  const run = browserRun({ output: { text: evidenceMarker(record({ flow: 'other' })) } });
+  assert.match(browserEvidence(HEAD, [run], shots, REQ).join(), /is not for mini-putt-hole-next/);
+  const untagged = browserRun({ external_id: undefined });
+  assert.match(
+    browserEvidence(HEAD, [untagged], shots, REQ).join(),
+    /no browser-flow evidence on the head for mini-putt-hole-next/,
+  );
+});
+
+// ---------- renames and deletions ----------
+
+test('scope: app source renamed or deleted into docs still needs evidence', () => {
+  const renamed = changed({
+    filename: 'docs/old-game.md',
+    previous_filename: 'src/games/skee-ball/game.ts',
+    status: 'renamed',
+  });
+  assert.equal(needsBrowserEvidence(renamed), true);
+  assert.deepEqual(requiredFlows(renamed).owed, ['no browser flow for src/games/skee-ball/']);
+  const removed = changed({ filename: 'src/games/mini-putt/game.ts', status: 'removed' });
+  assert.equal(needsBrowserEvidence(removed), true);
+  // A rename between infrastructure paths stays infrastructure.
+  const infraMove = changed({ filename: 'docs/b.md', previous_filename: 'scripts/native/a.md' });
+  assert.equal(needsBrowserEvidence(infraMove), false);
+});
+
+// ---------- attempts ----------
+
+test('attempts: a newer in-progress or failed attempt masks no older pass', () => {
+  const pass = browserRun();
+  const running = browserRun({ id: 60, status: 'in_progress', conclusion: null, output: {} });
+  assert.deepEqual(browserEvidence(HEAD, [pass, running], shots, REQ), [
+    `browser-flow evidence for ${FLOW} still running`,
+  ]);
+  const failed = browserRun({ id: 61, conclusion: 'failure', output: {} });
+  assert.deepEqual(browserEvidence(HEAD, [running, failed, pass], shots, REQ), [
+    `browser-flow evidence for ${FLOW} failure`,
+  ]);
+  // An older failure does not undo a newer pass.
+  assert.deepEqual(
+    browserEvidence(HEAD, [browserRun({ id: 40, conclusion: 'failure' }), pass], shots, REQ),
+    [],
+  );
+});
+
+test('attempts: an attempt that failed before naming its flow refuses', () => {
+  const unknown = browserRun({
+    id: 70,
+    external_id: 'browser-flow:skee-ball-roll',
+    conclusion: 'failure',
+  });
+  assert.deepEqual(browserEvidence(HEAD, [browserRun(), unknown], shots, REQ), [
+    'browser-flow attempt 70 for an unknown flow did not pass',
+  ]);
 });
