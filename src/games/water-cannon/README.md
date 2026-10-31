@@ -13,7 +13,9 @@ Soak the targets on the three rails before your tank runs dry.
   your aim. A shot that misses splashes where you aimed it; a hit shows its
   points instead.
 - You have 15 shots. The game ends when the tank is empty and the last shot has landed.
-- The game over screen shows your score and the mode you played. Click it, or
+- The game over screen shows your score, the mode you played and how the round
+  went: hits out of shots fired, accuracy (hits per shot as a whole
+  percentage) and your best streak of hits in a row. Click it, or
   press Space or Enter, to go back to the mode selector with the same mode
   still picked.
 - Keyboard shortcuts do nothing while a link or button on the page has focus,
@@ -74,7 +76,7 @@ Add `?shots=25` to the page URL to change the size of the tank, for example
 ## Files
 
 - `game.ts`: the game logic (`createState`, `fire`, `shotPath`, `step`, `scoreForHit`,
-  `multiplierFor`, `registerHit`, `registerMiss`, `takeFinalScore`), the
+  `multiplierFor`, `registerHit`, `registerMiss`, `roundSummary`, `takeFinalScore`), the
   challenge modes (`MODES`, `createReadyState`, `selectMode`, `beginRound`,
   `replay`, `keyAction`, `pointerAction`) and the `waterCannon` entry the
   midway registers.

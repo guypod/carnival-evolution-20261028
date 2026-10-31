@@ -106,6 +106,10 @@ export interface WaterCannonState {
   score: number;
   /** Consecutive hits since the last miss. */
   streak: number;
+  /** Shots that hit a target this round. */
+  hits: number;
+  /** The longest streak this round. */
+  bestStreak: number;
   /** 'ready' shows the mode selector; nothing moves or fires until the round begins. */
   phase: 'ready' | 'playing' | 'over';
   /** The challenge mode, which sets how fast the targets move. */
@@ -134,6 +138,8 @@ export function createState(mode: ModeId = 'classic'): WaterCannonState {
     tank: TANK_SIZE,
     score: 0,
     streak: 0,
+    hits: 0,
+    bestStreak: 0,
     phase: 'playing',
     mode,
     scoreTaken: false,
@@ -177,6 +183,8 @@ export function multiplierFor(streak: number): number {
 /** Scores a hit on `target`, growing the streak. Returns the points it scored. */
 export function registerHit(state: WaterCannonState, target: Target): number {
   state.streak += 1;
+  state.hits += 1;
+  state.bestStreak = Math.max(state.bestStreak, state.streak);
   const multiplier = multiplierFor(state.streak);
   const points = scoreForHit(target) * multiplier;
   state.score += points;
@@ -187,6 +195,26 @@ export function registerHit(state: WaterCannonState, target: Target): number {
 /** A shot left the booth without hitting anything: the streak starts again. */
 export function registerMiss(state: WaterCannonState): void {
   state.streak = 0;
+}
+
+export interface RoundSummary {
+  hits: number;
+  /** Shots fired from the tank. */
+  shots: number;
+  /** Hits per shot as a whole percentage, 0 when nothing was fired. */
+  accuracy: number;
+  bestStreak: number;
+}
+
+/** The round's hits, shots, accuracy and best streak, for the result card. */
+export function roundSummary(state: WaterCannonState): RoundSummary {
+  const shots = TANK_SIZE - state.tank;
+  return {
+    hits: state.hits,
+    shots,
+    accuracy: shots === 0 ? 0 : Math.round((state.hits / shots) * 100),
+    bestStreak: state.bestStreak,
+  };
 }
 
 /**
@@ -558,12 +586,18 @@ function draw(
     ctx.textAlign = 'center';
     ctx.fillStyle = colors.accent;
     ctx.font = canvasFont('title', 'bold');
-    ctx.fillText(`Tank empty! You scored ${state.score}`, WIDTH / 2, HEIGHT / 2);
+    ctx.fillText(`Tank empty! You scored ${state.score}`, WIDTH / 2, HEIGHT / 2 - 36);
     ctx.fillStyle = colors.muted;
     ctx.font = canvasFont('body');
-    ctx.fillText(`Mode: ${modeLabel(state.mode)}`, WIDTH / 2, HEIGHT / 2 + 36);
+    ctx.fillText(`Mode: ${modeLabel(state.mode)}`, WIDTH / 2, HEIGHT / 2);
+    const summary = roundSummary(state);
     ctx.fillStyle = colors.text;
-    ctx.fillText('Click or press Space to play again', WIDTH / 2, HEIGHT / 2 + 72);
+    ctx.fillText(
+      `Hits ${summary.hits}/${summary.shots}  Accuracy ${summary.accuracy}%  Best streak ${summary.bestStreak}`,
+      WIDTH / 2,
+      HEIGHT / 2 + 36,
+    );
+    ctx.fillText('Click or press Space to play again', WIDTH / 2, HEIGHT / 2 + 80);
   }
 }
 
