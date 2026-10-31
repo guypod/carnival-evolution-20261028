@@ -12,6 +12,7 @@ import {
   keyAction,
   laneAt,
   laneCentre,
+  laneHighlight,
   launch,
   meterPower,
   moveAim,
@@ -255,5 +256,27 @@ describe('skee ball', () => {
     expect(state.lastRoll).toBeUndefined();
     expect(state.lastAim).toBeUndefined();
     expect(state.ballsLeft).toBe(BALLS);
+  });
+
+  it('outlines the chosen lane and points an arrow at it, following Left and Right', () => {
+    const state = aiming();
+    setLane(state, 0);
+    const left = laneHighlight(state)!;
+    expect(left.arrowX).toBe(laneCentre(0));
+    expect(laneAt(left.x + left.w / 2)).toBe(0);
+    moveAim(state, 1);
+    const middle = laneHighlight(state)!;
+    expect(middle.arrowX).toBe(laneCentre(1));
+    expect(laneAt(middle.x + middle.w / 2)).toBe(1);
+    expect(middle.arrowTip).toBeLessThan(middle.y);
+    moveAim(state, 1);
+    expect(laneHighlight(state)!.arrowX).toBe(laneCentre(2));
+  });
+
+  it('shows no lane highlight before the round starts or after it ends', () => {
+    const state = createState();
+    expect(laneHighlight(state)).toBeUndefined();
+    state.phase = 'over';
+    expect(laneHighlight(state)).toBeUndefined();
   });
 });

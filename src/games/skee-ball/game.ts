@@ -213,6 +213,25 @@ export function laneAt(x: number): number | undefined {
   return clampLane(Math.floor((x - RAMP.x) / LANE_W));
 }
 
+/**
+ * Where the chosen lane's highlight goes: an outline around the lane and a
+ * downward arrow above the ramp, pointing at the lane. Undefined before the
+ * round starts and after it ends.
+ */
+export function laneHighlight(
+  state: SkeeState,
+): { x: number; y: number; w: number; h: number; arrowX: number; arrowTip: number } | undefined {
+  if (state.phase !== 'aiming' && state.phase !== 'rolling') return undefined;
+  return {
+    x: RAMP.x + state.lane * LANE_W,
+    y: RAMP.y,
+    w: LANE_W,
+    h: RAMP.h,
+    arrowX: laneCentre(state.lane),
+    arrowTip: RAMP.y - 4,
+  };
+}
+
 /** Canvas y for a distance up the ramp. */
 function rampY(distance: number): number {
   return RAMP.y + RAMP.h - distance * RAMP.h;
@@ -290,6 +309,21 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
     ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'center';
     ctx.fillText('50', x, rampY(centre) + 5);
+  }
+
+  // The chosen lane: a thick outline and an arrow above it, so it reads by shape, not only colour.
+  const highlight = laneHighlight(state);
+  if (highlight) {
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(highlight.x + 2.5, highlight.y + 2.5, highlight.w - 5, highlight.h - 5);
+    ctx.fillStyle = colors.accent;
+    ctx.beginPath();
+    ctx.moveTo(highlight.arrowX, highlight.arrowTip);
+    ctx.lineTo(highlight.arrowX - 16, highlight.arrowTip - 26);
+    ctx.lineTo(highlight.arrowX + 16, highlight.arrowTip - 26);
+    ctx.closePath();
+    ctx.fill();
   }
 
   // The power meter, with each lane's 50 band marked for the chosen lane.
