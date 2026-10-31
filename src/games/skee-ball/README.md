@@ -5,8 +5,9 @@ Roll ten balls up a wooden ramp into the scoring rings.
 ## How to play
 
 1. Press **Start** (click or tap it, or press Space/Enter).
-2. Pick one of three lanes: click or tap it, or use Left/Right. Picking a lane
-   never rolls the ball.
+2. Pick one of three lanes: click or tap it, or use Left/Right. The chosen
+   lane has a gold outline and a gold arrow above it. Picking a lane never
+   rolls the ball.
 3. Watch the power meter on the right sweep up and down. The gold band on the
    meter shows the power that reaches the chosen lane's centre ring.
 4. Press the **Roll** button at the bottom right (click or tap it), or Space or
