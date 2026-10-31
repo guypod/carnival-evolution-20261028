@@ -39,26 +39,65 @@ const isOwner = (u) => u?.id === OWNER_ID && u?.type === 'User';
 const isBotUser = (u) => u?.id === BOT_ID && u?.type === 'Bot';
 
 // `tessl action trigger` starts a run with explicit inputs and one synthetic
-// envelope, `{ event: 'tessl:trigger', payload: {} }`, that names no issue.
-// Only that exact shape is skipped; the issue then must come from the input.
-const isActionTrigger = (e) =>
-  e?.event === 'tessl:trigger' &&
-  e.payload !== null &&
-  typeof e.payload === 'object' &&
-  !Array.isArray(e.payload) &&
-  Object.keys(e.payload).length === 0;
+// envelope: `{ event: 'tessl:trigger', payload: { key, loop: { id, projectId,
+// workspaceId }, inputs, overrides, concurrency, parentLaunchRunId? } }`. The
+// payload describes the launch, never an issue, so it grants nothing: the
+// issue must come from the explicit GITHUB_ISSUE_NUMBER input, and any input
+// the payload repeats must agree with it. Any other shape is refused.
+const ACTION_EVENT = 'tessl:trigger';
+const ACTION_KEYS = ['key', 'loop', 'inputs', 'overrides', 'concurrency'];
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isText = (v) => typeof v === 'string' && v !== '';
+
+/** Why an action trigger envelope is malformed, or undefined when it is well formed. */
+export function actionTriggerError(e) {
+  const p = e?.payload;
+  if (!isObject(p)) return 'action trigger payload is not an object';
+  const extra = Object.keys(p).filter((k) => ![...ACTION_KEYS, 'parentLaunchRunId'].includes(k));
+  if (extra.length) return `action trigger has unknown fields: ${extra.join(', ')}`;
+  const missing = ACTION_KEYS.filter((k) => !(k in p));
+  if (missing.length) return `action trigger is missing ${missing.join(', ')}`;
+  if (!isText(p.key)) return 'action trigger key is not a name';
+  if (!isObject(p.loop) || !['id', 'projectId', 'workspaceId'].every((k) => isText(p.loop[k])))
+    return 'action trigger loop is malformed';
+  if (
+    p.inputs !== null &&
+    !(isObject(p.inputs) && Object.values(p.inputs).every((v) => typeof v === 'string'))
+  )
+    return 'action trigger inputs are not a string map';
+  if (!isObject(p.overrides)) return 'action trigger overrides are malformed';
+  if (!isObject(p.concurrency)) return 'action trigger concurrency is malformed';
+  if ('parentLaunchRunId' in p && !isText(p.parentLaunchRunId))
+    return 'action trigger parent run is malformed';
+  return undefined;
+}
 
 /** The one issue this implementation run is for, from its inputs and events, or why not. */
 export function runIssue(inputs, events) {
-  const fromInput = inputs?.GITHUB_ISSUE_NUMBER;
-  const issueEvents = (Array.isArray(events) ? events : []).filter((e) => !isActionTrigger(e));
-  const fromEvents = [...new Set(issueEvents.map((e) => e?.payload?.issue?.number))];
   if (events !== undefined && !Array.isArray(events)) return { error: 'trigger events malformed' };
-  if (issueEvents.some((e) => e?.event === 'tessl:trigger'))
-    return { error: 'trigger events do not name exactly one issue' };
+  const all = events ?? [];
+  const actions = all.filter((e) => e?.event === ACTION_EVENT);
+  const issueEvents = all.filter((e) => e?.event !== ACTION_EVENT);
+  const fromInput = inputs?.GITHUB_ISSUE_NUMBER;
+  const hasInput = fromInput !== undefined && fromInput !== '';
+  if (actions.length > 1) return { error: 'more than one action trigger envelope' };
+  if (actions.length) {
+    const why = actionTriggerError(actions[0]);
+    if (why) return { error: why };
+    if (!hasInput) return { error: 'no issue number: an action trigger needs GITHUB_ISSUE_NUMBER' };
+    const repeated = actions[0].payload.inputs ?? {};
+    const conflicts = Object.keys(repeated).filter(
+      (k) => Object.hasOwn(inputs, k) && String(inputs[k]) !== repeated[k],
+    );
+    if (conflicts.length)
+      return { error: `action trigger inputs differ from the run inputs: ${conflicts.join(', ')}` };
+  }
+  if (issueEvents.some((e) => typeof e?.event === 'string' && e.event.startsWith('tessl:')))
+    return { error: 'unknown tessl trigger event' };
+  const fromEvents = [...new Set(issueEvents.map((e) => e?.payload?.issue?.number))];
   if (fromEvents.some((n) => !Number.isSafeInteger(n)) || fromEvents.length > 1)
     return { error: 'trigger events do not name exactly one issue' };
-  const n = fromInput !== undefined && fromInput !== '' ? Number(fromInput) : fromEvents[0];
+  const n = hasInput ? Number(fromInput) : fromEvents[0];
   if (!Number.isSafeInteger(n) || n < 1) return { error: 'no issue number' };
   if (fromEvents.length && fromEvents[0] !== n)
     return { error: 'input issue differs from the event issue' };
