@@ -598,6 +598,87 @@
         ]
       },
       "fingerprints": []
+    },
+    {
+      "runId": "01a19456-2eb8-71ec-8d81-51cf185b0bfb",
+      "learner": "lens-tuning",
+      "trigger": "schedule",
+      "slot": "2026-10-31T23:40 Europe/London",
+      "scheduledFor": "2026-10-31T23:40:00.000Z",
+      "delayMinutes": 1,
+      "since": "2026-10-29T17:40:00.000Z",
+      "startedAt": "2026-10-31T23:41:47Z",
+      "finishedAt": "2026-10-31T23:42:31Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#506",
+          "#507",
+          "#513",
+          "#524",
+          "#525"
+        ],
+        "gaps": "Run started with under 20 minutes before its deadline over a 54-hour owed window. Listed all 67 pull requests updated since 2026-10-29T17:40Z (metadata only); read review comments and review bodies only for #506, #507, #513, #524 and #525. No PR diffs, visual-repair ledger, test files or live-play notes were read. CI run list hit its 100 limit and only conclusions were read. No proposal made: the one finding read (#506 advisory on top-shelf label side) was a review catch, not a miss.",
+        "sources": [
+          {
+            "source": "pull-requests",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "gh pr list updated since 2026-10-29T17:40Z sort:updated-asc: 67 PRs, number/title/state/dates only",
+            "gaps": "PR bodies and files not read"
+          },
+          {
+            "source": "pr-diffs",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "no diffs read"
+          },
+          {
+            "source": "review-comments",
+            "enumeration": "none",
+            "read": "truncated",
+            "scope": "inline comments on #506, #507, #513, #524, #525",
+            "gaps": "other 62 PRs not read"
+          },
+          {
+            "source": "review-bodies",
+            "enumeration": "none",
+            "read": "truncated",
+            "scope": "review bodies on #506, #507, #513, #524, #525",
+            "gaps": "other 62 PRs not read"
+          },
+          {
+            "source": "visual-repair",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "factory-state/visual-repair not read",
+            "gaps": "not read"
+          },
+          {
+            "source": "ci-runs",
+            "enumeration": "capped",
+            "read": "truncated",
+            "scope": "gh run list since window start, limit 100, conclusions only (all success)",
+            "gaps": "list capped at 100; logs not read"
+          },
+          {
+            "source": "tests",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "not read"
+          },
+          {
+            "source": "live-play",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "not read"
+          }
+        ]
+      },
+      "fingerprints": []
     }
   ],
   "proposals": [
