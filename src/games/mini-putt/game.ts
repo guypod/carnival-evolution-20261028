@@ -375,6 +375,13 @@ export const METER = { x: 300, y: 456, w: 270, h: 26 } as const;
 export const HELP = { x: 16, y: 446, w: 214, h: 46 } as const;
 /** The "Power" label, between the help and the meter. */
 export const METER_LABEL = { x: 240, y: 456, w: 52, h: 26 } as const;
+/** The dark backing behind the power percentage, centred on the meter. */
+export const METER_READOUT = {
+  x: METER.x + METER.w / 2 - 28,
+  y: METER.y + 3,
+  w: 56,
+  h: 20,
+} as const;
 
 function inside(box: { x: number; y: number; w: number; h: number }, x: number, y: number) {
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
@@ -500,6 +507,8 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
     ctx.fillStyle = colors.accent;
     ctx.fillRect(METER.x, METER.y, METER.w * state.power, METER.h);
     ctx.fillStyle = colors.background;
+    ctx.fillRect(METER_READOUT.x, METER_READOUT.y, METER_READOUT.w, METER_READOUT.h);
+    ctx.fillStyle = colors.text;
     ctx.textAlign = 'center';
     ctx.fillText(`${Math.round(state.power * 100)}%`, METER.x + METER.w / 2, METER.y + 18);
 
