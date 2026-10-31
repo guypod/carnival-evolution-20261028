@@ -7,7 +7,8 @@ and dodge the reeds floating towards you.
 
 - Press **Start** (or Space/Enter) on the ready screen.
 - Move between lanes with **Left/Right** arrows or **A/D**, or click or tap one
-  of the **Left / Middle / Right** lane buttons (or anywhere in a lane).
+  of the **Left / Middle / Right** lane buttons below the river (or anywhere in
+  a lane).
 - Stars and reeds appear at the top of the river and take a little over two
   seconds to reach the duck, so there is time to react. A row never has reeds in
   every lane. Stars are gold five-point stars; reeds are clumps of tall brown
