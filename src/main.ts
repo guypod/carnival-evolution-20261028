@@ -1864,14 +1864,14 @@ function renderPrizes() {
       </div>
       <p class="pavilion-intro"></p>
       <div class="pavilion-collector" role="status">
-        <span class="badge collector" aria-hidden="true">👑</span>
+        <span class="badge collector" aria-hidden="true"></span>
         <div>
           <h2></h2>
           <p></p>
         </div>
       </div>
-      <p><a class="pavilion-link room-link" href="#/room">🪴 Arrange your Prize Room</a></p>
-      <p><a class="pavilion-link toy-link" href="#/toy">🦆 Wind up a desk toy</a></p>
+      <p><a class="pavilion-link room-link" href="#/room"><span class="sign-icon" aria-hidden="true"></span>Arrange your Prize Room</a></p>
+      <p><a class="pavilion-link toy-link" href="#/toy"><span class="sign-icon" aria-hidden="true"></span>Wind up a desk toy</a></p>
       <ul class="pavilion-shelves"></ul>
       <p class="note">Prizes come from your best scores in this browser. Nothing to buy, and nothing is spent.</p>
     </section>`;
