@@ -384,15 +384,39 @@ after the merge's first successful Pages deploy, and an `identity` that matched
 before and after the flow. That identity report is retained as
 `identity.json` beside the screenshots and hashed with them.
 
-`scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` records that run.
-It must run on a clean checkout of the merge commit. It builds that commit and
-plays the flow only if the live `index.html` and every file under `assets/`
-match the build byte for byte (`scripts/visual/live-identity.mjs`), and checks
-again after the flow. Vite names assets by content hash, so this is the
-deployment identity: it relies on the build being reproducible from the
-commit and `package-lock.json`, not on any GitHub API. If it does not match,
-the attempt fails and the flow stays owed. A 200 response, the page title and
-premerge evidence never count, and anything no flow covers stays owed.
+`scripts/visual/run-flow.sh --live` no longer records that run: it refuses
+(exit 3), because it built and ran the merge on the host that holds the writer
+key. Its replacement is the mediated capture in
+`scripts/visual/live-capture.mjs`, built and tested but not yet wired into
+dispatch, so every live flow is still reported as
+`browser-flow-live-owed: <merge>:<flow>` and nothing reaches `shipped`.
+
+- The manifest is `index.html` plus every file under `assets/` of the isolated
+  (network-none) build of the exact merge. Vite names assets by content hash,
+  so this is the deployment identity. Every key must be canonical (the same
+  allowlist requests must pass), with at most 512 entries, before anything is
+  fetched.
+- The broker (`live-broker.mjs`) fetches only those keys from the fixed Pages
+  origin and path, GET only, with no credentials, query or redirect. It scans
+  the whole manifest before the flow (`before.json`) and after it
+  (`after.json`), and checks every byte it serves against the build. One
+  deadline covers the scans and every request, even an upstream that ignores
+  its abort signal. Requests (2000) and kept failures (50) are capped, and a
+  request past the cap stops intake.
+- The browser runs the pinned harness and `socket-adapter.mjs` in a
+  network-none container. It sees only a directory holding the broker's
+  socket, never the receipts, home, Git or Docker socket. Its report goes
+  through the same no-follow, single-link, size, PNG and sha256 checks as
+  premerge, and the evidence for `evidence/live/<merge>/<flow>/` is read back
+  by sha256.
+- **Limit:** this plays the actual deployed static bytes through localhost
+  mediation. It is not the same as visiting the origin: CORS, service workers,
+  cookies and auth are not exercised, so flows that need an external service
+  or auth stay owed. Only `mini-putt-hole-next` has a live capture.
+
+If the site does not match, the attempt fails and the flow stays owed. A 200
+response, the page title and premerge evidence never count, and anything no
+flow covers stays owed.
 
 Owed live work is never forgotten. `node scripts/native/native.mjs owed`
 walks every commit on `main` since the live gate began (`LIVE_GATE_SINCE`)

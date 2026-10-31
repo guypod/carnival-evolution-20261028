@@ -417,13 +417,21 @@ test('a step whose own containers cannot be listed or stopped fails closed', () 
   writeFileSync(join(runner, 'scripts/visual/ok.sh'), 'exit 0\n');
   const id = 'a'.repeat(64);
   const calls = [];
-  const fake = (ps, kill) => (cmd, args, opts) => {
-    if (cmd === 'docker') {
-      calls.push(args);
-      if (args[0] === 'ps') return ps;
-      if (args[0] === 'kill') return kill;
-    }
-    return spawnSync(cmd, args, opts);
+  const fake = (ps, kill, afterKill = { status: 0, stdout: '' }) => {
+    let killed = false;
+    return (cmd, args, opts) => {
+      if (cmd === 'docker') {
+        calls.push(args);
+        // Every Docker control call is bounded.
+        assert.ok(opts?.timeout > 0);
+        if (args[0] === 'ps') return killed ? afterKill : ps;
+        if (args[0] === 'kill') {
+          killed = kill.status === 0;
+          return kill;
+        }
+      }
+      return spawnSync(cmd, args, opts);
+    };
   };
   // Before: a failed `docker ps` read as "no containers".
   assert.equal(primitive(runner, 'ok.sh', [], { run: fake({ status: 1, stdout: '' }) }), 125);
@@ -435,6 +443,18 @@ test('a step whose own containers cannot be listed or stopped fails closed', () 
   assert.equal(
     primitive(runner, 'ok.sh', [], { run: fake({ status: 0, stdout: `${id}\n` }, { status: 0 }) }),
     124,
+  );
+  // A kill that left the step's container running, or a listing that fails afterwards, fails closed.
+  const still = { status: 0, stdout: `${id}\n` };
+  assert.equal(primitive(runner, 'ok.sh', [], { run: fake(still, { status: 0 }, still) }), 125);
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake(still, { status: 0 }, { status: 1, stdout: '' }) }),
+    125,
+  );
+  // A hung `docker ps` is cut off at its bound and reads as unknown.
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake({ error: new Error('ETIMEDOUT'), status: null }) }),
+    125,
   );
   // Every listing is scoped to a step label; no image-wide listing.
   for (const a of calls.filter((a) => a[0] === 'ps')) {

@@ -299,6 +299,10 @@ function git(dir, args) {
 /** Elapsed-time cap per primitive, and for a whole capture, in seconds. */
 export const DEADLINES = { step: 600, total: 900 };
 
+/** Cap on one Docker control call (ps, kill, image inspect), in milliseconds. */
+export const CONTROL_MS = 30_000;
+const control = { encoding: 'utf8', timeout: CONTROL_MS, killSignal: 'SIGKILL' };
+
 /** The label every container a primitive starts carries, so only its own are stopped. */
 export const STEP_LABEL = 'carnival.capture-step';
 
@@ -324,10 +328,13 @@ function dockerShim(home, real) {
  * same images, are not this step's.
  */
 export function ownContainers(step, run = spawnSync) {
-  const r = run('docker', ['ps', '-q', '--no-trunc', '--filter', `label=${STEP_LABEL}=${step}`], {
-    encoding: 'utf8',
-  });
-  if (r.status !== 0 || typeof r.stdout !== 'string') return null;
+  if (!/^[0-9a-f-]{36}$/.test(step ?? '')) return null;
+  const r = run(
+    'docker',
+    ['ps', '-q', '--no-trunc', '--filter', `label=${STEP_LABEL}=${step}`],
+    control,
+  );
+  if (r.error || r.status !== 0 || typeof r.stdout !== 'string') return null;
   return r.stdout.split('\n').filter((id) => /^[0-9a-f]{64}$/.test(id));
 }
 
@@ -343,7 +350,7 @@ export function ownContainers(step, run = spawnSync) {
 export function primitive(runner, name, args, { seconds = DEADLINES.step, run = spawnSync } = {}) {
   const home = privateDir('carnival-home-');
   const step = randomUUID();
-  const real = run('sh', ['-c', 'command -v docker'], { encoding: 'utf8' }).stdout?.trim();
+  const real = run('sh', ['-c', 'command -v docker'], control).stdout?.trim();
   try {
     if (!real?.startsWith('/')) return 125;
     const bin = dockerShim(home, real);
@@ -364,8 +371,11 @@ export function primitive(runner, name, args, { seconds = DEADLINES.step, run = 
     const left = ownContainers(step, run);
     if (left === null) return 125;
     if (left.length) {
-      const k = run('docker', ['kill', ...left], { stdio: 'ignore' });
-      if (k.status !== 0) return 125;
+      const k = run('docker', ['kill', ...left], { ...control, stdio: 'ignore' });
+      if (k.error || k.status !== 0) return 125;
+      // Fail closed: the step's own containers must be gone after the kill.
+      const still = ownContainers(step, run);
+      if (still === null || still.length) return 125;
       // A step that left a container running did not finish cleanly.
       return 124;
     }
@@ -396,10 +406,8 @@ function captureIn(base, { runner, candidate, flow }) {
   };
   const images = {};
   for (const img of [NODE_IMAGE, PLAYWRIGHT_IMAGE]) {
-    const r = spawnSync('docker', ['image', 'inspect', '--format', '{{.Id}}', img], {
-      encoding: 'utf8',
-    });
-    if (r.status !== 0)
+    const r = spawnSync('docker', ['image', 'inspect', '--format', '{{.Id}}', img], control);
+    if (r.error || r.status !== 0)
       throw Object.assign(new Error(`image ${img} is not present`), { step: 'images' });
     images[img] = r.stdout.trim();
   }
