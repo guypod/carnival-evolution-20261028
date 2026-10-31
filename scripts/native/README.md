@@ -62,7 +62,9 @@ into `main`, labelled `tessl`, when:
   head, not dismissed, and has exactly one `workflow-run:v1` marker and one
   `result:v1` marker with `approved=true`. Advisory findings are allowed. The
   run id must match the reviewer app's own completed check run on that head.
-  Another account's markers or any formal `APPROVE` do not count;
+  The review may be `COMMENTED` or `APPROVED`; what counts is its markers.
+  Another account's markers, or a formal `APPROVE` without valid markers, do
+  not count;
 - no reviewer has a request for changes still standing. A later `COMMENTED`
   review does not clear it; a later approval or a dismissal does;
 - the `check` run from GitHub Actions (app 15368) on that head succeeded, and
@@ -75,10 +77,11 @@ administration permission that `tessl-app[bot]` does not have, so it returns
 `blocked` with `AUTO_MERGE_BLOCKER` and merges nothing. With the setting on,
 it gates twice and arms auto-merge with `expectedHeadOid` set to the gated
 head, so GitHub refuses if the head moved and still enforces its own required
-checks. Only when GitHub says the PR is already clean (it won't arm one) does
-it merge directly, pinned to the same head. It never submits a review.
+checks. If GitHub refuses to arm, including for a PR already in clean status,
+that is reported and nothing merges another way. It never submits a review.
 
-A merge is not shipped. `deploy <sha>` reports the Pages run, and shipping
+A merge is not shipped. `deploy <sha>` reports `deployed-needs-sanity` only
+when the Pages run's `deploy` job succeeded for that commit, and shipping
 also needs the changed flow checked in a real browser on that commit, not
 just a 200 response.
 

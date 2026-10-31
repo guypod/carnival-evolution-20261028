@@ -27,7 +27,7 @@ credentials or anything from outsi## MODE=backlog (00:00, 06:00, 12:00, 18:00 Eu
    and report that capability failure. Never file items from source alone,
    and never claim to have seen a screen you did not capture.
 3. Also read `WORKSHOP.md`, the game READMEs and every issue, open or closed
-   (`gh issue list --state all --limit 1000 --json number,title,labels,state`).
+   (`gh api --paginate 'repos/guypod/carnival-evolution-20261028/issues?state=all&per_page=100' --jq '.[] | [.number, .state, .title] | @tsv'`, which has no cap).
 4. Write 18 candidates to a file outside the clone as a JSON array of
    `{title, scope, body, evidence}`, with item `i` for index `i`. Mix sizes
    and kinds: small polish, accessibility and feel fixes as well as larger
@@ -77,4 +77,4 @@ deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
    work. `busy`, `idle`, `blocked`, `labelled` and `stopped` are all normal
    outcomes. Report the one you got.
 
-Report the script's JSON output and nothing it did not say.
+Report the script's JSON output, plus the browser checks you actually did (routes captured and what you saw) and any browser QA still owed. Claim nothing neither the script nor your own screenshots show.

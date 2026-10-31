@@ -448,7 +448,9 @@ export function provenance(pr, issue) {
   const branch = /^tessl\/issue-(\d+)$/.exec(pr?.head?.ref ?? '');
   const closes = [...(pr?.body ?? '').matchAll(/^Closes #(\d+)\s*$/gm)].map((m) => Number(m[1]));
   const anyClose =
-    (pr?.body ?? '').match(/\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+\S*#\d+/gi) ?? [];
+    (pr?.body ?? '').match(
+      /\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+(\S*#\d+|https?:\/\/\S+\/issues\/\d+)/gi,
+    ) ?? [];
   if (!branch) return [];
   const n = Number(branch[1]);
   if (closes.length !== 1 || anyClose.length !== 1) return ['no single Closes line'];
@@ -549,9 +551,9 @@ export const AUTO_MERGE_BLOCKER =
  * the head the gate saw (expectedHeadOid), so GitHub refuses if the head
  * moved and never merges an unreviewed commit. Auto-merge needs the
  * repository's allow_auto_merge setting; with it off this refuses with that
- * blocker and does not merge another way. Only when GitHub says the pull
- * request is already mergeable (it will not arm a clean one) does it merge
- * directly, still pinned to the gated head. It never submits a review.
+ * blocker and does not merge another way. GitHub refusing to arm (for
+ * example a pull request already in clean status) is reported, not worked
+ * around. It never submits a review.
  */
 export async function mergeOne(adapter, number) {
   const settings = await adapter.repoSettings();
@@ -568,20 +570,23 @@ export async function mergeOne(adapter, number) {
     };
   const armed = await adapter.enableAutoMerge(number, second.head);
   if (armed.enabled) return { status: 'armed', number, head: second.head, live: 'pending' };
-  if (!/clean status/i.test(armed.message ?? ''))
-    return { status: 'refused', number, reasons: [armed.message ?? 'auto-merge refused'] };
-  const result = await adapter.squashMerge(number, second.head);
-  if (!result.merged)
-    return { status: 'refused', number, reasons: [result.message ?? 'merge refused'] };
-  return { status: 'merged', number, sha: result.sha, head: second.head, live: 'pending' };
+  return { status: 'refused', number, reasons: [armed.message ?? 'auto-merge refused'] };
 }
 
-/** Merged is not live: the Pages run for the merge commit decides. */
-export function deployState(mergeSha, pagesRuns) {
+/**
+ * Merged is not live: the Pages run for the merge commit decides, and only
+ * when its deploy job itself succeeded. pages.yml succeeds without deploying
+ * when Pages is off, by skipping that job.
+ */
+export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
   const run = pagesRuns.find((r) => r.head_sha === mergeSha);
   if (!run) return 'merged-not-deployed';
   if (run.status !== 'completed') return 'deploying';
-  return run.conclusion === 'success' ? 'deployed-needs-sanity' : 'deploy-failed';
+  if (run.conclusion !== 'success') return 'deploy-failed';
+  const jobs = jobsOf(run);
+  if (!jobs) return 'deploy-unknown';
+  const job = jobs.find((j) => j.name === 'deploy');
+  return job?.conclusion === 'success' ? 'deployed-needs-sanity' : 'merged-not-deployed';
 }
 
 // ---------- gh and tessl adapter ----------
@@ -731,7 +736,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const results = [];
       for (const pr of open.items) {
         if (!labelNames(pr).includes(TRIGGER_LABEL) || !pr.head.ref.startsWith('tessl/')) continue;
-        results.push(await mergeOne(adapter, pr.number));
+        try {
+          results.push(await mergeOne(adapter, pr.number));
+        } catch (e) {
+          results.push({ status: 'blocked', number: pr.number, reasons: [String(e.message)] });
+        }
       }
       print(results);
     }
@@ -744,6 +753,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         state: deployState(
           arg,
           runs.items.flatMap((p) => p.workflow_runs ?? p),
+          (run) => {
+            const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
+            return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
+          },
         ),
       });
   } else {

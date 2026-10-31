@@ -686,6 +686,11 @@ const withBody = (body) => snapshot({ pr: { ...snapshot().pr, body } });
 refuses('Closes names another issue than the branch', withBody('Closes #28'), /does not match/);
 refuses('two Closes lines', withBody('Closes #29\nCloses #28'), /single Closes/);
 refuses('a second closing keyword', withBody('Closes #29\nAlso fixes #28.'), /single Closes/);
+refuses(
+  'a full-URL closing reference to another issue',
+  withBody('Closes #29\nFixes https://github.com/guypod/carnival-evolution-20261028/issues/28'),
+  /single Closes/,
+);
 refuses('source issue closed', snapshot({ issue: sourceIssue({ state: 'closed' }) }), /closed/);
 refuses('source issue lost its label', snapshot({ issue: sourceIssue({ labels: [] }) }), /tessl/);
 refuses(
@@ -824,33 +829,30 @@ test('an unverified head is never armed: refused gate or a head moving between r
   assert.deepEqual(adapter.calls, []);
 });
 
-test('GitHub refusing to arm is reported; only an already clean PR merges, still pinned', async () => {
-  let adapter = mergeAdapter({
-    enableAutoMerge: async () => ({ enabled: false, message: 'Head branch was modified' }),
-  });
-  let r = await mergeOne(adapter, 30);
-  assert.equal(r.status, 'refused');
-  assert.match(r.reasons[0], /modified/);
-  assert.deepEqual(adapter.calls, []);
-  adapter = mergeAdapter({
-    enableAutoMerge: async () => ({ enabled: false, message: 'Pull request is in clean status' }),
-  });
-  r = await mergeOne(adapter, 30);
-  assert.equal(r.status, 'merged');
-  assert.deepEqual(adapter.calls, [['merge', 30, HEAD]]);
+test('GitHub refusing to arm is reported and nothing merges another way', async () => {
+  for (const message of ['Head branch was modified', 'Pull request is in clean status']) {
+    const adapter = mergeAdapter({ enableAutoMerge: async () => ({ enabled: false, message }) });
+    const r = await mergeOne(adapter, 30);
+    assert.equal(r.status, 'refused');
+    assert.equal(r.reasons[0], message);
+    assert.deepEqual(adapter.calls, []);
+  }
 });
 
-test('merged is not live until the Pages run for that commit succeeds', () => {
+test('merged is not live until the Pages deploy job for that commit succeeds', () => {
+  const done = { head_sha: 'm', status: 'completed', conclusion: 'success' };
   assert.equal(deployState('m', []), 'merged-not-deployed');
   assert.equal(deployState('m', [{ head_sha: 'm', status: 'in_progress' }]), 'deploying');
-  assert.equal(
-    deployState('m', [{ head_sha: 'm', status: 'completed', conclusion: 'failure' }]),
-    'deploy-failed',
-  );
-  assert.equal(
-    deployState('m', [{ head_sha: 'm', status: 'completed', conclusion: 'success' }]),
-    'deployed-needs-sanity',
-  );
+  assert.equal(deployState('m', [{ ...done, conclusion: 'failure' }]), 'deploy-failed');
+  assert.equal(deployState('m', [done]), 'deploy-unknown');
+  // Pages off: the workflow succeeds but skips its deploy job.
+  const skipped = () => [
+    { name: 'check', conclusion: 'success' },
+    { name: 'deploy', conclusion: 'skipped' },
+  ];
+  assert.equal(deployState('m', [done], skipped), 'merged-not-deployed');
+  const deployed = () => [{ name: 'deploy', conclusion: 'success' }];
+  assert.equal(deployState('m', [done], deployed), 'deployed-needs-sanity');
 });
 
 // ---------- manifest ----------
