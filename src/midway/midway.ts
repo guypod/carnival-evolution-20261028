@@ -1,0 +1,1249 @@
+import { isControl } from './controls';
+import {
+  dockById,
+  dockInReach,
+  ferryButtons,
+  ferryMessage,
+  ferryPosition,
+  ferrySnapsCamera,
+  onFarShore,
+  requestFerry,
+  sailFerry,
+  settleFerry,
+  START_FERRY,
+  type FerryRequest,
+  type FerryState,
+} from './ferry';
+import {
+  arriveRoute,
+  cancelRoute,
+  IDLE_ROUTE,
+  lanternBrightness,
+  lanternTrail,
+  requestRoute,
+  type RouteState,
+} from './route';
+import {
+  landmarkInReach,
+  pathToLandmark,
+  trailLandmarks,
+  type Landmark,
+  type LandmarkId,
+} from './discovery';
+import {
+  advanceSceneClock,
+  isQuiet,
+  watchReducedMotion,
+  type MotionHost,
+  type MotionPreference,
+} from './motion';
+import { evening, gardenLights, locator, palette } from './palette';
+import {
+  cellAt,
+  GARDEN_COLUMNS,
+  GARDEN_ROWS,
+  gardenPatch,
+  lightGardenStore,
+  type LightGardenDesign,
+} from './light-garden';
+import {
+  createGarden,
+  gardenInReach,
+  raiseGust,
+  turnWheels,
+  wheelState,
+  type PinwheelGarden,
+} from './pinwheels';
+import {
+  STONE_SHAPES,
+  createStones,
+  stoneGlow,
+  stoneInput,
+  stoneOrder,
+  stoneUnder,
+  stonesInReach,
+  stonesPrompt,
+  stonesStatus,
+  type ChimeStones,
+  type StoneInput,
+} from './stepping-stones';
+import { DEFAULT_VIEW_SCALE, fitCamera, unproject, viewZoom } from './view';
+import {
+  HIDDEN_LOCATE,
+  isLocateKey,
+  isLocateShown,
+  locateMessage,
+  showLocate,
+  tickLocate,
+  type LocateState,
+} from './locate';
+import { homeward, homewardMessage } from './homeward';
+import { lanternGlow, type Scene } from './scene';
+import { drawRepairedToy, toySpots, type RepairedToyId } from './repaired-toys';
+import {
+  archBounds,
+  BOOTH_SIGN_HEIGHT,
+  boothBounds,
+  drawArch,
+  drawBooth,
+  drawBunting,
+  drawCloud,
+  drawFerry,
+  drawFloaters,
+  drawFrontHedge,
+  drawHedgeTile,
+  drawField,
+  drawGroundLayer,
+  drawChimeStone,
+  drawPinwheel,
+  drawProp,
+  drawWalker,
+  ferryBounds,
+  groundBounds,
+  innerHedgeTiles,
+  HORIZON,
+  label,
+  PLAYER_LOOK,
+  propBounds,
+  visitorLook,
+  type Box,
+  type Cloud,
+  type Floater,
+  type GroundLayer,
+  type LandmarkDetail,
+} from './render';
+import {
+  boothInReach,
+  createVisitors,
+  createWalker,
+  fairGate,
+  fairGateInReach,
+  findPath,
+  followPath,
+  inputDirection,
+  keyAction,
+  layoutMidway,
+  pathToBooth,
+  strollTiles,
+  toScreen,
+  toTile,
+  updateVisitor,
+  walk,
+  type BoothSlot,
+  type DockId,
+  type Point,
+  type Prop,
+} from './world';
+
+export interface MidwayOptions {
+  games: readonly { id: string; name: string }[];
+  /** Called when the player asks to play the booth they're standing at. */
+  onPlay(gameId: string): void;
+  /** Called whenever the booth in reach changes. */
+  onReach(booth: BoothSlot | undefined): void;
+  /** Day or lantern evening. Day when left out. */
+  scene?: Scene;
+  /** Called when the player walks up to a discovery-trail landmark. */
+  onLandmark?(landmark: Landmark): void;
+  /** Follow the system's reduced-motion setting, or stay quiet. System when left out. */
+  motion?: MotionPreference;
+  /** Called when a walk to a booth or landmark starts, arrives or is cancelled. */
+  onRoute?(route: RouteState): void;
+  /** Called when the player goes through the gateway to Run Your Own Fair. */
+  onFairGate?(): void;
+  /** Called when the player walks up to, or away from, the fair gateway. */
+  onFairGateReach?(near: boolean): void;
+  /** What the finale ticket mystery shows at the landmarks. Nothing when left out. */
+  detail?: LandmarkDetail;
+  /** Called with a status line when the locate marker goes up, and undefined when it goes. */
+  onLocate?(message: string | undefined): void;
+  /**
+   * Called when the ferry's status changes: the line to show (empty for
+   * nothing) and the requests that make sense right now, for buttons.
+   */
+  onFerry?(message: string, requests: FerryRequest[]): void;
+  /**
+   * Called when the player crosses into or out of the waterside district: the
+   * away line, empty back inside the midway. See homeward.ts.
+   */
+  onHomeward?(message: string): void;
+  /**
+   * Called when the player walks up to the chime stones with what the words
+   * beside the map say, again whenever that changes, and with undefined when
+   * they walk away.
+   */
+  onStones?(status: string | undefined): void;
+  /**
+   * Called with the notes, in hertz, a stone or the call rings, and whether
+   * they replace notes still ringing (a new call does). See soundscape.ts.
+   */
+  onChime?(tones: number[], spacing: number, replace: boolean): void;
+  /** Toys repaired in the backstage workshop, shown beside the entrance. None when left out. */
+  repairedToys?: readonly RepairedToyId[];
+}
+
+export interface MidwayControls {
+  /** Walks the player to a game's booth. */
+  walkTo(gameId: string): void;
+  /**
+   * Walks the player to an open spot within reach of a landmark. Returns false,
+   * and leaves the player where they are, when no such spot can be reached.
+   */
+  walkToLandmark(id: LandmarkId): boolean;
+  /** Switches between day and lantern evening. */
+  setScene(scene: Scene): void;
+  /** The discovery trail's landmarks on this map. */
+  landmarks: Landmark[];
+  /** Switches between following the system and staying quiet. */
+  setMotion(preference: MotionPreference): void;
+  /** Stops a walk in progress and leaves the player where they are. */
+  cancelWalk(): void;
+  /** Zooms the view by a step from `view.ts`, keeping the player centred. */
+  setViewScale(scale: number): void;
+  /** Saves where the player stands, then goes through the fair gateway. */
+  enterFair(): void;
+  /** Changes what the finale ticket mystery shows at the landmarks. */
+  setLandmarkDetail(detail: LandmarkDetail): void;
+  /**
+   * Shows a new light garden design, with the selected lantern ringed. It
+   * lights the map in lantern evening, and shows in any scene while editing.
+   */
+  setLightGarden(design: LightGardenDesign, selected?: number): void;
+  /**
+   * Starts editing the light garden: until it stops, a click on the map never
+   * walks, plays or opens anything, and a click on a garden cell calls
+   * `onPick`. Pass undefined to stop editing.
+   */
+  editLightGarden(onPick: ((col: number, row: number) => void) | undefined): void;
+  /**
+   * Rings the player for a few seconds and recentres the camera on them, at
+   * the current zoom. The player, their walk and any game are left alone.
+   */
+  locate(): void;
+  /** Hides the locate marker. Returns false when it was not showing. */
+  hideLocate(): boolean;
+  /** Asks the ferry for something, as a key or click would. See ferry.ts. */
+  ferry(request: FerryRequest): void;
+  /**
+   * From the waterside, starts a walk back towards the midway: through the
+   * hedge gap from the promenade, or to the ferry home from the far shore.
+   * Returns false when there is no way back to start from here, or aboard the
+   * ferry.
+   */
+  returnToMidway(): boolean;
+  /** Plays the chime stones' call, or presses a stone by index, as a button would. */
+  stones(input: 'call' | number): void;
+  stop(): void;
+}
+
+const MOVE_KEYS: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  KeyW: [0, -1],
+  ArrowDown: [0, 1],
+  KeyS: [0, 1],
+  ArrowLeft: [-1, 0],
+  KeyA: [-1, 0],
+  ArrowRight: [1, 0],
+  KeyD: [1, 0],
+};
+const DEVCON_URL =
+  'https://tessl.io/devcon?utm_source=carnival&utm_medium=midway-billboard&utm_campaign=tessl-carnival';
+const MIN_QUALITY = 0.5;
+
+/** Where the player stood when they last left the midway, for this page load. */
+let returnTo: Point | undefined;
+/** Which dock the ferry waits at, for this page load. Never mid-crossing. */
+let ferryReturn: FerryState = START_FERRY;
+
+export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): MidwayControls {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D is not available');
+
+  const map = layoutMidway(options.games.map((g) => g.id));
+  const names = new Map(options.games.map((g) => [g.id, g.name]));
+  const landmarks = trailLandmarks(map);
+  let nearLandmark: Landmark | undefined;
+  const player = createWalker(returnTo ?? map.spawn);
+  // Booths and scenery never move, so work out where each one sits once.
+  const scenery: { depth: number; box: Box; booth?: BoothSlot; prop?: Prop; name: string }[] = [
+    ...map.booths.map((booth) => ({
+      depth: booth.x + booth.y + 2,
+      box: boothBounds(booth),
+      booth,
+      name: booth.gameId ? (names.get(booth.gameId) ?? booth.gameId) : 'Coming soon',
+    })),
+    ...map.props.map((prop) => ({
+      depth: prop.x + prop.y + (prop.w + prop.h) / 2,
+      box: propBounds(prop),
+      prop,
+      name: '',
+    })),
+  ];
+  const strolls = strollTiles(map);
+  const hedgeTiles = innerHedgeTiles(map);
+  const visitors = createVisitors(map, 9, Math.random);
+  const clouds: Cloud[] = Array.from({ length: 9 }, (_, i) => ({
+    x: i / 9 + Math.random() * 0.08,
+    y: Math.random(),
+    size: 0.7 + Math.random() * 0.6,
+    speed: 3 + Math.random() * 4,
+  }));
+  const floaters: Floater[] = [];
+  /** Quiet mode: decoration holds still, the player doesn't. See motion.ts. */
+  let quiet = false;
+  let motion: MotionPreference = options.motion ?? 'system';
+  let systemReduces = false;
+  let scene: Scene = options.scene ?? 'day';
+  let detail = options.detail;
+  /** The clock the scenery animates by; it stops in quiet mode. */
+  let sceneTime = 0;
+  const updateQuiet = () => {
+    quiet = isQuiet(motion, systemReduces);
+    if (!quiet) return;
+    floaters.length = 0;
+    for (const visitor of visitors) visitor.walking = false;
+  };
+  const stopWatchingMotion = watchReducedMotion(window as MotionHost, (reduce) => {
+    systemReduces = reduce;
+    updateQuiet();
+  });
+  let nextFloater = 2;
+  let inReach: BoothSlot | undefined;
+  let destination: Point | undefined;
+  let route: RouteState = IDLE_ROUTE;
+  const setRoute = (next: RouteState) => {
+    if (next === route) return;
+    route = next;
+    options.onRoute?.(route);
+  };
+  const cancelWalk = () => {
+    player.path = [];
+    destination = undefined;
+    setRoute(cancelRoute(route));
+  };
+
+  let dpr = 1;
+  /** Drops below 1 on machines too slow to keep up, trading sharpness for speed. */
+  let quality = 1;
+  let slowFrames = 0;
+  /** CSS pixels per world pixel. */
+  let zoom = 2;
+  /** The player's zoom on top of the fitted size; 1 is the fitted size. */
+  let viewScale = DEFAULT_VIEW_SCALE;
+  let view = { w: 0, h: 0 };
+  let ground: GroundLayer | undefined;
+  const camera = { x: 0, y: 0 };
+  let cameraReady = false;
+
+  const resize = () => {
+    // Sharper than 1.5x costs far more pixels than this flat style gains from it,
+    // and slow laptops feel it.
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5) * quality;
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    canvas.height = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    // Fit most of the midway on screen, but never so small that people get lost.
+    zoom = viewZoom(canvas.clientWidth, canvas.clientHeight, viewScale);
+    view = { w: canvas.clientWidth / zoom, h: canvas.clientHeight / zoom };
+    ground = drawGroundLayer(map, zoom * dpr);
+  };
+  const observer = new ResizeObserver(resize);
+  observer.observe(canvas);
+  resize();
+
+  const play = (booth: BoothSlot | undefined) => {
+    if (!booth?.gameId) return;
+    returnTo = { x: player.x, y: player.y };
+    options.onPlay(booth.gameId);
+  };
+
+  const gate = fairGate(map);
+  let nearGate = false;
+  /**
+   * The pinwheel garden on the grass left of the entrance path, on the row by
+   * the hedge and far enough left that the ticket booth never covers it. See pinwheels.ts.
+   */
+  /** The light garden's patch, on the apron just inside the gate. See light-garden.ts. */
+  const lightPatch = gardenPatch(map);
+  const lightOrigin = { x: lightPatch.x, y: lightPatch.y };
+  let lightDesign = lightGardenStore.load();
+  let lightSelected: number | undefined;
+  let onGardenPick: ((col: number, row: number) => void) | undefined;
+  let garden: PinwheelGarden = createGarden({ x: map.spawn.x - 8.9, y: map.spawn.y + 1.25 });
+  let wheelAngles = garden.wheels.map((_, i) => i * 0.7);
+  /** The garden's own clock, which runs in quiet mode too so the still-state sequence plays. */
+  let gustClock = 0;
+  let nearGarden = false;
+  /** Repaired toys beside the entrance. See repaired-toys.ts. */
+  const repaired = toySpots(map, options.repairedToys ?? []);
+  const gust = () => {
+    garden = raiseGust(garden, gustClock);
+  };
+  /** The chime stones on the promenade, south of the ferry dock. See stepping-stones.ts. */
+  let chimes: ChimeStones = createStones({ x: map.midwayWidth + 1.5, y: 17.5 });
+  let nearChimes = false;
+  let stoneUnderfoot: number | undefined;
+  let stonesReport: string | undefined;
+  const useStones = (input: StoneInput) => {
+    const outcome = stoneInput(chimes, input, gustClock, quiet);
+    chimes = outcome.stones;
+    if (outcome.cancelWalk) cancelWalk();
+    if (outcome.tones.length > 0)
+      options.onChime?.(outcome.tones, outcome.spacing, outcome.replace);
+    reportStones();
+  };
+  const reportStones = () => {
+    const next = nearChimes ? stonesStatus(chimes, gustClock, quiet) : undefined;
+    if (next === stonesReport) return;
+    stonesReport = next;
+    options.onStones?.(next);
+  };
+  let located: LocateState = HIDDEN_LOCATE;
+  const locate = () => {
+    located = showLocate();
+    // Jump straight to the player rather than sweep across the map.
+    cameraReady = false;
+    options.onLocate?.(locateMessage(map, player, names));
+  };
+  const hideLocate = () => {
+    if (!isLocateShown(located)) return false;
+    located = HIDDEN_LOCATE;
+    options.onLocate?.(undefined);
+    return true;
+  };
+  /**
+   * The ferry, and the dock whose pier the player stands by. While the player
+   * rides, they stand on deck and move only with the ferry; every way a ride
+   * ends sets them down on a pier. See ferry.ts.
+   */
+  let ferry: FerryState = ferryReturn;
+  let nearDock: DockId | undefined;
+  let ferryReport = '';
+  const reportFerry = () => {
+    const message = ferryMessage(map, ferry, nearDock, !ferry.riding && onFarShore(map, player));
+    const requests = ferryButtons(ferry, nearDock);
+    const report = `${message}|${requests.join()}`;
+    if (report === ferryReport) return;
+    ferryReport = report;
+    options.onFerry?.(message, requests);
+  };
+  const setFerry = (next: FerryState) => {
+    if (next === ferry) return;
+    const wasRiding = ferry.riding;
+    // Quiet crossings land in one step, so the camera jumps with the player.
+    if (ferrySnapsCamera(ferry, next, quiet)) cameraReady = false;
+    ferry = next;
+    if (ferry.riding) {
+      // Aboard: any walk stops, so no path or trail is left on the far bank.
+      player.path = [];
+      destination = undefined;
+      setRoute(cancelRoute(route));
+      keys.clear();
+      const deck = ferryPosition(map, ferry);
+      player.x = deck.x;
+      player.y = deck.y;
+      player.walking = false;
+    } else if (wasRiding) {
+      const landing = dockById(map, ferry.dock).landing;
+      player.x = landing.x;
+      player.y = landing.y;
+      nearDock = ferry.dock;
+    }
+    reportFerry();
+  };
+  let homewardReport: string | undefined;
+  const reportHomeward = () => {
+    const message = ferry.riding ? '' : homewardMessage(homeward(map, player));
+    if (message === homewardReport) return;
+    homewardReport = message;
+    options.onHomeward?.(message);
+  };
+  const useFerry = (request: FerryRequest) => setFerry(requestFerry(ferry, request, nearDock));
+
+  const enterFair = () => {
+    if (!options.onFairGate) return;
+    returnTo = { x: player.x, y: player.y };
+    options.onFairGate();
+  };
+
+  const keys = new Set<string>();
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (isControl(event.target)) return;
+    const ferryKey = ['KeyE', 'Enter', 'Space'].includes(event.code);
+    if (ferry.riding && event.code in MOVE_KEYS) {
+      event.preventDefault();
+      // Walking off a docked ferry steps onto the pier; mid-crossing the keys wait.
+      if (ferry.phase === 'docked') {
+        useFerry('step-off');
+        keys.add(event.code);
+      }
+    } else if (ferryKey && (ferry.riding || (nearDock && !inReach && !nearGate))) {
+      event.preventDefault();
+      // A held key repeats; only a fresh press asks the ferry for something.
+      if (!event.repeat) useFerry('use');
+    } else if (event.code in MOVE_KEYS) {
+      keys.add(event.code);
+      cancelWalk();
+      event.preventDefault();
+    } else if (keyAction(event.code, Boolean(inReach?.gameId), nearGate) === 'play' && inReach) {
+      event.preventDefault();
+      play(inReach);
+    } else if (keyAction(event.code, Boolean(inReach), nearGate) === 'fair') {
+      event.preventDefault();
+      enterFair();
+    } else if (event.code === 'KeyG' && nearGarden) {
+      event.preventDefault();
+      // A held key repeats; only a fresh press restarts the gust.
+      if (!event.repeat) gust();
+    } else if (event.code === 'KeyC' && nearChimes) {
+      event.preventDefault();
+      // A held key repeats; only a fresh press plays the call again.
+      if (!event.repeat) useStones({ kind: 'call' });
+    } else if (isLocateKey(event)) {
+      event.preventDefault();
+      if (!event.repeat) locate();
+    }
+  };
+  const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
+  const onBlur = () => keys.clear();
+
+  const toWorld = (event: PointerEvent): Point => {
+    const box = canvas.getBoundingClientRect();
+    return unproject({ x: event.clientX - box.left, y: event.clientY - box.top }, camera, zoom);
+  };
+  const boothAt = (point: Point) =>
+    map.booths
+      .filter((booth) => {
+        const b = boothBounds(booth);
+        return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+      })
+      .sort((a, b) => b.x + b.y - (a.x + a.y))[0];
+
+  const billboardAt = (point: Point) =>
+    map.props.some((prop) => {
+      if (prop.kind !== 'billboard') return false;
+      const b = propBounds(prop);
+      return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+    });
+
+  const gateAt = (point: Point) => {
+    if (!gate) return false;
+    const b = propBounds(gate);
+    return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+  };
+
+  /** Starts a named walk, or stops the old one and says there is no way there. */
+  const walkNamed = (name: string, find: () => Point[] | undefined) => {
+    // A rider asked to walk somewhere lands first (mid-crossing, at the dock
+    // ahead) and walks from the pier, so no walk ever starts on the water.
+    if (ferry.riding) {
+      setFerry(requestFerry(ferry, ferry.phase === 'sailing' ? 'skip' : 'step-off', undefined));
+    }
+    const found = find();
+    const request = requestRoute(name, found);
+    player.path = request.path;
+    destination = request.path.at(-1);
+    setRoute(request.route);
+    return found !== undefined;
+  };
+
+  const walkToBooth = (booth: BoothSlot) => {
+    const name = booth.gameId ? names.get(booth.gameId) : undefined;
+    walkNamed(name ?? 'the empty booth', () => pathToBooth(map, player, booth));
+  };
+
+  const walkToLandmark = (landmark: Landmark) =>
+    walkNamed(landmark.name, () => pathToLandmark(map, player, landmark));
+
+  // Landmark artwork stands on blocked tiles, so a click on it walks to a spot
+  // beside it instead.
+  const landmarkAt = (point: Point) =>
+    landmarks.find((landmark) => {
+      const prop = map.props.find(
+        (p) =>
+          p.x === landmark.area.x &&
+          p.y === landmark.area.y &&
+          p.w === landmark.area.w &&
+          p.h === landmark.area.h,
+      );
+      if (!prop) return false;
+      const b = propBounds(prop);
+      return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+    });
+
+  // The light garden lies on the ground: steady glows, garlands and a faint
+  // bed outline, with nothing that blocks a walk or covers a hit area.
+  function drawLightGarden() {
+    const at = (col: number, row: number) =>
+      toScreen(lightOrigin.x + col + 0.5, lightOrigin.y + row + 0.5);
+    const corners = [
+      toScreen(lightOrigin.x, lightOrigin.y),
+      toScreen(lightOrigin.x + GARDEN_COLUMNS, lightOrigin.y),
+      toScreen(lightOrigin.x + GARDEN_COLUMNS, lightOrigin.y + GARDEN_ROWS),
+      toScreen(lightOrigin.x, lightOrigin.y + GARDEN_ROWS),
+    ];
+    ctx!.strokeStyle = gardenLights.bed;
+    ctx!.lineWidth = 1;
+    ctx!.beginPath();
+    corners.forEach((c, i) => (i ? ctx!.lineTo(c.x, c.y) : ctx!.moveTo(c.x, c.y)));
+    ctx!.closePath();
+    ctx!.stroke();
+    if (onGardenPick) {
+      // Editing: every cell is outlined, so the player can see where a click lands.
+      ctx!.strokeStyle = gardenLights.editGrid;
+      ctx!.beginPath();
+      for (let col = 1; col < GARDEN_COLUMNS; col++) {
+        const a = toScreen(lightOrigin.x + col, lightOrigin.y);
+        const b = toScreen(lightOrigin.x + col, lightOrigin.y + GARDEN_ROWS);
+        ctx!.moveTo(a.x, a.y);
+        ctx!.lineTo(b.x, b.y);
+      }
+      for (let row = 1; row < GARDEN_ROWS; row++) {
+        const a = toScreen(lightOrigin.x, lightOrigin.y + row);
+        const b = toScreen(lightOrigin.x + GARDEN_COLUMNS, lightOrigin.y + row);
+        ctx!.moveTo(a.x, a.y);
+        ctx!.lineTo(b.x, b.y);
+      }
+      ctx!.stroke();
+    }
+    ctx!.globalCompositeOperation = 'lighter';
+    for (const l of lightDesign.lanterns) {
+      const c = at(l.col, l.row);
+      const glow = ctx!.createRadialGradient(c.x, c.y, 0, c.x, c.y, 30);
+      glow.addColorStop(0, l.color === 'warm' ? gardenLights.warmGlow : gardenLights.coolGlow);
+      glow.addColorStop(1, gardenLights.glowEdge);
+      ctx!.fillStyle = glow;
+      ctx!.beginPath();
+      ctx!.ellipse(c.x, c.y, 30, 15, 0, 0, Math.PI * 2);
+      ctx!.fill();
+    }
+    ctx!.globalCompositeOperation = 'source-over';
+    ctx!.strokeStyle = gardenLights.garland;
+    for (const [a, b] of lightDesign.garlands) {
+      const p = lightDesign.lanterns[a];
+      const q = lightDesign.lanterns[b];
+      const from = at(p.col, p.row);
+      const to = at(q.col, q.row);
+      ctx!.beginPath();
+      ctx!.moveTo(from.x, from.y - 10);
+      ctx!.quadraticCurveTo((from.x + to.x) / 2, (from.y + to.y) / 2 - 2, to.x, to.y - 10);
+      ctx!.stroke();
+    }
+    for (const l of lightDesign.lanterns) {
+      const c = at(l.col, l.row);
+      ctx!.fillStyle = l.color === 'warm' ? gardenLights.warm : gardenLights.cool;
+      ctx!.beginPath();
+      ctx!.arc(c.x, c.y - 10, 3.5, 0, Math.PI * 2);
+      ctx!.fill();
+    }
+    const chosen = lightSelected === undefined ? undefined : lightDesign.lanterns[lightSelected];
+    if (onGardenPick && chosen) {
+      const c = at(chosen.col, chosen.row);
+      ctx!.strokeStyle = gardenLights.selected;
+      ctx!.lineWidth = 1.5;
+      ctx!.beginPath();
+      ctx!.arc(c.x, c.y - 10, 6.5, 0, Math.PI * 2);
+      ctx!.stroke();
+      ctx!.lineWidth = 1;
+    }
+  }
+
+  // A static ring at the player's feet and an arrow over their head, drawn
+  // over everything so tents never hide it. Dark under light, for contrast.
+  function drawLocator() {
+    const p = toScreen(player.x, player.y);
+    for (const [color, width] of [
+      [locator.edge, 4],
+      [locator.ring, 2],
+    ] as const) {
+      ctx!.strokeStyle = color;
+      ctx!.lineWidth = width;
+      ctx!.beginPath();
+      ctx!.ellipse(p.x, p.y, 15, 7.5, 0, 0, Math.PI * 2);
+      ctx!.stroke();
+    }
+    ctx!.beginPath();
+    ctx!.moveTo(p.x - 6, p.y - 58);
+    ctx!.lineTo(p.x + 6, p.y - 58);
+    ctx!.lineTo(p.x, p.y - 49);
+    ctx!.closePath();
+    ctx!.fillStyle = locator.ring;
+    ctx!.strokeStyle = locator.edge;
+    ctx!.lineWidth = 2;
+    ctx!.fill();
+    ctx!.stroke();
+    ctx!.lineWidth = 1;
+  }
+
+  const ferryAt = (point: Point) => {
+    const b = ferryBounds(ferryPosition(map, ferry));
+    return point.x >= b.left && point.x <= b.right && point.y >= b.top && point.y <= b.bottom;
+  };
+
+  /** A click on the ferry: use it from its pier or deck, or walk to a dock first. */
+  const clickFerry = () => {
+    if (ferry.riding || nearDock !== undefined) {
+      useFerry('use');
+      return;
+    }
+    const docks = [dockById(map, ferry.dock), ...map.waterside.docks];
+    for (const dock of docks) {
+      const path = findPath(map, player, dock.landing);
+      if (path) {
+        walkNamed(dock.name, () => path);
+        return;
+      }
+    }
+    walkNamed('the ferry', () => undefined);
+  };
+
+  /** The chime stone under a screen point, or -1. */
+  const chimeAt = (point: Point) =>
+    chimes.stones.findIndex((s) => {
+      const p = toScreen(s.x, s.y);
+      return Math.abs(point.x - p.x) <= 12 && Math.abs(point.y - p.y) <= 7;
+    });
+  const gardenAt = (point: Point) =>
+    garden.wheels.some((w) => {
+      const p = toScreen(w.x, w.y);
+      return Math.abs(point.x - p.x) <= 9 && point.y >= p.y - 26 && point.y <= p.y + 2;
+    });
+
+  /** The garden cell under a screen point, read off the ground. */
+  const gardenCellAt = (point: Point) => cellAt(lightPatch, toTile(point.x, point.y));
+
+  const onPointerDown = (event: PointerEvent) => {
+    const point = toWorld(event);
+    if (onGardenPick) {
+      // Editing the light garden: the click is only ever about the garden.
+      const cell = gardenCellAt(point);
+      if (cell) onGardenPick(cell.col, cell.row);
+      return;
+    }
+    if (ferryAt(point)) {
+      clickFerry();
+      return;
+    }
+    if (ferry.riding) {
+      // Mid-crossing a click elsewhere waits; at a dock it steps off and walks on.
+      if (ferry.phase === 'sailing') return;
+      useFerry('step-off');
+    }
+    const booth = boothAt(point);
+    if (!booth && gardenAt(point)) {
+      gust();
+      return;
+    }
+    const stone = booth ? -1 : chimeAt(point);
+    if (stone >= 0) {
+      useStones({ kind: 'tap', stone });
+      return;
+    }
+    if (!booth && billboardAt(point)) {
+      window.open(DEVCON_URL, '_blank', 'noopener');
+      return;
+    }
+    if (booth) {
+      if (booth === inReach) play(booth);
+      else walkToBooth(booth);
+      return;
+    }
+    if (gate && gateAt(point)) {
+      if (nearGate) enterFair();
+      else {
+        walkNamed('Run Your Own Fair', () =>
+          pathToLandmark(map, player, { id: 'entrance', name: '', clue: '', area: gate }, 1),
+        );
+      }
+      return;
+    }
+    const path = findPath(map, player, toTile(point.x, point.y));
+    if (path) {
+      player.path = path;
+      destination = path.at(-1);
+      setRoute(IDLE_ROUTE);
+      return;
+    }
+    const landmark = landmarkAt(point);
+    if (landmark) walkToLandmark(landmark);
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    const point = toWorld(event);
+    if (onGardenPick) {
+      canvas.style.cursor = gardenCellAt(point) ? 'crosshair' : 'default';
+      return;
+    }
+    canvas.style.cursor =
+      boothAt(point) ||
+      billboardAt(point) ||
+      gateAt(point) ||
+      gardenAt(point) ||
+      chimeAt(point) >= 0 ||
+      ferryAt(point)
+        ? 'pointer'
+        : 'default';
+  };
+
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', onBlur);
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+
+  const updateFloaters = (dt: number) => {
+    if (quiet) return;
+    nextFloater -= dt;
+    if (nextFloater <= 0) {
+      nextFloater = 4 + Math.random() * 5;
+      const from = strolls[Math.floor(Math.random() * strolls.length)];
+      const p = toScreen(from.x + 0.5, from.y + 0.5);
+      floaters.push({
+        x: p.x,
+        y: p.y - 24,
+        age: 0,
+        color: palette.balloons[Math.floor(Math.random() * palette.balloons.length)],
+      });
+    }
+    for (const f of floaters) {
+      f.age += dt;
+      f.y -= 22 * dt;
+    }
+    floaters.splice(0, floaters.length, ...floaters.filter((f) => f.age < 6));
+  };
+
+  const updateCamera = (dt: number) => {
+    const focus = toScreen(player.x, player.y);
+    const margin = 40;
+    const target = fitCamera(focus, view, {
+      left: -map.height * 16 - margin,
+      right: map.width * 16 + margin,
+      top: HORIZON - 150,
+      bottom: (map.width + map.height) * 8 + 30,
+    });
+    const ease = cameraReady ? 1 - Math.exp(-dt * 5) : 1;
+    camera.x += (target.x - camera.x) * ease;
+    camera.y += (target.y - camera.y) * ease;
+    cameraReady = true;
+  };
+
+  /** `t` is the scenery's clock, which stands still in quiet mode. */
+  const draw = (t: number) => {
+    // The sky, and clouds drifting slowly behind the midway.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const horizon = (HORIZON - camera.y) * zoom;
+    const sky = ctx.createLinearGradient(0, horizon - 260 * zoom, 0, horizon);
+    const skyColors = scene === 'evening' ? evening : palette;
+    sky.addColorStop(0, skyColors.skyHigh);
+    sky.addColorStop(1, skyColors.sky);
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, canvas.clientWidth, Math.max(0, horizon + 2));
+
+    ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
+    const span = view.w + 200;
+    for (const cloud of clouds) {
+      const x =
+        ((((cloud.x * span - camera.x * 0.3 + t * cloud.speed) % span) + span) % span) - 100;
+      const y = HORIZON - camera.y - 50 - cloud.y * 100;
+      drawCloud(ctx, x, y, cloud.size);
+    }
+
+    // Snap the camera to whole device pixels so the pre-drawn ground stays crisp.
+    const k = dpr * zoom;
+    const cam = { x: Math.round(camera.x * k) / k, y: Math.round(camera.y * k) / k };
+    const visible: Box = { left: cam.x, top: cam.y, right: cam.x + view.w, bottom: cam.y + view.h };
+    ctx.setTransform(k, 0, 0, k, -cam.x * k, -cam.y * k);
+    drawField(ctx, visible);
+    if (ground) {
+      const bounds = groundBounds(map);
+      if (ground.scale === k) {
+        // Pixel for pixel, at a whole-pixel offset, so it stays crisp.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(
+          ground.canvas,
+          Math.round((bounds.left - cam.x) * k),
+          Math.round((bounds.top - cam.y) * k),
+        );
+        ctx.setTransform(k, 0, 0, k, -cam.x * k, -cam.y * k);
+      } else {
+        // A midway too long to pre-draw at full sharpness: stretch it to fit.
+        ctx.drawImage(
+          ground.canvas,
+          bounds.left,
+          bounds.top,
+          ground.canvas.width / ground.scale,
+          ground.canvas.height / ground.scale,
+        );
+      }
+    }
+
+    if (scene === 'evening') {
+      // Dusk dims the ground, then lanterns by each booth light it warmly.
+      // Booths, people and labels are drawn after, so they stay clear.
+      ctx.fillStyle = evening.wash;
+      ctx.fillRect(visible.left, visible.top, view.w, view.h);
+      ctx.globalCompositeOperation = 'lighter';
+      map.booths.forEach((booth, i) => {
+        const c = toScreen(booth.x + 1, booth.y + 1);
+        const r = 46 * lanternGlow(t, i, quiet);
+        const glow = ctx.createRadialGradient(c.x, c.y + 6, 0, c.x, c.y + 6, r);
+        glow.addColorStop(0, evening.glow);
+        glow.addColorStop(1, evening.glowEdge);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y + 6, r, r / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalCompositeOperation = 'source-over';
+      drawLightGarden();
+    } else if (onGardenPick) {
+      drawLightGarden();
+    }
+
+    // A sparse trail of lanterns along the steps still ahead of a named walk.
+    lanternTrail(route, player.path).forEach((step, i) => {
+      const p = toScreen(Math.floor(step.x) + 0.5, Math.floor(step.y) + 0.5);
+      const glow = lanternBrightness(t, i, quiet);
+      ctx.globalAlpha = 0.35 * glow;
+      ctx.fillStyle = evening.glow;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 9, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = palette.gold;
+      ctx.strokeStyle = palette.goldShade;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
+
+    if (destination && player.path.length > 0) {
+      const p = toScreen(Math.floor(destination.x) + 0.5, Math.floor(destination.y) + 0.5);
+      const pulse = 1 + Math.sin(t * 6) * 0.15;
+      ctx.strokeStyle = palette.gold;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 10 * pulse, 5 * pulse, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    const boat = ferryPosition(map, ferry);
+    // A gentle bob on the water, still in quiet mode.
+    const ferryBob = quiet ? 0 : Math.sin(t * 2) * 1;
+
+    // Anything drawn in front of the player fades, so they never get lost.
+    const feet = toScreen(player.x, player.y);
+    const playerDepth = player.x + player.y;
+    const hidesPlayer = (box: Box, depth: number) =>
+      depth > playerDepth &&
+      box.left < feet.x + 6 &&
+      box.right > feet.x - 6 &&
+      box.top < feet.y &&
+      box.bottom > feet.y - 30;
+    const faded = (box: Box, depth: number, paint: () => void) => {
+      if (!hidesPlayer(box, depth)) return paint();
+      ctx.globalAlpha = 0.4;
+      paint();
+      ctx.globalAlpha = 1;
+    };
+
+    // Only draw (and so only animate) what's on screen.
+    const onScreen = (box: Box) =>
+      box.right > visible.left &&
+      box.left < visible.right &&
+      box.bottom > visible.top &&
+      box.top < visible.bottom;
+    const walkerBox = (w: Point): Box => {
+      const p = toScreen(w.x, w.y);
+      return { left: p.x - 10, right: p.x + 10, top: p.y - 40, bottom: p.y + 4 };
+    };
+
+    type Drawable = { depth: number; box: Box; draw: () => void };
+    const drawables: Drawable[] = [
+      ...visitors.map((v) => ({
+        depth: v.x + v.y,
+        box: walkerBox(v),
+        draw: () => drawWalker(ctx, v, visitorLook(v.look)),
+      })),
+      ...chimes.stones.map((s, i) => {
+        const p = toScreen(s.x, s.y);
+        return {
+          // Flat on the ground, so anyone standing on a stone draws over it.
+          depth: s.x + s.y - 0.6,
+          box: { left: p.x - 12, right: p.x + 12, top: p.y - 7, bottom: p.y + 7 },
+          draw: () =>
+            drawChimeStone(
+              ctx,
+              p,
+              stoneGlow(chimes, i, gustClock, quiet),
+              STONE_SHAPES[i],
+              stoneOrder(chimes, i, quiet),
+            ),
+        };
+      }),
+      ...repaired.map(({ id, at }) => {
+        const p = toScreen(at.x, at.y);
+        return {
+          depth: at.x + at.y,
+          box: { left: p.x - 12, right: p.x + 12, top: p.y - 30, bottom: p.y + 4 },
+          draw: () => drawRepairedToy(ctx, id, p, t),
+        };
+      }),
+      ...garden.wheels.map((w, i) => {
+        const p = toScreen(w.x, w.y);
+        return {
+          depth: w.x + w.y,
+          box: { left: p.x - 9, right: p.x + 9, top: p.y - 35, bottom: p.y + 2 },
+          draw: () =>
+            drawPinwheel(ctx, p, wheelAngles[i], i, quiet && wheelState(garden, i, gustClock)),
+        };
+      }),
+      {
+        // A rider stands on deck, so they draw just after the ferry and a little raised.
+        depth: playerDepth + (ferry.riding ? 0.01 : 0),
+        box: walkerBox(player),
+        draw: () => {
+          if (!ferry.riding) return drawWalker(ctx, player, PLAYER_LOOK, true, t);
+          ctx.save();
+          ctx.translate(0, -6 - ferryBob);
+          drawWalker(ctx, player, PLAYER_LOOK, true, t);
+          ctx.restore();
+        },
+      },
+      {
+        depth: boat.x + boat.y,
+        box: ferryBounds(boat),
+        draw: () => drawFerry(ctx, boat, ferryBob),
+      },
+    ];
+    for (const tile of hedgeTiles) {
+      const p = toScreen(tile.x + 0.5, tile.y + 0.5);
+      const box = { left: p.x - 16, right: p.x + 16, top: p.y - 17, bottom: p.y + 8 };
+      const depth = tile.x + tile.y + 1;
+      drawables.push({ depth, box, draw: () => faded(box, depth, () => drawHedgeTile(ctx, tile)) });
+    }
+    for (const item of scenery) {
+      if (!onScreen(item.box)) continue;
+      const { depth, box, booth, prop, name } = item;
+      const paint = booth
+        ? () => drawBooth(ctx, booth, name, t, booth === inReach)
+        : () => drawProp(ctx, prop!, t, detail);
+      drawables.push({ depth, box, draw: () => faded(box, depth, paint) });
+    }
+    drawables
+      .filter((d) => onScreen(d.box))
+      .sort((a, b) => a.depth - b.depth)
+      .forEach((d) => d.draw());
+
+    drawFrontHedge(ctx, map);
+    if (onScreen(archBounds(map))) faded(archBounds(map), Infinity, () => drawArch(ctx, map, t));
+    drawBunting(ctx, map, t, visible);
+    drawFloaters(ctx, floaters);
+    if (isLocateShown(located)) drawLocator();
+
+    // The prompt over the booth in reach, at full resolution.
+    if (inReach?.gameId) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = toScreen(inReach.x + 1, inReach.y + 1);
+      label(
+        ctx,
+        'Press E to play',
+        (c.x - cam.x) * zoom,
+        (c.y - BOOTH_SIGN_HEIGHT - 46 - cam.y) * zoom,
+      );
+    } else if (nearGate && gate) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = toScreen(gate.x + 0.5, gate.y + 0.5);
+      label(ctx, 'Press E to run your fair', (c.x - cam.x) * zoom, (c.y - 76 - cam.y) * zoom);
+    } else if (ferry.riding || nearDock) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = toScreen(boat.x, boat.y);
+      const text =
+        ferry.phase === 'sailing'
+          ? ferry.riding
+            ? 'Press E to hurry to the dock'
+            : 'Press E to hurry the ferry'
+          : ferry.riding
+            ? 'Press E to cast off'
+            : nearDock === ferry.dock
+              ? 'Press E to board'
+              : 'Press E to call the ferry';
+      label(ctx, text, (c.x - cam.x) * zoom, (c.y - 62 - cam.y) * zoom);
+    } else if (nearChimes) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const first = chimes.stones[0];
+      const c = toScreen(first.x, first.y);
+      label(
+        ctx,
+        stonesPrompt(chimes, gustClock, quiet),
+        (c.x - cam.x) * zoom,
+        (c.y - 40 - cam.y) * zoom,
+      );
+    } else if (nearGarden) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const mid = garden.wheels[Math.floor(garden.wheels.length / 2)];
+      const c = toScreen(mid.x, mid.y);
+      label(ctx, 'Press G for a gust', (c.x - cam.x) * zoom, (c.y - 48 - cam.y) * zoom);
+    }
+  };
+
+  let frame = 0;
+  let last = performance.now();
+  const loop = (time: number) => {
+    // Cap the step so a background tab doesn't teleport everyone.
+    const elapsed = (time - last) / 1000;
+    const dt = Math.min(elapsed, 0.05);
+    last = time;
+
+    // If frames keep taking longer than 1/40 s, draw fewer pixels. Long gaps
+    // (a background tab, a resize) don't count.
+    if (elapsed < 0.25)
+      slowFrames = elapsed > 1 / 40 ? slowFrames + 1 : Math.max(0, slowFrames - 1);
+    if (slowFrames > 90 && quality > MIN_QUALITY) {
+      quality = Math.max(MIN_QUALITY, quality * 0.75);
+      slowFrames = 0;
+      resize();
+    }
+
+    let right = 0;
+    let down = 0;
+    for (const code of keys) {
+      right += MOVE_KEYS[code][0];
+      down += MOVE_KEYS[code][1];
+    }
+    const direction = inputDirection(Math.sign(right), Math.sign(down));
+    setFerry(sailFerry(ferry, dt, quiet));
+    if (ferry.riding) {
+      // On deck, the player goes where the ferry goes.
+      const deck = ferryPosition(map, ferry);
+      player.x = deck.x;
+      player.y = deck.y;
+      player.walking = false;
+    } else if (direction.x !== 0 || direction.y !== 0) walk(map, player, direction, dt);
+    else if (player.path.length > 0) {
+      followPath(player, dt);
+      if (player.path.length === 0) setRoute(arriveRoute(route));
+    } else player.walking = false;
+
+    if (!quiet)
+      for (const visitor of visitors) updateVisitor(map, visitor, dt, Math.random, strolls);
+
+    const reach = boothInReach(map, player);
+    if (reach !== inReach) {
+      inReach = reach;
+      options.onReach(reach);
+    }
+
+    const gateReach = !inReach && fairGateInReach(map, player);
+    if (gateReach !== nearGate) {
+      nearGate = gateReach;
+      options.onFairGateReach?.(gateReach);
+    }
+
+    const landmark = landmarkInReach(landmarks, player);
+    if (landmark !== nearLandmark) {
+      nearLandmark = landmark;
+      if (landmark) options.onLandmark?.(landmark);
+    }
+
+    nearGarden = !inReach && !nearGate && gardenInReach(garden, player);
+    nearDock = ferry.riding ? undefined : dockInReach(map, player)?.id;
+    nearChimes =
+      !inReach && !nearGate && !nearDock && !ferry.riding && stonesInReach(chimes, player);
+    const underfoot = ferry.riding ? undefined : stoneUnder(chimes, player);
+    // Only stepping onto a stone rings it; standing still on one doesn't.
+    if (underfoot !== undefined && underfoot !== stoneUnderfoot) {
+      useStones({ kind: 'step', stone: underfoot });
+    }
+    stoneUnderfoot = underfoot;
+    reportStones();
+    reportFerry();
+    reportHomeward();
+    gustClock += dt;
+    wheelAngles = turnWheels(wheelAngles, garden, gustClock, dt, quiet);
+
+    updateFloaters(dt);
+    if (isLocateShown(located)) {
+      located = tickLocate(located, Math.max(0, elapsed));
+      if (!isLocateShown(located)) options.onLocate?.(undefined);
+    }
+    updateCamera(dt);
+    sceneTime = advanceSceneClock(sceneTime, Math.max(0, elapsed), quiet);
+    draw(sceneTime);
+    frame = requestAnimationFrame(loop);
+  };
+  frame = requestAnimationFrame(loop);
+
+  return {
+    walkTo(gameId) {
+      const booth = map.booths.find((b) => b.gameId === gameId);
+      if (booth) walkToBooth(booth);
+    },
+    walkToLandmark(id) {
+      const landmark = landmarks.find((l) => l.id === id);
+      return landmark ? walkToLandmark(landmark) : false;
+    },
+    setScene(next) {
+      scene = next;
+    },
+    setLandmarkDetail(next) {
+      detail = next;
+    },
+    setLightGarden(next, selected) {
+      lightDesign = next;
+      lightSelected = selected;
+    },
+    editLightGarden(onPick) {
+      onGardenPick = onPick;
+      canvas.style.cursor = 'default';
+      if (onPick) cancelWalk();
+    },
+    landmarks,
+    setMotion(next) {
+      motion = next;
+      updateQuiet();
+    },
+    cancelWalk,
+    enterFair,
+    ferry(request) {
+      useFerry(request);
+    },
+    returnToMidway() {
+      // Aboard, the player's shore is not settled until they land, so the
+      // ferry's own controls end the ride first. The panel is hidden then too.
+      if (ferry.riding) return false;
+      const way = homeward(map, player);
+      if (!way) return false;
+      return walkNamed(way.destination, () => findPath(map, player, way.target));
+    },
+    stones(input) {
+      if (!nearChimes) return;
+      useStones(input === 'call' ? { kind: 'call' } : { kind: 'button', stone: input });
+    },
+    locate,
+    hideLocate,
+    setViewScale(next) {
+      if (next === viewScale) return;
+      viewScale = next;
+      resize();
+      // Jump straight to the player at the new size, so they stay on screen.
+      cameraReady = false;
+    },
+    stop() {
+      // Leaving mid-crossing finishes the trip: next time the ferry is tied up
+      // at the dock it was headed for, and nobody is left on the water.
+      if (ferry.riding) returnTo = { ...dockById(map, ferry.dock).landing };
+      ferryReturn = settleFerry(ferry);
+      cancelAnimationFrame(frame);
+      stopWatchingMotion();
+      observer.disconnect();
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+    },
+  };
+}
