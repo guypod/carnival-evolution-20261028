@@ -35,7 +35,7 @@ LIVE=
 export FLOW_CHECK_NAME=browser-flow
 if [ "$PUBLISH" = --live ]; then
   HEAD=${4:?usage: run-flow.sh <out dir> <flow> --live <merge sha>}
-  LIVE=${CARNIVAL_LIVE_URL:-https://guypod.github.io/carnival-evolution-20261028/}
+  LIVE=https://guypod.github.io/carnival-evolution-20261028/
   FLOW_CHECK_NAME=browser-flow-live
   PUBLISH=--publish
 fi

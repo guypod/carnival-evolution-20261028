@@ -1495,6 +1495,8 @@ export const LIVE_CHECK = 'browser-flow-live';
 
 /** Where the live check runs' screenshots are retained, per merge and flow. */
 export const liveDir = (mergeSha, flow) => `evidence/live/${mergeSha}/${flow}/`;
+/** The Pages site a live run must have played. */
+export const LIVE_URL = 'https://guypod.github.io/carnival-evolution-20261028/';
 /** The stable key of one merged-but-unverified obligation. */
 export const obligationKey = (mergeSha, flow) => `${mergeSha}:${flow}`;
 
@@ -1514,7 +1516,11 @@ function liveReasons(mergeSha, flow, record, shots, deployedAt) {
   const id = record.identity;
   if (!(id?.before?.matched && id?.after?.matched) || !/^[0-9a-f]{64}$/.test(id?.buildDigest ?? ''))
     reasons.push(`live evidence for ${flow} does not show the served build is ${mergeSha}`);
-  if (!/^https:\/\//.test(record.url ?? '')) reasons.push(`live evidence for ${flow} names no url`);
+  if (record.url !== LIVE_URL) reasons.push(`live evidence for ${flow} is not for ${LIVE_URL}`);
+  // The identity report itself is retained and hashed like a screenshot.
+  const idPath = `${liveDir(mergeSha, flow)}identity.json`;
+  if (!(record.screenshots ?? []).some((sh) => sh?.path === idPath))
+    reasons.push(`live evidence for ${flow} does not retain ${idPath}`);
   const at = Date.parse(record.capturedAt ?? '');
   const since = Date.parse(deployedAt ?? '');
   if (Number.isNaN(since)) reasons.push(`deploy time for ${mergeSha} unknown`);
@@ -1567,7 +1573,10 @@ export function deployContext(mergeSha, pagesRuns) {
   const done = (pagesRuns ?? []).filter(
     (r) => r.status === 'completed' && r.conclusion === 'success',
   );
-  const own = done.find((r) => r.head_sha === mergeSha);
+  // The first successful deploy: a rerun must not strand earlier captures.
+  const own = done
+    .filter((r) => r.head_sha === mergeSha)
+    .sort((a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at))[0];
   if (!own) return {};
   const later = done
     .filter((r) => r.head_sha !== mergeSha && Date.parse(r.updated_at) > Date.parse(own.updated_at))

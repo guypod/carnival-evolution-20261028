@@ -32,6 +32,7 @@ import {
   shipState,
   deployContext,
   liveDir,
+  LIVE_URL,
   owedMerges,
   evidenceMarker,
   mergeOne,
@@ -2427,10 +2428,13 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
     flow: FLOW,
     evidenceCommit: EV,
     flows: [{ name: `${FLOW}: x`, result: 'pass' }],
-    screenshots: [{ path: `${DIR}a.png`, sha256: 'f'.repeat(64) }],
+    screenshots: [
+      { path: `${DIR}a.png`, sha256: 'f'.repeat(64) },
+      { path: `${DIR}identity.json`, sha256: '1'.repeat(64) },
+    ],
     mergeSha: MERGE,
     deployedSha: MERGE,
-    url: 'https://example.github.io/c/',
+    url: LIVE_URL,
     capturedAt: '2026-10-31T10:00:00Z',
     identity: { buildDigest: 'd'.repeat(64), before: { matched: true }, after: { matched: true } },
   };
@@ -2448,7 +2452,7 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
   const retained = {
     complete: true,
     onEvidenceBranch: true,
-    digests: { [`${DIR}a.png`]: 'f'.repeat(64) },
+    digests: { [`${DIR}a.png`]: 'f'.repeat(64), [`${DIR}identity.json`]: '1'.repeat(64) },
   };
   const ctx = { deployedAt: '2026-10-31T09:00:00Z', shots: { 90: retained } };
   const ship = (checks, c = ctx, f = files) =>
@@ -2473,6 +2477,8 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
     owedBy([live({ identity: { ...good.identity, after: { matched: false } } })]),
     /served build/,
   );
+  assert.match(owedBy([live({ url: 'https://elsewhere.example/' })]), /is not for https/);
+  assert.match(owedBy([live({ screenshots: [good.screenshots[0]] })]), /does not retain/);
   assert.match(owedBy([live({ capturedAt: '2026-10-31T08:00:00Z' })]), /before the deploy/);
   assert.match(owedBy([live()], { ...ctx, deployedAt: undefined }), /deploy time .* unknown/);
   assert.match(
@@ -2528,6 +2534,9 @@ test('shipped: deploy context and the owed ledger keep older gaps', () => {
     supersededBy: undefined,
   });
   assert.deepEqual(deployContext('z', runs), {});
+  // A rerun of an earlier deploy does not move the deploy time later.
+  const rerun = [...runs, { ...runs[1], updated_at: '2026-10-31T05:00:00Z' }];
+  assert.equal(deployContext('b', rerun).deployedAt, '2026-10-31T02:00:00Z');
   const merges = [
     { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
     { sha: 'b', state: 'shipped', owed: [] },

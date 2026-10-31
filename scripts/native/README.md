@@ -322,9 +322,10 @@ flow the merge commit's files need has the factory's newest
 record that passes the same checks as premerge evidence (merge as head, the
 flow, every check passed, screenshots under `evidence/live/<merge>/<flow>/`
 retained on the evidence branch with matching sha256) and also names the merge
-as `mergeSha` and `deployedSha`, the live `url`, a `capturedAt` after the
-merge's Pages deploy finished, and an `identity` that matched before and after
-the flow.
+as `mergeSha` and `deployedSha`, the Pages `url` (`LIVE_URL`), a `capturedAt`
+after the merge's first successful Pages deploy, and an `identity` that matched
+before and after the flow. That identity report is retained as
+`identity.json` beside the screenshots and hashed with them.
 
 `scripts/visual/run-flow.sh <dir> <flow> --live <merge sha>` records that run.
 It must run on a clean checkout of the merge commit. It builds that commit and

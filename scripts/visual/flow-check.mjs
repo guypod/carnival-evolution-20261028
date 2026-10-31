@@ -4,6 +4,7 @@
 //   node scripts/visual/flow-check.mjs <flow.json> <head> <evidence commit> <dir> <flow exit status>
 //   node scripts/visual/flow-check.mjs --start <flow> <head>
 //   node scripts/visual/flow-check.mjs --fail <flow> <step> <exit status>
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { BROWSER_CHECK, evidenceMarker, flowExternalId } from '../native/native.mjs';
 
@@ -88,6 +89,14 @@ if (process.argv[1]?.endsWith('flow-check.mjs')) {
           identity: JSON.parse(readFileSync(process.env.FLOW_LIVE_IDENTITY, 'utf8')),
         }
       : {};
+    // The identity report is retained beside the screenshots and hashed like them.
+    if (process.env.FLOW_LIVE_IDENTITY)
+      report.screenshots.push({
+        file: 'identity.json',
+        sha256: createHash('sha256')
+          .update(readFileSync(process.env.FLOW_LIVE_IDENTITY))
+          .digest('hex'),
+      });
     const body = flowCheckRun(report, head, commit, dir, 0, live);
     delete body.head_sha;
     console.log(JSON.stringify(body));
