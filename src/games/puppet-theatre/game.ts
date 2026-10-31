@@ -821,7 +821,8 @@ function draw(ctx: CanvasRenderingContext2D, theatre: Theatre) {
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('small');
     ctx.textAlign = 'center';
-    ctx.fillText(`(holding the ${stage.gift})`, stage.positions.dragon, FLOOR_Y + 40);
+    // Above the dragon's head, clear of the prop names on the boards.
+    ctx.fillText(`(holding the ${stage.gift})`, stage.positions.dragon, FLOOR_Y - 180);
   }
 
   // Silent caption.
