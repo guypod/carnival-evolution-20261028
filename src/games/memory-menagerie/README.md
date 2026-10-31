@@ -35,6 +35,11 @@ you can.
 - The round ends when all six pairs are found. The results show your moves,
   pairs matched and score. Press **Play again** (or Space or Enter) for a
   freshly shuffled round. Escape takes you back to the midway.
+- To the right of the cards, the **Found** tray has six slots. Each time you
+  find a pair, its animal (picture and name) fills a slot, in the order the
+  symbols are numbered, and stays there for the rest of the round. Empty slots
+  show how many pairs are left. The full tray stays visible beside the results
+  when the round ends. A new round starts with an empty tray.
 
 ## Scoring
 
@@ -53,7 +58,7 @@ results and **Play again** still work.
 ## Files
 
 - `game.ts`: the game logic (`deal`, `createState`, `startRound`, `beginRound`,
-  `flip`, `peek`, `isShown`, `step`, `scoreFor`, `scoreWithPeek`, `forecastScore`, `pairsLeft`, `lastTryText`, `finalScore`, `takeFinalScore`, `saveFinalScore`,
+  `flip`, `peek`, `isShown`, `step`, `scoreFor`, `scoreWithPeek`, `forecastScore`, `pairsLeft`, `foundSymbols`, `lastTryText`, `finalScore`, `takeFinalScore`, `saveFinalScore`,
   `moveCursor`, `arrowFor`, `isActionKey`, `isPeekKey`, `onPeekButton`, `isPageControl`, `cardAt`,
   `onButton`, `seededRng`) and the `memoryMenagerie` entry the midway
   registers. `createState` takes an rng so tests can choose the shuffle.

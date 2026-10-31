@@ -197,6 +197,12 @@ export function pairsLeft(state: MemoryState): number {
   return PAIRS - state.matches;
 }
 
+/** The symbols whose pair has been found this round, in SYMBOLS order. */
+export function foundSymbols(state: MemoryState): number[] {
+  const found = new Set(state.cards.filter((card) => card.matched).map((card) => card.symbol));
+  return SYMBOLS.map((_, symbol) => symbol).filter((symbol) => found.has(symbol));
+}
+
 /**
  * One short line on the last try, or undefined before the first try. A miss
  * names how far it lowered the forecast, and no number once the forecast was 0.
@@ -294,6 +300,9 @@ const GRID_X = (WIDTH - (COLS * CARD_W + (COLS - 1) * GAP)) / 2;
 const GRID_Y = 84;
 const BUTTON = { x: WIDTH / 2 - 110, y: HEIGHT - 82, w: 220, h: 52 } as const;
 const PEEK_BUTTON = { x: WIDTH / 2 - 120, y: 46, w: 240, h: 32 } as const;
+/** The found-pairs tray, in the strip to the right of the grid. */
+const TRAY = { x: WIDTH - 90, y: GRID_Y, w: 82, h: ROWS * CARD_H + (ROWS - 1) * GAP } as const;
+const TRAY_SLOT = (TRAY.h - 24) / PAIRS;
 
 /** Where card `index` is drawn on the canvas. */
 export function cardRect(index: number): { x: number; y: number; w: number; h: number } {
@@ -391,6 +400,37 @@ function drawSymbol(ctx: CanvasRenderingContext2D, symbol: number, x: number, y:
   }
 }
 
+function drawTray(ctx: CanvasRenderingContext2D, state: MemoryState) {
+  const { colors } = theme;
+  ctx.fillStyle = colors.surface;
+  ctx.fillRect(TRAY.x, TRAY.y, TRAY.w, TRAY.h);
+  ctx.fillStyle = colors.text;
+  ctx.font = canvasFont('small', 'bold');
+  ctx.textAlign = 'center';
+  const cx = TRAY.x + TRAY.w / 2;
+  ctx.fillText('Found', cx, TRAY.y + 17);
+  const found = foundSymbols(state);
+  for (let i = 0; i < PAIRS; i++) {
+    const y = TRAY.y + 24 + i * TRAY_SLOT;
+    const symbol = found[i];
+    if (symbol === undefined) {
+      ctx.strokeStyle = colors.muted;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(TRAY.x + 8, y + 4, TRAY.w - 16, TRAY_SLOT - 8);
+      continue;
+    }
+    ctx.save();
+    ctx.translate(cx, y + 18);
+    ctx.scale(0.5, 0.5);
+    drawSymbol(ctx, symbol, 0, 0);
+    ctx.restore();
+    ctx.fillStyle = colors.text;
+    ctx.font = canvasFont('small', 'bold');
+    ctx.textAlign = 'center';
+    ctx.fillText(SYMBOLS[symbol], cx, y + TRAY_SLOT - 6);
+  }
+}
+
 function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
   const { colors } = theme;
 
@@ -426,6 +466,8 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
           : `Peek (P): 1 left, -${PEEK_PENALTY}`;
     ctx.fillText(label, b.x + b.w / 2, b.y + 22);
   }
+
+  drawTray(ctx, state);
 
   for (let i = 0; i < state.cards.length; i++) {
     const r = cardRect(i);
@@ -535,6 +577,9 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
       WIDTH / 2,
       BUTTON.y + 33,
     );
+
+    // Draw the full tray again over the results, so the last pair found stays visible.
+    if (state.phase === 'over') drawTray(ctx, state);
   }
 }
 
