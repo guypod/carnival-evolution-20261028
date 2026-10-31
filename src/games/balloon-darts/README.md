@@ -19,6 +19,8 @@ Nine balloons hang in a 3x3 rack. You have nine darts to pop them.
 - Pops in a row earn a streak bonus on top of the balloon's points: the first
   pop adds nothing, the second 5, the third 10, and the fourth and every one
   after it 15. A popping balloon shows its total and the bonus inside it.
+- A popped balloon leaves a torn scrap and its knot in the balloon's colour,
+  and the star's cell keeps its star.
 - Each balloon pops once. A dart at a popped balloon, or a miss, uses up the
   dart, scores nothing and ends the streak, so the next pop starts again with
   no bonus.
