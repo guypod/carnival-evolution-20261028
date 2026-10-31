@@ -1954,6 +1954,24 @@ test('merge gate: a failed check superseded by a successful rerun on the same he
   assert.equal(mergeGate(t).merge, false);
 });
 
+test('merge gate: a newer job of the same name from another workflow never replaces a failed CI check', () => {
+  // pages.yml also has a job named `check` and can be dispatched on any branch.
+  const base = snapshot();
+  base.checks.items = base.checks.items.filter((c) => c.name !== 'check');
+  const failed = ci({ id: 1, conclusion: 'failure', check_suite: { id: 10 } });
+  const pagesCheck = ci({ id: 2, check_suite: { id: 20 } });
+  const s = {
+    ...base,
+    checks: { complete: true, items: [...base.checks.items, failed, pagesCheck] },
+  };
+  assert.equal(mergeGate(s).merge, false);
+  assert.ok(mergeGate(s).reasons.includes('CI is not green on the head'));
+  // A rerun inside the same suite still replaces the failure.
+  const rerun = ci({ id: 3, check_suite: { id: 10 } });
+  const t = { ...base, checks: { complete: true, items: [...base.checks.items, failed, rerun] } };
+  assert.equal(mergeGate(t).merge, true, JSON.stringify(mergeGate(t).reasons));
+});
+
 test('a read failure at admission alone, with no deferral record, is retried after the grace', async () => {
   const gh = owedWorld();
   gh.failRuns = true;

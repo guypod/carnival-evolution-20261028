@@ -1188,10 +1188,13 @@ export function mergeGate(s) {
   }
 
   // A rerun replaces the run it reran: GitHub lists both under filter=all, and
-  // only the newest run of each check by each app counts.
+  // only the newest run of each check by each app in each check suite counts.
+  // A rerun stays in its workflow run's suite; another workflow with a job of
+  // the same name, such as the Pages `check`, has its own suite and never
+  // replaces a failed CI run.
   const newest = new Map();
   for (const c of s.checks.items.filter((x) => x.head_sha === head)) {
-    const k = `${c.app?.id}:${c.name}`;
+    const k = `${c.app?.id}:${c.check_suite?.id}:${c.name}`;
     if (!newest.has(k) || c.id > newest.get(k).id) newest.set(k, c);
   }
   const runs = [...newest.values()];
