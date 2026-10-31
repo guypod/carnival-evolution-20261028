@@ -67,12 +67,16 @@ credentials or anything from outside this repository's public record.
    flow to `scripts/visual/flow.mjs`, `KNOWN_FLOWS` and `GAME_FLOWS` in
    `scripts/native/native.mjs` on the same branch, and the flow then gates
    that head. Do not substitute another
-   game's flow or claim the change was played. Otherwise check out the PR's
-   exact head in a detached worktree, confirm `HEAD` is that head, run
-   `npm ci`, then `scripts/visual/run-flow.sh <dir> <flow> --publish` for each
-   listed flow. The script opens the `browser-flow` check run in progress
-   before setup and concludes it as a failure on any error. Look at the
-   screenshots it wrote. Never edit or push the PR branch here.
+   game's flow or claim the change was played. Otherwise report every listed
+   flow as `browser-flow-owed: <pr>:<flow>` with the reason "no isolated
+   runner". Dispatch holds the writer key, so it never checks out, installs,
+   builds, serves or runs anything from a PR's head: not `npm ci`, not the
+   PR's `scripts/visual/run-flow.sh`, Vite config, npm lifecycle scripts or
+   any module they import. Clearing token variables or using a detached
+   worktree does not change that. Premerge `browser-flow` evidence stays
+   owed until a trusted runner exists that plays the candidate in a
+   credential-free sandbox and publishes from `main`'s own code. Never edit
+   or push the PR branch here.
 2. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs merge`. For an
    open Tessl PR whose source issue, branch and single `Closes` line agree,
    whose newest `tessl-reviewer[bot]` review on the exact head carries

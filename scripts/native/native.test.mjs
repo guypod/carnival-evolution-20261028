@@ -2692,3 +2692,16 @@ test('run-flow: any uncommitted input, such as the lockfile or tsconfig, refuses
     git('clean', '-qfdx');
   }
 });
+
+test('dispatch never runs PR code while it holds the writer key', async () => {
+  const { readFileSync } = await import('node:fs');
+  const skill = readFileSync(
+    new URL('../../tessl-factory/skills/native-intake/SKILL.md', import.meta.url),
+    'utf8',
+  );
+  const start = skill.indexOf('## MODE=dispatch');
+  const step1 = skill.slice(start, skill.indexOf('\n2. ', start));
+  assert.ok(start >= 0 && step1.includes('browser-flow-owed: <pr>:<flow>'));
+  // No instruction to check out, install or publish from the candidate head.
+  assert.doesNotMatch(step1, /run `npm ci`|--publish|check out the PR's/);
+});
