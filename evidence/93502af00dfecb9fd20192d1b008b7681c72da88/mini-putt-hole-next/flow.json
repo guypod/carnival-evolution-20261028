@@ -1,0 +1,35 @@
+{
+  "flow": "mini-putt-hole-next",
+  "base": "http://127.0.0.1:35421/",
+  "browser": "149.0.7827.55",
+  "checks": [
+    {
+      "check": "hole ends with the result banner below the green",
+      "result": "pass"
+    },
+    {
+      "check": "Next moves to the next hole",
+      "result": "pass"
+    },
+    {
+      "check": "aim help and meter return after Next",
+      "result": "pass"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "mini-putt-hole-next-aiming.png",
+      "sha256": "1fb70fc9422c0d468f8fefbd725e0ef6664969cb33e0bb21903948dc6349f2a0"
+    },
+    {
+      "file": "mini-putt-hole-next-hole-done.png",
+      "sha256": "65961e4646b07eb2bc18f9bc60d014f787d86b36abf0825a21162e6431f0c83d"
+    },
+    {
+      "file": "mini-putt-hole-next-after-next.png",
+      "sha256": "dc22b71c8473d3a2b8c642f9d1da93e0e8a6f13724516329df93f1b0ce2b06d1"
+    }
+  ],
+  "errors": [],
+  "result": "pass"
+}
