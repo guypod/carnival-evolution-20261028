@@ -214,8 +214,12 @@ kbd {
   color: var(--color-text);
 }
 
+/* Opaque, not faded, so a disabled control's label stays readable on the grass. */
 .midway-view button:disabled {
-  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--color-muted);
+  background: var(--color-background);
+  color: var(--color-muted);
   cursor: default;
 }
 
