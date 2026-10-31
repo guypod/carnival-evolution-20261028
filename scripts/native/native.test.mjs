@@ -22,6 +22,7 @@ import {
   mergeOne,
   produceBacklog,
   readBatch,
+  slotProgress,
   MISSING_LABEL_ROUTE,
 } from './native.mjs';
 
@@ -988,4 +989,42 @@ test('a batch slot that is malformed, unscheduled or in the future is refused', 
     'backlog-2026-10-31T12',
   ])
     assert.ok(readBatch({ slot, candidates: candidates(18) }, now).error, String(slot));
+});
+
+test('reviews with equal timestamps are ordered by id, so a newer request for changes stands', () => {
+  const at = '2026-10-31T00:20:00Z';
+  const s = snapshot({
+    reviews: {
+      complete: true,
+      items: [
+        { id: 9, user: owner, state: 'CHANGES_REQUESTED', commit_id: HEAD, submitted_at: at },
+        { id: 8, user: owner, state: 'APPROVED', commit_id: HEAD, submitted_at: at },
+        review(),
+      ],
+    },
+  });
+  assert.match(mergeGate(s).reasons.join(), /changes requested by guypod/);
+});
+
+test('a candidate carrying a marker is refused, and only the last-line marker counts', async () => {
+  const file = candidates(18);
+  file[0].body += `\n${itemMarker(SLOT, 17, 'polish-booth-0')}`;
+  const r = await produceBacklog(fakeGitHub(), SLOT, file);
+  assert.equal(r.status, 'partial');
+  assert.match(r.errors.join(), /item 0: must not contain a producer or dispatcher marker/);
+  const early = backlogIssue(40, {
+    body: `${itemMarker(SLOT, 17, 'x')}\ntext\n${itemMarker(SLOT, 2, 'y')}`,
+  });
+  assert.deepEqual([...slotProgress(SLOT, [early]).keys()], [2]);
+});
+
+test('a recovered claim whose issue now has a linked pull request is released, not labelled', async () => {
+  const gh = fakeGitHub({
+    issues: [backlogIssue(11), backlogIssue(12)],
+    comments: { 11: [claimed(EARLIER, 11)] },
+    links: { 11: [{ event: 'cross-referenced' }] },
+  });
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.issue, 12);
+  assert.ok(!writes(gh).some((c) => c[1] === 11));
 });

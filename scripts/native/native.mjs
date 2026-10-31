@@ -98,10 +98,13 @@ export const itemMarker = (slot, index, scope) =>
 export const claimMarker = (slot, issue) =>
   `<!-- carnival-dispatch:claim:v1 slot=${slot} issue=${issue} -->`;
 
-/** The item marker of an issue, honoured only on an issue the bot opened. */
+/**
+ * The item marker of an issue, honoured only on an issue the bot opened and
+ * only as the body's last line, where itemBody puts it.
+ */
 export function readItem(issue) {
   if (issue.user?.id !== BOT_ID) return null;
-  const m = ITEM_RE.exec(issue.body ?? '');
+  const m = ITEM_RE.exec((issue.body ?? '').trimEnd().split('\n').at(-1));
   return m ? { slot: m[1], index: Number(m[2]), scope: m[3] } : null;
 }
 
@@ -153,6 +156,8 @@ export function validateCandidates(candidates, existing) {
     if (!c || typeof c.evidence !== 'string' || !c.evidence.trim())
       errors.push(`item ${i}: no evidence`);
     if (errors.length) return;
+    if (/carnival-(backlog|dispatch):/.test(`${c.title}${c.body}${c.evidence}${c.scope}`))
+      errors.push(`item ${i}: must not contain a producer or dispatcher marker`);
     if ((c.labels ?? []).includes(TRIGGER_LABEL)) errors.push(`item ${i}: must not carry tessl`);
     const t = normalTitle(c.title);
     const s = scopeKey(c.scope);
@@ -422,6 +427,15 @@ async function finish(adapter, slot, number, how) {
   const held = heldBack(fresh, comments.items);
   if (held)
     return { status: how === 'recovered' ? 'released' : 'stopped', issue: number, reason: held };
+  // An issue that already has a pull request is never labelled again.
+  const prs = await adapter.linkedPullRequests(number);
+  if (!prs.complete) return { status: 'blocked', reason: `links of #${number} incomplete` };
+  if (prs.items.length)
+    return {
+      status: how === 'recovered' ? 'released' : 'stopped',
+      issue: number,
+      reason: 'has a linked pull request',
+    };
   // A recovered claim belongs to an earlier slot. Bind this slot to it first,
   // keeping the earlier claim, so a retry of this slot resumes this issue
   // whatever happens to it after the label, and never claims a second.
@@ -528,7 +542,9 @@ export function mergeGate(s) {
   if (reasons.length) return { merge: false, reasons };
 
   const reviews = [...s.reviews.items].sort(
-    (a, b) => (a.submitted_at < b.submitted_at ? -1 : 1) || a.id - b.id,
+    (a, b) =>
+      (a.submitted_at < b.submitted_at ? -1 : a.submitted_at > b.submitted_at ? 1 : 0) ||
+      a.id - b.id,
   );
   // A request for changes stands until the same reviewer approves or it is
   // dismissed. A later COMMENTED review does not clear it, as on GitHub.
@@ -622,7 +638,13 @@ export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
 // ---------- gh and tessl adapter ----------
 
 function gh(args, input) {
-  return execFileSync('gh', args, { encoding: 'utf8', input, maxBuffer: 64 * 1024 * 1024 });
+  // A stalled call fails after two minutes rather than holding the writer key.
+  return execFileSync('gh', args, {
+    encoding: 'utf8',
+    input,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 120_000,
+  });
 }
 
 /** Every page of a REST list, or complete: false when any page failed. */

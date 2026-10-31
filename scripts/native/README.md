@@ -101,8 +101,12 @@ just a 200 response.
 - Until an owner label route exists, dispatch writes nothing and reports the
   missing capability.
 - Listings are read through one `gh` call capped at 64 MiB. Past that cap
-  the call fails, the listing counts as incomplete and the run blocks
-  without writing. It never treats a partial listing as complete.
+  the call fails and the listing counts as incomplete. The step that needs
+  it stops before its own write; writes earlier in the same run, such as a
+  merge of an earlier pull request or an issue already filed, stand. It
+  never treats a partial listing as complete. `state=all` issue history
+  only grows, so this cap will eventually stop the producer until listings
+  are read another way.
 - The producer captures and looks at the carnival with
   `scripts/visual/run-capture.sh` before it files anything.
 - To verify without a duplicate run, wait for the first scheduled slot and
