@@ -14,6 +14,12 @@ const TARGETS_PER_RAIL = 3;
 /** The streak multiplier never goes above this. */
 export const MAX_MULTIPLIER = 3;
 const POPUP_LIFE = 0.8;
+/** How far the barrel reaches from the middle of the cannon. */
+export const BARREL_LENGTH = 46;
+/** Seconds a shot's water jet stays on screen. */
+export const JET_LIFE = 0.15;
+/** Seconds a miss splash stays on screen. */
+export const MISS_SPLASH_LIFE = 0.5;
 
 export type ModeId = 'calm' | 'classic' | 'rapid';
 
@@ -61,6 +67,24 @@ export interface Shot {
   y: number;
   vx: number;
   vy: number;
+  /** Where the player aimed, so a miss can splash there. */
+  aim?: { x: number; y: number };
+}
+
+/** A shot's jet of water, from the barrel's tip to the aim point. */
+export interface Jet {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  age: number;
+}
+
+/** Where a missed shot landed. */
+export interface MissSplash {
+  x: number;
+  y: number;
+  age: number;
 }
 
 export interface Splash {
@@ -76,6 +100,8 @@ export interface WaterCannonState {
   targets: Target[];
   shots: Shot[];
   splashes: Splash[];
+  jets: Jet[];
+  misses: MissSplash[];
   tank: number;
   score: number;
   /** Consecutive hits since the last miss. */
@@ -103,6 +129,8 @@ export function createState(mode: ModeId = 'classic'): WaterCannonState {
     targets,
     shots: [],
     splashes: [],
+    jets: [],
+    misses: [],
     tank: TANK_SIZE,
     score: 0,
     streak: 0,
@@ -175,17 +203,46 @@ export function isHit(shot: Shot, target: Target): boolean {
   return Math.hypot(shot.x - target.x, shot.y - target.y) <= target.radius;
 }
 
-/** Fires one shot of water towards the aim point. Returns false if nothing fired. */
-export function fire(state: WaterCannonState, aimX: number, aimY: number): boolean {
-  if (state.phase !== 'playing' || state.tank === 0) return false;
+export interface ShotPath {
+  /** The barrel's angle in radians, as for `atan2`. Always points up. */
+  angle: number;
+  /** The tip of the barrel, where the jet starts. */
+  barrel: { x: number; y: number };
+  /** Where the jet ends: the aim point, never below the cannon or inside the barrel. */
+  aim: { x: number; y: number };
+  /** The shot's velocity, SHOT_SPEED along the barrel. */
+  vx: number;
+  vy: number;
+}
+
+/** The line a shot aimed at (aimX, aimY) takes, from the cannon's middle through the barrel. */
+export function shotPath(aimX: number, aimY: number): ShotPath {
   const dx = aimX - CANNON.x;
   const dy = Math.min(aimY - CANNON.y, -1);
   const length = Math.hypot(dx, dy);
-  state.shots.push({
-    x: CANNON.x,
-    y: CANNON.y,
-    vx: (dx / length) * SHOT_SPEED,
-    vy: (dy / length) * SHOT_SPEED,
+  const ux = dx / length;
+  const uy = dy / length;
+  const reach = Math.max(length, BARREL_LENGTH);
+  return {
+    angle: Math.atan2(dy, dx),
+    barrel: { x: CANNON.x + ux * BARREL_LENGTH, y: CANNON.y + uy * BARREL_LENGTH },
+    aim: { x: CANNON.x + ux * reach, y: CANNON.y + uy * reach },
+    vx: ux * SHOT_SPEED,
+    vy: uy * SHOT_SPEED,
+  };
+}
+
+/** Fires one shot of water towards the aim point. Returns false if nothing fired. */
+export function fire(state: WaterCannonState, aimX: number, aimY: number): boolean {
+  if (state.phase !== 'playing' || state.tank === 0) return false;
+  const path = shotPath(aimX, aimY);
+  state.shots.push({ x: CANNON.x, y: CANNON.y, vx: path.vx, vy: path.vy, aim: path.aim });
+  state.jets.push({
+    fromX: path.barrel.x,
+    fromY: path.barrel.y,
+    toX: path.aim.x,
+    toY: path.aim.y,
+    age: 0,
   });
   state.tank -= 1;
   return true;
@@ -214,12 +271,22 @@ export function step(state: WaterCannonState, dt: number): void {
       remaining.push(shot);
     } else {
       registerMiss(state);
+      // Splash where the player aimed, or where the shot left the booth.
+      const at = shot.aim ?? {
+        x: Math.min(Math.max(shot.x, 0), WIDTH),
+        y: Math.min(Math.max(shot.y, 0), HEIGHT),
+      };
+      state.misses.push({ x: at.x, y: at.y, age: 0 });
     }
   }
   state.shots = remaining;
 
   for (const splash of state.splashes) splash.age += dt;
   state.splashes = state.splashes.filter((s) => s.age < POPUP_LIFE);
+  for (const jet of state.jets) jet.age += dt;
+  state.jets = state.jets.filter((j) => j.age < JET_LIFE);
+  for (const miss of state.misses) miss.age += dt;
+  state.misses = state.misses.filter((m) => m.age < MISS_SPLASH_LIFE);
 
   if (state.tank === 0 && state.shots.length === 0) state.phase = 'over';
 }
@@ -381,6 +448,21 @@ function draw(
     ctx.fill();
   }
 
+  // Each shot's jet, from the barrel to the aim point, fading out.
+  ctx.strokeStyle = colors.water;
+  ctx.lineCap = 'round';
+  for (const jet of state.jets) {
+    const fade = 1 - jet.age / JET_LIFE;
+    ctx.globalAlpha = 0.85 * fade;
+    ctx.lineWidth = 3 + 5 * fade;
+    ctx.beginPath();
+    ctx.moveTo(jet.fromX, jet.fromY);
+    ctx.lineTo(jet.toX, jet.toY);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'butt';
+
   ctx.fillStyle = '#4fc3f7';
   for (const shot of state.shots) {
     ctx.beginPath();
@@ -399,6 +481,26 @@ function draw(
     }
   }
 
+  // A miss splashes where it was aimed: a ring and droplets thrown outwards.
+  for (const miss of state.misses) {
+    const t = miss.age / MISS_SPLASH_LIFE;
+    ctx.globalAlpha = 1 - t;
+    ctx.strokeStyle = colors.water;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(miss.x, miss.y, 6 + t * 18, 3 + t * 7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = colors.water;
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI + (Math.PI * (i + 0.5)) / 6;
+      const r = 4 + t * 20;
+      ctx.beginPath();
+      ctx.arc(miss.x + Math.cos(a) * r, miss.y + Math.sin(a) * r - t * 6, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
   // Score popups float up from each splash and fade.
   ctx.textAlign = 'center';
   for (const splash of state.splashes) {
@@ -412,12 +514,11 @@ function draw(
   ctx.globalAlpha = 1;
 
   // Cannon, pointing at the aim.
-  const angle = Math.atan2(Math.min(aim.y - CANNON.y, -1), aim.x - CANNON.x);
   ctx.save();
   ctx.translate(CANNON.x, CANNON.y);
-  ctx.rotate(angle);
+  ctx.rotate(shotPath(aim.x, aim.y).angle);
   ctx.fillStyle = colors.accent;
-  ctx.fillRect(0, -8, 46, 16);
+  ctx.fillRect(0, -8, BARREL_LENGTH, 16);
   ctx.restore();
   ctx.fillStyle = colors.surface;
   ctx.beginPath();
