@@ -298,10 +298,34 @@ export const BUTTON = { x: WIDTH - 280, y: HEIGHT - 90, w: 240, h: 52 } as const
 export const TOWER = { x: 140, top: 90, bottom: HEIGHT - 60, w: 40 } as const;
 export const METER = { x: 300, y: 300, w: 440, h: 36 } as const;
 
+/** A zone's points value as drawn on the meter, centred on x with its baseline at y. */
+export interface ZoneLabel {
+  text: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Where each zone's points value is drawn on the meter: centred on every band,
+ * on both sides of the centre, inside the meter. The bell zone is too narrow
+ * for its text, so its value sits just above the meter.
+ */
+export function zoneLabels(): ZoneLabel[] {
+  const mid = METER.x + METER.w / 2;
+  const inside = METER.y + METER.h / 2 + 5;
+  const labels: ZoneLabel[] = [{ text: String(ZONES[0].points), x: mid, y: METER.y - 20 }];
+  for (let i = 1; i < ZONES.length; i++) {
+    const offset = ((ZONES[i - 1].within + ZONES[i].within) / 2) * (METER.w / 2);
+    const text = String(ZONES[i].points);
+    labels.push({ text, x: mid - offset, y: inside }, { text, x: mid + offset, y: inside });
+  }
+  return labels;
+}
+
 /**
  * Where each end-screen breakdown line is drawn: right-aligned at x, with its
  * baseline at y, in the small font. The lines sit left of the replay button,
- * below the zones legend and above the tower's base, so nothing covers them.
+ * below the meter's caption and above the tower's base, so nothing covers them.
  */
 export function breakdownRow(index: number): { x: number; y: number } {
   return { x: BUTTON.x - 16, y: METER.y + METER.h + 50 + index * 24 };
@@ -361,6 +385,13 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   }
   ctx.strokeStyle = colors.text;
   ctx.strokeRect(METER.x, METER.y, METER.w, METER.h);
+  // Each zone's value on its band, drawn before the markers so they pass over it.
+  ctx.textAlign = 'center';
+  ctx.font = canvasFont('small', 'bold');
+  for (const label of zoneLabels()) {
+    ctx.fillStyle = label.y < METER.y ? colors.accent : colors.text;
+    ctx.fillText(label.text, label.x, label.y);
+  }
   const struck = lastStrike(state);
   if (struck && state.phase !== 'aiming' && state.phase !== 'ready') {
     // Where the last strike landed stays on the meter while its puck flies.
@@ -380,7 +411,7 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   const mid = METER.x + METER.w / 2;
   ctx.font = canvasFont('small');
   ctx.fillStyle = colors.muted;
-  ctx.fillText('Zones: centre 100 (bell), 75, 50, 25, edge 10', mid, METER.y + METER.h + 26);
+  ctx.fillText('The centre rings the bell', mid, METER.y + METER.h + 26);
 
   ctx.font = canvasFont('body');
   ctx.fillStyle = colors.text;
