@@ -6,6 +6,7 @@ import {
   TOWER,
   FLIGHT_TIME,
   TIMING_LABELS,
+  ZONES,
   MARKER_PERIOD,
   SWINGS,
   bestSwing,
@@ -30,6 +31,7 @@ import {
   takeFinalScore,
   timingFor,
   total,
+  zoneLabels,
   type StrikerState,
 } from './game';
 
@@ -292,6 +294,31 @@ describe('high striker timing feedback', () => {
       expect(row.y + size * 0.3).toBeLessThan(TOWER.bottom);
       expect(row.y).toBeLessThan(theme.canvas.height);
       previous = row.y;
+    }
+  });
+
+  it('labels every zone on the meter with the points a strike there scores', () => {
+    const labels = zoneLabels();
+    // The bell once, every other zone once on each side of the centre.
+    expect(labels).toHaveLength(ZONES.length * 2 - 1);
+    expect(new Set(labels.map((l) => l.text))).toEqual(new Set(ZONES.map((z) => String(z.points))));
+    for (const label of labels) {
+      const position = ((label.x - METER.x) / METER.w) * 2 - 1;
+      expect(String(scoreFor(position))).toBe(label.text);
+    }
+  });
+
+  it('draws the zone values inside the meter, and the bell value just above it', () => {
+    const size = theme.font.small;
+    for (const label of zoneLabels()) {
+      if (label.text === String(ZONES[0].points)) {
+        // Clear of the markers, which reach 16px above the meter.
+        expect(label.y).toBeLessThanOrEqual(METER.y - 16);
+        expect(label.y - size).toBeGreaterThan(230);
+      } else {
+        expect(label.y - size * 0.75).toBeGreaterThanOrEqual(METER.y);
+        expect(label.y).toBeLessThanOrEqual(METER.y + METER.h);
+      }
     }
   });
 
