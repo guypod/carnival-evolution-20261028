@@ -22,6 +22,7 @@ import {
   registerHit,
   registerMiss,
   replay,
+  roundSummary,
   scoreForHit,
   selectMode,
   selectorActionAt,
@@ -433,5 +434,43 @@ describe('water cannon challenge modes', () => {
     state = applyAction(state, action as { type: 'start' });
     expect(state.tank).toBe(TANK_SIZE);
     expect(state.shots).toHaveLength(0);
+  });
+});
+
+describe('water cannon result card', () => {
+  const target = { x: 0, y: 0, radius: 20, speed: 60 };
+
+  it('counts hits, shots, accuracy and the best streak', () => {
+    const state = createState();
+    for (let i = 0; i < 4; i++) fire(state, 400, 0);
+    registerHit(state, target);
+    registerHit(state, target);
+    registerMiss(state);
+    registerHit(state, target);
+    expect(roundSummary(state)).toEqual({ hits: 3, shots: 4, accuracy: 75, bestStreak: 2 });
+  });
+
+  it('rounds accuracy to a whole percentage', () => {
+    const state = createState();
+    for (let i = 0; i < 3; i++) fire(state, 400, 0);
+    registerHit(state, target);
+    expect(roundSummary(state).accuracy).toBe(33);
+  });
+
+  it('shows 0% accuracy before any shot is fired', () => {
+    expect(roundSummary(createState())).toEqual({ hits: 0, shots: 0, accuracy: 0, bestStreak: 0 });
+  });
+
+  it('starts a replay with no hits and no best streak', () => {
+    const state = createState();
+    fire(state, 400, 0);
+    registerHit(state, target);
+    state.phase = 'over';
+    expect(roundSummary(beginRound(replay(state)))).toEqual({
+      hits: 0,
+      shots: 0,
+      accuracy: 0,
+      bestStreak: 0,
+    });
   });
 });
