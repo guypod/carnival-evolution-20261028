@@ -1,13 +1,11 @@
 {
   "version": 1,
-  "head": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
+  "head": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
   "reviewedThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
   "pending": [
     "#/records",
     "#/booths",
     "#/balloon",
-    "#/snack",
-    "#/coaster",
     "#/fair",
     "#/parade",
     "#/expedition",
@@ -31,11 +29,11 @@
       "route": "#/",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at 0e55deb: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon, beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
+      "note": "Still at 0eb5cb7: the Photo button in the top-right toolbar is a raw white/grey default button with small default text and a missing-glyph icon, beside the dark rounded Help/Guide/Start tour buttons; same at 390px.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-31T06:52:20.583Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/prizes:desktop-clean:materials",
@@ -190,9 +188,9 @@
       "criterion": "controls",
       "note": "Still at a863a17: Player 1/2 nickname fields are default white inputs with grey placeholder and the mode radios are default blue/white dots, unlike the themed Start party button.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-10-31T18:20:10.646Z",
       "applied": [
         "398:merged:2026-10-30T15:46:01Z"
       ],
@@ -203,11 +201,11 @@
       "route": "#/party",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Still at 0e55deb: the framed setup panel sits left at 720px wide with a large empty dark area to its right and below; there is no scene or stall as focal point, only the form panel.",
+      "note": "Still at 0eb5cb7: the framed setup panel sits left at 720px wide with a large empty dark area to its right and below; there is no scene or stall as focal point, only the form panel.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-31T06:52:20.583Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/party:desktop-clean:spacing",
@@ -216,9 +214,9 @@
       "criterion": "spacing",
       "note": "Still at a863a17: the 200px inputs sit under a full-width fieldset, with a large uneven gap between Start party and the closing note.",
       "firstSeen": "2026-10-30T06:19:42.290Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-10-31T18:20:10.646Z",
       "applied": [
         "398:merged:2026-10-30T15:46:01Z"
       ],
@@ -361,55 +359,55 @@
       "route": "#/snack",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at 3f87238: Serve/Start over/Next visitor are raw grey default buttons with small default text and Base/Topping/Presentation use default white radio dots; same at 390px.",
+      "note": "Still at 0eb5cb7: Base/Topping/Presentation use default white radio dots with small default text; Serve/Start over/Next visitor are now themed pills; same at 390px.",
       "firstSeen": "2026-10-30T15:17:26.050Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:34:27.953Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/snack:desktop-clean:composition",
       "route": "#/snack",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Still at 3f87238: fieldsets run full width at the top, then a small visitor face floats in a large empty area above a 360px brown strip at the left; most of the screen is blank background with no stall as focal point.",
+      "note": "Still at 0eb5cb7: fieldsets run full width at the top, then a small visitor face floats in a large empty area above a 360px brown strip at the left; most of the screen is blank background with no stall as focal point.",
       "firstSeen": "2026-10-30T15:17:26.050Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:34:27.953Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/snack:desktop-clean:depth",
       "route": "#/snack",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Still at 3f87238: the visitor sits on flat background and the counter is a flat brown bar with no frame, shadow or awning; the controls are not in a framed panel with the scene; the page heading carries a thin white box outline.",
+      "note": "Still at 0eb5cb7: the visitor sits on flat background and the counter is a flat brown bar with no frame, shadow or awning; the controls are not in a framed panel with the scene; the page heading carries a thin white box outline.",
       "firstSeen": "2026-10-30T15:17:26.050Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:34:27.953Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/coaster:desktop-clean:controls",
       "route": "#/coaster",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Still at 3f87238: Point, Raise, Lower, Test, Pause, Step, Undo, Reset layout and Save placard are raw grey default buttons with small default text; Ride name is a default white input and Emblem/Colours are default white selects; same at 390px.",
+      "note": "Still at 0eb5cb7: Point, Raise, Lower, Test, Pause, Step, Undo, Reset layout and Save placard are raw grey default buttons with small default text; Ride name is a default white input and Emblem/Colours are default white selects; same at 390px.",
       "firstSeen": "2026-10-30T15:40:27.415Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:35:25.462Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/coaster:desktop-clean:depth",
       "route": "#/coaster",
       "state": "desktop-clean",
       "criterion": "depth",
-      "note": "Still at 3f87238: the track canvas sits on the flat page background with only a lilac key strip under it; no frame, shadow or panel joins the track, its controls and the placard.",
+      "note": "Still at 0eb5cb7: the track canvas sits on the flat page background with only a lilac key strip under it; no frame, shadow or panel joins the track, its controls and the placard.",
       "firstSeen": "2026-10-30T15:40:27.415Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
       "status": "open",
-      "seenOn": "2026-10-30T16:35:25.462Z"
+      "seenOn": "2026-10-31T18:20:10.646Z"
     },
     {
       "fingerprint": "#/fair:desktop-clean:art-integration",
@@ -668,16 +666,18 @@
     }
   ],
   "reviewedAt": {
-    "#/": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+    "#/": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
     "#/prizes": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
     "#/room": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
     "#/toy": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
     "#/trail": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
     "#/circuit": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
-    "#/party": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+    "#/party": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
     "#/postcard": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
     "#/plush": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
-    "#/tune": "d82487a0aed3c940e728d0fc8850306b61a6bfd4"
+    "#/tune": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
+    "#/snack": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
+    "#/coaster": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7"
   },
-  "reconciledAt": "2026-10-31T12:18:23.180Z"
+  "reconciledAt": "2026-10-31T18:18:23.165Z"
 }
