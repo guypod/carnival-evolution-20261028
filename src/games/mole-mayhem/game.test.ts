@@ -25,6 +25,7 @@ import {
   startRound,
   step,
   takeFinalScore,
+  timeBarShare,
   whack,
   type MoleState,
 } from './game';
@@ -481,5 +482,30 @@ describe('mole mayhem', () => {
     saveFinalScore(state, (score) => saved.push(score));
     saveFinalScore(state, (score) => saved.push(score));
     expect(saved).toEqual([POINTS_PER_HIT]);
+  });
+});
+
+describe('timeBarShare', () => {
+  it('drains from full to empty over the round', () => {
+    const state = createState(seededRng(1));
+    expect(timeBarShare(state)).toBe(1);
+    startRound(state);
+    expect(timeBarShare(state)).toBe(1);
+    step(state, ROUND_TIME / 4);
+    expect(timeBarShare(state)).toBeCloseTo(0.75);
+    step(state, ROUND_TIME / 2);
+    expect(timeBarShare(state)).toBeCloseTo(0.25);
+    step(state, ROUND_TIME);
+    expect(state.phase).toBe('over');
+    expect(timeBarShare(state)).toBe(0);
+  });
+
+  it('stays still and complete during a quiet round, and is empty at the end', () => {
+    const state = createState(seededRng(1));
+    startRound(state);
+    step(state, ROUND_TIME / 2);
+    expect(timeBarShare(state, true)).toBe(1);
+    step(state, ROUND_TIME);
+    expect(timeBarShare(state, true)).toBe(0);
   });
 });
