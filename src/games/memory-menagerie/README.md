@@ -38,7 +38,8 @@ you can.
 - To the right of the cards, the **Found** tray has six slots. Each time you
   find a pair, its animal (picture and name) fills a slot, in the order the
   symbols are numbered, and stays there for the rest of the round. Empty slots
-  show how many pairs are left. A new round starts with an empty tray.
+  show how many pairs are left. The full tray stays visible beside the results
+  when the round ends. A new round starts with an empty tray.
 
 ## Scoring
 

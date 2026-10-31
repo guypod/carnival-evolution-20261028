@@ -577,6 +577,9 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
       WIDTH / 2,
       BUTTON.y + 33,
     );
+
+    // Draw the full tray again over the results, so the last pair found stays visible.
+    if (state.phase === 'over') drawTray(ctx, state);
   }
 }
 
