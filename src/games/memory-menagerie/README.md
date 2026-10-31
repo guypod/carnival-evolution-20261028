@@ -27,8 +27,8 @@ you can.
 - Below the cards, a **Forecast** shows the score you would finish with if
   every pair still hidden were matched on its first try from here, less the
   peek if you used it, never below 0. It is a forecast, not points already
-  earned: each miss lowers it by 10, until it reaches 0. Next to it, a short
-  line says what your last try did (a match and its symbol, or a miss and how
+  earned: each miss lowers it by 10, until it reaches 0. Under it, a short
+  tag says what your last try did (a match and its symbol, or a miss and how
   much it lowered the forecast, with no number once the forecast was already
   0), and the top right shows
   pairs found and pairs left. The feedback starts empty in every new round.
