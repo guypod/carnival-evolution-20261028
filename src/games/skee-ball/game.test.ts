@@ -7,6 +7,10 @@ import {
   TARGETS,
   aimFor,
   ballDistance,
+  ballPosition,
+  inEllipse,
+  landingFor,
+  ringEllipse,
   beginRound,
   createState,
   keyAction,
@@ -72,6 +76,43 @@ describe('skee ball', () => {
     expect(ballDistance(0.6, 0)).toBe(0);
     expect(ballDistance(0.6, 1)).toBeCloseTo(0.6);
     expect(ballDistance(0.6, 0.5)).toBeGreaterThan(0.3);
+  });
+
+  it('moves the ball up the lane from the player end towards its landing point', () => {
+    const start = ballPosition(0, ballDistance(0.6, 0));
+    const mid = ballPosition(0, ballDistance(0.6, 0.5));
+    const end = ballPosition(0, ballDistance(0.6, 1));
+    expect(mid.y).toBeLessThan(start.y);
+    expect(end.y).toBeLessThan(mid.y);
+    expect(end.r).toBeLessThan(start.r);
+  });
+
+  /** Whether a ball at canvas `y` on `lane`'s centre line sits inside ring `ring`. */
+  const inRing = (lane: number, ring: number, y: number) => {
+    const e = ringEllipse(lane, ring);
+    return inEllipse(e, e.x, y);
+  };
+
+  it('draws the landed ball inside the ring it scored, or short of the rings', () => {
+    for (let lane = 0; lane < 3; lane++) {
+      for (let power = 0; power <= 1; power += 0.005) {
+        const landing = landingFor(lane, power);
+        const points = scoreRoll(lane, power);
+        const ball = ballPosition(lane, landing.distance);
+        if (landing.ring === undefined) {
+          expect(points).toBe(0);
+          expect(inRing(lane, RINGS.length - 1, ball.y)).toBe(false);
+        } else {
+          expect(RINGS[landing.ring].points).toBe(points);
+          expect(inRing(lane, landing.ring, ball.y)).toBe(true);
+          if (landing.ring > 0) expect(inRing(lane, landing.ring - 1, ball.y)).toBe(false);
+        }
+      }
+    }
+    const state = aiming();
+    roll(state, TARGETS[1]);
+    expect(state.lastBall).toEqual(landingFor(1, TARGETS[1]));
+    expect(state.lastBall?.ring).toBe(0);
   });
 
   it('aims with Left/Right, clamped, and maps lanes to the ramp', () => {
