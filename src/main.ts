@@ -358,7 +358,7 @@ function renderMidway() {
       <canvas class="midway-map" tabindex="0" aria-label="The carnival midway. Focus the map, then walk with WASD or the arrow keys, and press E at a booth to play."></canvas>
       <div class="photo-frame-outline" aria-hidden="true" hidden></div>
       <p class="midway-help">
-        Welcome to Guy's Carnival!<br />
+        Welcome to Tessl Carnival!<br />
         <kbd>WASD</kbd> or <kbd>arrows</kbd> to walk, or click where you want to go.
         <kbd>E</kbd> to play.
       </p>
