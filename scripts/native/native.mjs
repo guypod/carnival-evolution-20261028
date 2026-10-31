@@ -1114,7 +1114,15 @@ export const BROWSER_CHECK = 'browser-flow';
 export const EVIDENCE_BRANCH = 'factory-state/browser-evidence';
 const EVIDENCE_RE = /<!-- carnival-browser-flow:v1 (\{.*?\}) -->/s;
 // Files no screen draws with and no player runs. Anything else is an app change.
-const INFRA_ONLY = [/^scripts\//, /^docs\//, /^tessl-factory\//, /^skills\//, /^[^/]+\.md$/];
+// The flow scripts that produce browser evidence are not exempt: a change to
+// them must be played too, or it could weaken every later flow unseen.
+const INFRA_ONLY = [
+  /^scripts\/(?!visual\/)/,
+  /^docs\/.*\.md$/,
+  /^tessl-factory\//,
+  /^skills\//,
+  /^[^/]+\.md$/,
+];
 
 export const evidenceMarker = (record) =>
   `<!-- carnival-browser-flow:v1 ${JSON.stringify(record)} -->`;
@@ -1162,8 +1170,14 @@ export function browserEvidence(head, checks, shots) {
   if (!/^[0-9a-f]{40}$/.test(record.evidenceCommit ?? ''))
     reasons.push('browser-flow evidence names no retained commit');
   if (!shots?.complete) reasons.push('retained screenshots not read');
+  else if (!shots.onEvidenceBranch)
+    reasons.push(`browser-flow evidence commit is not on ${EVIDENCE_BRANCH}`);
   else
     for (const sh of list) {
+      if (!String(sh?.path ?? '').startsWith(`evidence/${head}/`) || /[?#]|\.\./.test(sh.path)) {
+        reasons.push(`screenshot ${sh?.path} is not under evidence/${head}/`);
+        continue;
+      }
       const got = shots.digests?.[sh?.path];
       if (!got) reasons.push(`screenshot ${sh?.path} is not retained`);
       else if (got !== sh.sha256) reasons.push(`screenshot ${sh.path} does not match its digest`);
@@ -1370,6 +1384,13 @@ function retainedShots(checks, head) {
   if (!m) return { complete: true, digests: {} };
   try {
     const record = JSON.parse(m[1]);
+    if (!/^[0-9a-f]{40}$/.test(record.evidenceCommit ?? '')) return { complete: true, digests: {} };
+    // The commit must be on the evidence branch: identical to or behind its tip.
+    const cmp = JSON.parse(
+      gh(['api', `repos/${REPOSITORY}/compare/${record.evidenceCommit}...${EVIDENCE_BRANCH}`]),
+    );
+    if (!['identical', 'ahead'].includes(cmp.status))
+      return { complete: true, onEvidenceBranch: false, digests: {} };
     const digests = {};
     for (const sh of record.screenshots ?? []) {
       const bytes = execFileSync(
@@ -1378,13 +1399,13 @@ function retainedShots(checks, head) {
           'api',
           '-H',
           'Accept: application/vnd.github.raw',
-          `repos/${REPOSITORY}/contents/${sh.path}?ref=${record.evidenceCommit}`,
+          `repos/${REPOSITORY}/contents/${encodeURI(sh.path)}?ref=${record.evidenceCommit}`,
         ],
         { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
       );
       digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
     }
-    return { complete: true, digests };
+    return { complete: true, onEvidenceBranch: true, digests };
   } catch {
     return { complete: false, digests: {} };
   }

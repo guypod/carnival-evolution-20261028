@@ -257,17 +257,18 @@ run created by the factory app (app 4096310) on the exact head, completed with
 
 - names that head;
 - lists at least one changed flow, every one with `result: pass`;
-- lists screenshots retained on `factory-state/browser-evidence` at the
-  recorded commit, each of whose bytes, read back by the controller, hash to
-  the recorded sha256.
+- lists screenshots under `evidence/<head>/`, retained at a recorded commit
+  that is on `factory-state/browser-evidence`, each of whose bytes, read back
+  by the controller, hash to the recorded sha256.
 
 Missing, stale (another head), failed, still running, forged (another app),
-recordless or digest-mismatched evidence refuses the merge, and so does an
+recordless, off-branch or digest-mismatched evidence refuses the merge, and so does an
 unread file listing. The one exception is a complete changed-file listing in
 which every file is infrastructure that no screen draws with: under
-`scripts/`, `docs/`, `tessl-factory/` or `skills/`, or a top-level `.md`
-file. Anything else, including `index.html`, `src/` and `package.json`, is an
-app change.
+`scripts/` other than `scripts/visual/` (which produces the evidence),
+`tessl-factory/` or `skills/`, a Markdown file under `docs/`, or a top-level
+`.md` file. Anything else, including `index.html`, `src/`, `package.json` and
+images under `docs/`, is an app change.
 
 `scripts/visual/run-flow.sh <out dir> <flow> --publish` produces this evidence
 on the checked-out, committed head: it sets up headless Chromium with

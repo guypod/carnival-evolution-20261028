@@ -589,7 +589,7 @@ const record = (extra = {}) => ({
   head: HEAD,
   evidenceCommit: EVIDENCE,
   flows: [{ name: 'mini-putt hole done then Next', result: 'pass' }],
-  screenshots: [{ path: 'evidence/a/hole-done.png', sha256: SHOT }],
+  screenshots: [{ path: `evidence/${HEAD}/hole-done.png`, sha256: SHOT }],
   ...extra,
 });
 const browserRun = (extra = {}) => ({
@@ -602,7 +602,11 @@ const browserRun = (extra = {}) => ({
   output: { text: evidenceMarker(record()) },
   ...extra,
 });
-const shots = { complete: true, digests: { 'evidence/a/hole-done.png': SHOT } };
+const shots = {
+  complete: true,
+  onEvidenceBranch: true,
+  digests: { [`evidence/${HEAD}/hole-done.png`]: SHOT },
+};
 const appFiles = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
 const snapshot = (extra = {}) => ({
   writerKeyHeld: true,
@@ -2128,13 +2132,17 @@ refuses(
 refuses(
   'screenshot bytes that do not match the record',
   snapshot({
-    browserShots: { complete: true, digests: { 'evidence/a/hole-done.png': 'e'.repeat(64) } },
+    browserShots: {
+      complete: true,
+      onEvidenceBranch: true,
+      digests: { [`evidence/${HEAD}/hole-done.png`]: 'e'.repeat(64) },
+    },
   }),
   /does not match its digest/,
 );
 refuses(
   'screenshot not retained',
-  snapshot({ browserShots: { complete: true, digests: {} } }),
+  snapshot({ browserShots: { complete: true, onEvidenceBranch: true, digests: {} } }),
   /is not retained/,
 );
 refuses(
@@ -2197,18 +2205,51 @@ test('browser evidence: a published flow report round-trips through the gate', a
     checks: [{ check: 'Next moves to the next hole', result: 'pass' }],
     screenshots: [{ file: 'hole-done.png', sha256: SHOT }],
   };
-  const body = flowCheckRun(report, HEAD, EVIDENCE, 'evidence/a');
+  const body = flowCheckRun(report, HEAD, EVIDENCE, `evidence/${HEAD}`);
   const run = { ...body, id: 9, app: { id: BOT_APP_ID } };
   assert.deepEqual(browserEvidence(HEAD, [run], shots), []);
   const failed = flowCheckRun(
     { ...report, result: 'fail', checks: [{ check: 'x', result: 'fail' }] },
     HEAD,
     EVIDENCE,
-    'evidence/a',
+    `evidence/${HEAD}`,
   );
   assert.equal(failed.conclusion, 'failure');
   assert.match(
     browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots).join(),
     /failure/,
   );
+});
+
+refuses(
+  'evidence commit not on the evidence branch',
+  snapshot({ browserShots: { complete: true, onEvidenceBranch: false, digests: {} } }),
+  /not on factory-state\/browser-evidence/,
+);
+refuses(
+  'screenshot outside the head evidence folder',
+  snapshot({
+    checks: withRun(
+      browserRun({
+        output: {
+          text: evidenceMarker(
+            record({ screenshots: [{ path: `evidence/${OLD}/x.png`, sha256: SHOT }] }),
+          ),
+        },
+      }),
+    ),
+    browserShots: {
+      complete: true,
+      onEvidenceBranch: true,
+      digests: { [`evidence/${OLD}/x.png`]: SHOT },
+    },
+  }),
+  /is not under evidence\//,
+);
+
+test('browser evidence: flow scripts and non-markdown docs are app changes', () => {
+  const list = (...f) => ({ complete: true, items: f.map((filename) => ({ filename })) });
+  assert.equal(needsBrowserEvidence(list('scripts/visual/flow.mjs')), true);
+  assert.equal(needsBrowserEvidence(list('docs/social-preview.jpg')), true);
+  assert.equal(needsBrowserEvidence(list('docs/midway.md', 'scripts/native/native.mjs')), false);
 });
