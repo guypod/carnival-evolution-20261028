@@ -16,9 +16,9 @@ and dodge the reeds floating towards you.
   same speed as the stars and reeds. With Quiet midway on, or when the system
   asks for reduced motion, the ripples hold still.
 - Your current star streak and the best streak this round show on the left.
-- When time runs out the result screen shows your score, stars collected (and
-  the points they earned), reeds hit, the streak bonus total and your best
-  streak. Press **Play again** (or Space/Enter) to replay.
+- When time runs out the result screen shows your score, then a table of stars
+  collected (and the points they earned), reeds hit, the streak bonus total,
+  your best streak and the final score. Press **Play again** (or Space/Enter) to replay.
 
 Keys are ignored while a link or other page control has focus, so they keep
 working for that control.
