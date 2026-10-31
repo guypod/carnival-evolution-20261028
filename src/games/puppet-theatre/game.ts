@@ -853,7 +853,9 @@ function draw(ctx: CanvasRenderingContext2D, theatre: Theatre) {
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('small');
     ctx.textAlign = 'center';
-    ctx.fillText(`(holding the ${stage.gift})`, stage.positions.dragon, FLOOR_Y + 40);
+    // Above the dragon's head, clear of the audience row at the bottom.
+    const drop = stage.poses.dragon === 'hide' ? 60 : 0;
+    ctx.fillText(`(holding the ${stage.gift})`, stage.positions.dragon, FLOOR_Y - 156 + drop);
   }
 
   // Silent caption.
