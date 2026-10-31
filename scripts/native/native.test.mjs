@@ -550,6 +550,7 @@ const snapshot = (extra = {}) => ({
   },
   combinedStatus: { state: 'pending', total_count: 0 },
   issue: sourceIssue(),
+  issueLabelActor: { complete: true, actor: owner },
   ...extra,
 });
 
@@ -1027,4 +1028,17 @@ test('a recovered claim whose issue now has a linked pull request is released, n
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.issue, 12);
   assert.ok(!writes(gh).some((c) => c[1] === 11));
+});
+
+test('a source issue label restored by someone other than the owner, or unread, blocks the merge', () => {
+  for (const issueLabelActor of [
+    { complete: true, actor: { id: 7, login: 'triager', type: 'User' } },
+    { complete: true, actor: bot },
+    { complete: true, actor: undefined },
+    { complete: false, actor: owner },
+  ]) {
+    const g = mergeGate(snapshot({ issueLabelActor }));
+    assert.equal(g.merge, false, JSON.stringify(issueLabelActor));
+    assert.match(g.reasons.join(), /source issue label/);
+  }
 });

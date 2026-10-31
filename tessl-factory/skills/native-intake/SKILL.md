@@ -29,7 +29,8 @@ credentials or anything from outside this repository's public record.
    and report that capability failure. Never file items from source alone,
    and never claim to have seen a screen you did not capture.
 3. Also read `WORKSHOP.md`, the game READMEs and every issue, open or closed
-   (`gh api --paginate 'repos/guypod/carnival-evolution-20261028/issues?state=all&per_page=100' --jq '.[] | [.number, .state, .title] | @tsv'`, which has no cap).
+   (`gh api --paginate 'repos/guypod/carnival-evolution-20261028/issues?state=all&per_page=100' --jq '.[] | {number, state, title, body}'`, which has no cap), so you can
+   compare scopes, not only titles.
 4. Write the batch to a file outside the clone as
    `{"slot": "<the backlog slot from step 1>", "candidates": [...]}`, with 18
    candidates `{title, scope, body, evidence}` and item `i` for index `i`.

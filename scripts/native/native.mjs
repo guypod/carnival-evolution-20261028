@@ -488,6 +488,10 @@ export function readReview(review) {
   };
 }
 
+/** The label that hands a PR's issue to Tessl: its body's marker, or tessl. */
+export const issueLabel = (body) =>
+  /<!-- tessl-factory:issue-label: (\S+) -->/.exec(body ?? '')?.[1] ?? TRIGGER_LABEL;
+
 /**
  * Why a pull request's source issue does not match it, as a list. The issue
  * comes from the branch name, and the body must close exactly that issue and
@@ -505,7 +509,7 @@ export function provenance(pr, issue) {
   const n = Number(branch[1]);
   if (closes.length !== 1 || anyClose.length !== 1) return ['no single Closes line'];
   if (closes[0] !== n) return [`Closes #${closes[0]} does not match branch issue #${n}`];
-  const label = /<!-- tessl-factory:issue-label: (\S+) -->/.exec(pr.body)?.[1] ?? TRIGGER_LABEL;
+  const label = issueLabel(pr.body);
   if (!issue) return ['source issue not read'];
   if (issue.number !== n || issue.pull_request) return ['source issue is not the branch issue'];
   if (issue.repository_url !== `https://api.github.com/repos/${REPOSITORY}`)
@@ -536,6 +540,11 @@ export function mergeGate(s) {
   if (!labelNames(pr ?? {}).includes(TRIGGER_LABEL))
     reasons.push('pull request is not labelled tessl');
   reasons.push(...provenance(pr, s.issue));
+  // The issue label must still be the owner's: if it was removed and someone
+  // else put it back, the owner's hand-off was revoked and nothing restores it.
+  if (!s.issueLabelActor?.complete) reasons.push('source issue label history incomplete');
+  else if (s.issueLabelActor.actor?.id !== OWNER_ID || s.issueLabelActor.actor?.type !== 'User')
+    reasons.push('source issue label was not last added by the owner');
   if (!/^[0-9a-f]{40}$/.test(head ?? '')) reasons.push('no head sha');
   if (!s.reviews?.complete) reasons.push('review listing incomplete');
   if (!s.checks?.complete) reasons.push('check listing incomplete');
@@ -657,6 +666,15 @@ function pages(path) {
   }
 }
 
+/** Who last added `label` to issue `n`, read from every page of its events. */
+function labelHistory(n, label) {
+  const r = pages(`repos/${REPOSITORY}/issues/${n}/events?per_page=100`);
+  const actor = r.items
+    .filter((e) => e.event === 'labeled' && e.label?.name === label)
+    .at(-1)?.actor;
+  return { complete: r.complete, actor };
+}
+
 export function ghAdapter({ writerKeyHeld = false } = {}) {
   const base = `repos/${REPOSITORY}`;
   return {
@@ -715,6 +733,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
       const n2 = /^tessl\/issue-(\d+)$/.exec(pr.head.ref)?.[1];
       return {
         issue: n2 ? JSON.parse(gh(['api', `${base}/issues/${n2}`])) : undefined,
+        issueLabelActor: n2 ? labelHistory(n2, issueLabel(pr.body)) : { complete: false },
         writerKeyHeld,
         pr,
         reviews: pages(`${base}/pulls/${n}/reviews?per_page=100`),
