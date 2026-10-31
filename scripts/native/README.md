@@ -437,7 +437,7 @@ It has no mode that publishes a directory it did not just capture.
 - **Pins.** The capture primitives (`isolated-deps.sh`, `isolated-build.sh`,
   `isolated-browser.sh`, `flow.mjs`, `static-serve.mjs`) run from
   `--runner`, a separate clean checkout that must be exactly `CAPTURE_PIN`
-  (3dbcc6d, the independently reviewed capture commit), each file matching
+  (6ae7388, the independently reviewed capture commit), each file matching
   its pinned blob. The Node and Playwright images are the pinned digests,
   their image ids are recorded, and the primitives run with a fixed
   environment, so no `CARNIVAL_*` image override reaches them. It never
@@ -519,7 +519,7 @@ It has no mode that publishes a directory it did not just capture.
   rec=$(gh api "repos/guypod/carnival-evolution-20261028/contents/control/operator-browser-authority.json?ref=$CARNIVAL_AUTHORITY_COMMIT" -H 'Accept: application/vnd.github.raw')
   test "$(printf %s "$rec" | jq -r .wrapper)" = "$W"
   git worktree add --detach /tmp/w "$W" && test "$(git -C /tmp/w rev-parse HEAD)" = "$W"
-  git worktree add --detach /tmp/pin 3dbcc6d5da3799b40660db5c9b8cb65725b76853
+  git worktree add --detach /tmp/pin 6ae738884f7d2007f88917b32062d3b276815a09
   cd /tmp/w && node scripts/native/native.mjs authority
   node scripts/visual/trusted-publish.mjs --pr 449 --candidate "$W" \
     --flow mini-putt-hole-next --runner /tmp/pin --publish
@@ -535,7 +535,7 @@ It has no mode that publishes a directory it did not just capture.
     "approvedBy": "<operator login>",
     "repository": "guypod/carnival-evolution-20261028",
     "wrapper": "<W: final reviewed sha>",
-    "captureRunner": "3dbcc6d5da3799b40660db5c9b8cb65725b76853",
+    "captureRunner": "6ae738884f7d2007f88917b32062d3b276815a09",
     "images": {
       "node": "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da",
       "playwright": "mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48"

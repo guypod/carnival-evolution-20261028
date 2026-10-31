@@ -2500,25 +2500,65 @@ test('attempts: an opened attempt refuses until it concludes, and a setup failur
 
 // ---------- shipped ----------
 
+/** A live record and its retained evidence in the shape live-capture.mjs writes. */
+function liveEvidence(merge, digest, at = '2026-10-31T09:30:00Z') {
+  const dir = liveDir(merge, FLOW);
+  const later = (s) => new Date(Date.parse(at) + s * 1000).toISOString();
+  const scan = (label, a, b) => ({
+    label,
+    mergeSha: merge,
+    matched: true,
+    buildDigest: digest,
+    startedAt: a,
+    finishedAt: b,
+  });
+  const receipts = {
+    'before.json': scan('before', at, later(1)),
+    'after.json': scan('after', later(5), later(6)),
+  };
+  const digests = {
+    [`${dir}a.png`]: 'f'.repeat(64),
+    [`${dir}identity.json`]: '1'.repeat(64),
+    [`${dir}before.json`]: '2'.repeat(64),
+    [`${dir}after.json`]: '3'.repeat(64),
+    [`${dir}requests.json`]: '4'.repeat(64),
+  };
+  const identity = {
+    mergeSha: merge,
+    flow: FLOW,
+    buildDigest: digest,
+    before: { startedAt: at, finishedAt: later(1) },
+    after: { startedAt: later(5), finishedAt: later(6) },
+    receipts: {
+      'before.json': '2'.repeat(64),
+      'after.json': '3'.repeat(64),
+      'requests.json': '4'.repeat(64),
+    },
+  };
+  return {
+    screenshots: Object.entries(digests).map(([path, sha256]) => ({ path, sha256 })),
+    identity,
+    retained: { complete: true, onEvidenceBranch: true, digests, identity, receipts },
+  };
+}
+
 test('shipped: a deploy alone, premerge evidence or a bare live pass never ships', () => {
   const MERGE = 'c'.repeat(40);
   const EV = 'e'.repeat(40);
   const DIR = liveDir(MERGE, FLOW);
   const files = changed('src/games/mini-putt/game.ts');
+  const ev = liveEvidence(MERGE, 'd'.repeat(64));
   const good = {
     head: MERGE,
     flow: FLOW,
     evidenceCommit: EV,
     flows: [{ name: `${FLOW}: x`, result: 'pass' }],
-    screenshots: [
-      { path: `${DIR}a.png`, sha256: 'f'.repeat(64) },
-      { path: `${DIR}identity.json`, sha256: '1'.repeat(64) },
-    ],
+    screenshots: ev.screenshots,
     mergeSha: MERGE,
     deployedSha: MERGE,
     url: LIVE_URL,
     capturedAt: '2026-10-31T10:00:00Z',
-    identity: { buildDigest: 'd'.repeat(64), before: { matched: true }, after: { matched: true } },
+    identity: ev.identity,
   };
   const live = (rec = {}, extra = {}) => ({
     id: 90,
@@ -2531,17 +2571,7 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
     output: { text: evidenceMarker({ ...good, ...rec }) },
     ...extra,
   });
-  const report = (matched = true, digest = good.identity.buildDigest) => ({
-    buildDigest: digest,
-    before: { matched, buildDigest: digest, mismatches: [] },
-    after: { matched, buildDigest: digest, mismatches: [] },
-  });
-  const retained = {
-    complete: true,
-    onEvidenceBranch: true,
-    digests: { [`${DIR}a.png`]: 'f'.repeat(64), [`${DIR}identity.json`]: '1'.repeat(64) },
-    identity: report(),
-  };
+  const retained = ev.retained;
   const ctx = { deployedAt: '2026-10-31T09:00:00Z', shots: { 90: retained } };
   const ship = (checks, c = ctx, f = files) =>
     shipState(MERGE, 'deployed-needs-sanity', f, checks, c);
@@ -2562,8 +2592,8 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
   assert.match(owedBy([live({ deployedSha: 'b'.repeat(40) })]), /does not name .* as deployed/);
   assert.match(owedBy([live({ identity: undefined })]), /served build/);
   assert.match(
-    owedBy([live({ identity: { ...good.identity, after: { matched: false } } })]),
-    /served build/,
+    owedBy([live({ identity: { ...good.identity, buildDigest: '9'.repeat(64) } })]),
+    /retained identity report .* does not match/,
   );
   assert.match(owedBy([live({ url: 'https://elsewhere.example/' })]), /is not for https/);
   assert.match(owedBy([live({ screenshots: [good.screenshots[0]] })]), /does not retain/);
@@ -2586,17 +2616,42 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
   assert.equal(old.state, 'superseded-verification-owed');
   assert.deepEqual(old.keys, [`${MERGE}:${FLOW}`]);
   assert.deepEqual(ship([live()], { ...ctx, supersededBy: 'b'.repeat(40) }).state, 'shipped');
-  // The retained identity report must agree with the inline claim.
+  // The retained identity report and broker receipts decide, not the inline claim.
   const withReport = (identity) => ({ ...ctx, shots: { 90: { ...retained, identity } } });
   for (const bad of [
-    report(false),
-    report(true, '2'.repeat(64)),
-    { ...report(), after: { matched: false, buildDigest: good.identity.buildDigest } },
-    { ...report(), before: { matched: true, buildDigest: '3'.repeat(64) } },
+    { ...ev.identity, buildDigest: '2'.repeat(64) },
+    { ...ev.identity, receipts: { ...ev.identity.receipts, 'after.json': '5'.repeat(64) } },
+    { ...ev.identity, mergeSha: 'b'.repeat(40) },
     undefined,
     null,
   ])
     assert.match(owedBy([live()], withReport(bad)), /retained identity report .* does not match/);
+  const withReceipts = (r) => ({
+    ...ctx,
+    shots: { 90: { ...retained, receipts: { ...retained.receipts, ...r } } },
+  });
+  const b = retained.receipts['before.json'];
+  const a = retained.receipts['after.json'];
+  for (const bad of [
+    { 'before.json': { ...b, matched: false } },
+    { 'after.json': { ...a, buildDigest: '7'.repeat(64) } },
+    { 'after.json': { ...a, mergeSha: 'b'.repeat(40) } },
+    { 'before.json': { ...b, label: 'after' } },
+    { 'after.json': { ...a, startedAt: '2026-10-31T09:40:00Z' } },
+    { 'before.json': null },
+  ])
+    assert.match(owedBy([live()], withReceipts(bad)), /broker receipts .* do not show/);
+  // Receipts scanned before the deploy are stale, whatever capturedAt says.
+  assert.match(
+    owedBy([live()], { ...ctx, deployedAt: '2026-10-31T09:45:00Z' }),
+    /scanned before the deploy/,
+  );
+  assert.match(
+    owedBy([
+      live({ screenshots: good.screenshots.filter((x) => !x.path.endsWith('requests.json')) }),
+    ]),
+    /does not retain .*requests.json/,
+  );
   // A malformed screenshots field is a reason, never an exception.
   for (const screenshots of [{}, 'a.png', null, 7, [null, 'x']]) {
     const r = ship([live({ screenshots })]);
@@ -2686,20 +2741,18 @@ test('shipped: a failed rerun of the same Pages run keeps the verified deploy an
   const MERGE = 'c'.repeat(40);
   const DIR = liveDir(MERGE, FLOW);
   const digest = 'd'.repeat(64);
+  const ev = liveEvidence(MERGE, digest, '2026-10-31T02:30:00Z');
   const rec = {
     head: MERGE,
     flow: FLOW,
     evidenceCommit: 'e'.repeat(40),
     flows: [{ name: `${FLOW}: x`, result: 'pass' }],
-    screenshots: [
-      { path: `${DIR}a.png`, sha256: 'f'.repeat(64) },
-      { path: `${DIR}identity.json`, sha256: '1'.repeat(64) },
-    ],
+    screenshots: ev.screenshots,
     mergeSha: MERGE,
     deployedSha: MERGE,
     url: LIVE_URL,
     capturedAt: '2026-10-31T03:00:00Z',
-    identity: { buildDigest: digest, before: { matched: true }, after: { matched: true } },
+    identity: ev.identity,
   };
   const live = {
     id: 90,
@@ -2711,13 +2764,7 @@ test('shipped: a failed rerun of the same Pages run keeps the verified deploy an
     conclusion: 'success',
     output: { text: evidenceMarker(rec) },
   };
-  const side = { matched: true, buildDigest: digest, mismatches: [] };
-  const retained = {
-    complete: true,
-    onEvidenceBranch: true,
-    digests: { [`${DIR}a.png`]: 'f'.repeat(64), [`${DIR}identity.json`]: '1'.repeat(64) },
-    identity: { buildDigest: digest, before: side, after: side },
-  };
+  const retained = ev.retained;
   // One workflow run id: attempt 1 deployed at 02:00, attempt 2 failed at 05:00
   // and now owns the listing entry.
   const run = {

@@ -443,3 +443,187 @@ console.log(out)`,
     rmSync(d, { recursive: true, force: true });
   },
 );
+
+// ---------- CLI entry, async browser runner, deployment and record ----------
+
+import { EventEmitter } from 'node:events';
+import {
+  deploymentProblems,
+  liveInvocationProblems,
+  liveRecord,
+  parseLiveArgs,
+  runBrowser,
+} from './live-capture.mjs';
+
+const STEP = '0123abcd-0000-4000-8000-000000000000';
+const CID = 'c'.repeat(64);
+/** A fake docker client process; `exitAfter` ms, or never when null. */
+function fakeSpawn(exitAfter, code = 0) {
+  const calls = [];
+  const sp = (cmd, args) => {
+    calls.push([cmd, args]);
+    const child = new EventEmitter();
+    child.killed = false;
+    child.kill = () => {
+      child.killed = true;
+      setImmediate(() => child.emit('exit', null));
+    };
+    if (exitAfter !== null) setTimeout(() => child.emit('exit', code), exitAfter);
+    return child;
+  };
+  return { sp, calls };
+}
+/** Fake Docker controls: a label listing that returns `running` until killed. */
+function fakeControl(running, { killFails = false, psFails = false } = {}) {
+  const calls = [];
+  let left = running;
+  const control = async (args) => {
+    calls.push(args);
+    if (args[0] === 'ps') return psFails ? null : left;
+    if (args[0] === 'kill') {
+      if (killFails) return null;
+      left = [];
+      return [];
+    }
+    return null;
+  };
+  return { control, calls };
+}
+
+test('runBrowser is asynchronous: the event loop keeps serving while the browser runs', async () => {
+  const { sp } = fakeSpawn(50);
+  const { control, calls } = fakeControl([]);
+  let ticks = 0;
+  const iv = setInterval(() => ticks++, 5);
+  const code = await runBrowser(['run'], { step: STEP, seconds: 5, spawn: sp, control });
+  clearInterval(iv);
+  assert.equal(code, 0);
+  assert.ok(ticks >= 3, 'timers ran while the browser was running');
+  // Only this step's label is ever listed.
+  assert.deepEqual(calls[0], [
+    'ps',
+    '-q',
+    '--no-trunc',
+    '--filter',
+    `label=carnival.capture-step=${STEP}`,
+  ]);
+});
+
+test('runBrowser: a hung browser is killed at its bound, and only its own container', async () => {
+  const { sp } = fakeSpawn(null);
+  const { control, calls } = fakeControl([CID]);
+  const t = Date.now();
+  const code = await runBrowser(['run'], { step: STEP, seconds: 0.1, spawn: sp, control });
+  assert.equal(code, 124);
+  assert.ok(Date.now() - t < 2000);
+  assert.deepEqual(
+    calls.find((c) => c[0] === 'kill'),
+    ['kill', CID],
+  );
+  assert.ok(
+    calls
+      .filter((c) => c[0] === 'ps')
+      .every((c) => c.at(-1) === `label=carnival.capture-step=${STEP}`),
+  );
+});
+
+test('runBrowser fails closed when Docker cannot be read or the kill fails', async () => {
+  assert.equal(
+    await runBrowser(['run'], {
+      step: STEP,
+      seconds: 5,
+      spawn: fakeSpawn(1).sp,
+      control: fakeControl([], { psFails: true }).control,
+    }),
+    125,
+  );
+  assert.equal(
+    await runBrowser(['run'], {
+      step: STEP,
+      seconds: 5,
+      spawn: fakeSpawn(1).sp,
+      control: fakeControl([CID], { killFails: true }).control,
+    }),
+    125,
+  );
+  // A browser that exits non-zero is that code; one leaving a container is 124.
+  assert.equal(
+    await runBrowser(['run'], {
+      step: STEP,
+      seconds: 5,
+      spawn: fakeSpawn(1, 3).sp,
+      control: fakeControl([]).control,
+    }),
+    3,
+  );
+  assert.equal(
+    await runBrowser(['run'], {
+      step: STEP,
+      seconds: 5,
+      spawn: fakeSpawn(1).sp,
+      control: fakeControl([CID]).control,
+    }),
+    124,
+  );
+});
+
+test('live CLI: arguments, missing anchor and unapproved authority are refused as owed', () => {
+  assert.throws(() => parseLiveArgs(['--url', 'https://x']), /unknown argument/);
+  const o = parseLiveArgs(['--merge', MERGE, '--flow', FLOW, '--runner', '/r', '--publish']);
+  assert.deepEqual(o, { merge: MERGE, flow: FLOW, runner: '/r', publish: true });
+  assert.deepEqual(liveInvocationProblems({ ...o, publish: false }, 'w', undefined), []);
+  assert.match(liveInvocationProblems({ ...o, merge: 'abc' }, 'w', undefined).join(), /full sha/);
+  assert.match(liveInvocationProblems({ ...o, flow: 'skee-ball' }, 'w', undefined).join(), /owed/);
+  assert.match(liveInvocationProblems(o, 'w', undefined).join(), /not read: owed/);
+  const anchorless = {
+    complete: true,
+    problems: ['authority anchor CARNIVAL_AUTHORITY_COMMIT missing or invalid'],
+  };
+  assert.match(
+    liveInvocationProblems(o, 'w', anchorless).join(),
+    /CARNIVAL_AUTHORITY_COMMIT .*: owed/,
+  );
+  const record = { wrapper: 'a'.repeat(40), flows: { [FLOW]: FLOWS[FLOW] } };
+  const good = { complete: true, problems: [], record };
+  assert.deepEqual(liveInvocationProblems(o, 'a'.repeat(40), good), []);
+  assert.match(liveInvocationProblems(o, 'b'.repeat(40), good).join(), /not the approved/);
+  const flows = { [FLOW]: { ...FLOWS[FLOW], checks: [] } };
+  assert.match(
+    liveInvocationProblems(o, 'a'.repeat(40), { ...good, record: { ...record, flows } }).join(),
+    /spec: owed/,
+  );
+});
+
+test('deploymentProblems: unread, undeployed and superseded deployments are refused', () => {
+  assert.deepEqual(deploymentProblems(MERGE, { deployedAt: '2026-10-31T00:00:00Z' }), []);
+  assert.match(deploymentProblems(MERGE, { incomplete: true }).join(), /not read/);
+  assert.match(deploymentProblems(MERGE, {}).join(), /no successful Pages deploy/);
+  assert.match(
+    deploymentProblems(MERGE, {
+      deployedAt: '2026-10-31T00:00:00Z',
+      supersededBy: 'c'.repeat(40),
+    }).join(),
+    /replaced/,
+  );
+});
+
+test('liveRecord lists every retained file but flow.json, with the identity report', () => {
+  const dir = `evidence/live/${MERGE}/${FLOW}`;
+  const identity = { mergeSha: MERGE, buildDigest: 'd'.repeat(64) };
+  const ev = {
+    [`${dir}/flow.json`]: { sha256: '0'.repeat(64), bytes: Buffer.from('{}') },
+    [`${dir}/a.png`]: { sha256: '1'.repeat(64), bytes: Buffer.from('x') },
+    [`${dir}/identity.json`]: {
+      sha256: '2'.repeat(64),
+      bytes: Buffer.from(JSON.stringify(identity)),
+    },
+  };
+  const r = liveRecord(MERGE, FLOW, ev, '2026-10-31T10:00:00Z');
+  assert.equal(r.deployedSha, MERGE);
+  assert.equal(r.url, `${LIVE_ORIGIN}${LIVE_BASE}`);
+  assert.deepEqual(r.identity, identity);
+  assert.deepEqual(
+    r.screenshots.map((s) => s.path),
+    [`${dir}/a.png`, `${dir}/identity.json`],
+  );
+});

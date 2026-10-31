@@ -1267,7 +1267,7 @@ export const AUTHORITY_ANCHOR_ENV = 'CARNIVAL_AUTHORITY_COMMIT';
 export const AUTHORITY_PATH = 'control/operator-browser-authority.json';
 export const AUTHORITY_SCHEMA = 'carnival-browser-authority';
 /** The independently reviewed capture-primitives commit. */
-export const CAPTURE_PIN = '3dbcc6d5da3799b40660db5c9b8cb65725b76853';
+export const CAPTURE_PIN = '6ae738884f7d2007f88917b32062d3b276815a09';
 export const NODE_IMAGE =
   'node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da';
 export const PLAYWRIGHT_IMAGE =
@@ -1789,30 +1789,54 @@ export const obligationKey = (mergeSha, flow) => `${mergeSha}:${flow}`;
 function liveReasons(mergeSha, flow, record, shots, deployedAt) {
   const reasons = recordReasons(mergeSha, flow, record, shots, liveDir(mergeSha, flow));
   if (!record) return reasons;
+  const dir = liveDir(mergeSha, flow);
   if (record.mergeSha !== mergeSha || record.deployedSha !== mergeSha)
     reasons.push(`live evidence for ${flow} does not name ${mergeSha} as deployed`);
-  const id = record.identity;
-  if (!(id?.before?.matched && id?.after?.matched) || !/^[0-9a-f]{64}$/.test(id?.buildDigest ?? ''))
-    reasons.push(`live evidence for ${flow} does not show the served build is ${mergeSha}`);
-  // The retained report, not only its digest, must agree with the inline claim.
-  const kept = shots?.identity;
-  if (
-    shots?.complete &&
-    !(
-      kept?.buildDigest === id?.buildDigest &&
-      kept?.before?.matched === true &&
-      kept?.after?.matched === true &&
-      kept?.before?.buildDigest === id?.buildDigest &&
-      kept?.after?.buildDigest === id?.buildDigest
-    )
-  )
-    reasons.push(`retained identity report for ${flow} does not match the record`);
   if (record.url !== LIVE_URL) reasons.push(`live evidence for ${flow} is not for ${LIVE_URL}`);
-  // The identity report itself is retained and hashed like a screenshot.
-  const idPath = `${liveDir(mergeSha, flow)}identity.json`;
   const list = Array.isArray(record.screenshots) ? record.screenshots : [];
-  if (!list.some((sh) => sh?.path === idPath))
-    reasons.push(`live evidence for ${flow} does not retain ${idPath}`);
+  for (const n of ['identity.json', 'before.json', 'after.json', 'requests.json'])
+    if (!list.some((sh) => sh?.path === `${dir}${n}`))
+      reasons.push(`live evidence for ${flow} does not retain ${dir}${n}`);
+  const id = record.identity;
+  const digest = id?.buildDigest;
+  if (!/^[0-9a-f]{64}$/.test(digest ?? ''))
+    reasons.push(`live evidence for ${flow} does not show the served build is ${mergeSha}`);
+  // The retained broker receipts decide, not the inline claim: the identity
+  // report must equal the record, name each receipt by its retained digest,
+  // and both receipts must be this merge's full matching scan, in order.
+  if (shots?.complete && shots.onEvidenceBranch) {
+    const kept = shots.identity;
+    const r = shots.receipts ?? {};
+    const ok =
+      kept &&
+      JSON.stringify(kept) === JSON.stringify(id) &&
+      kept.mergeSha === mergeSha &&
+      kept.flow === flow &&
+      ['before.json', 'after.json', 'requests.json'].every(
+        (n) =>
+          /^[0-9a-f]{64}$/.test(kept.receipts?.[n] ?? '') &&
+          shots.digests?.[`${dir}${n}`] === kept.receipts[n],
+      );
+    if (!ok) reasons.push(`retained identity report for ${flow} does not match the record`);
+    const scan = (x, label) =>
+      x?.label === label &&
+      x.mergeSha === mergeSha &&
+      x.matched === true &&
+      x.buildDigest === digest &&
+      x.startedAt === kept?.[label]?.startedAt &&
+      x.finishedAt === kept?.[label]?.finishedAt;
+    if (!scan(r['before.json'], 'before') || !scan(r['after.json'], 'after'))
+      reasons.push(
+        `retained broker receipts for ${flow} do not show the merge build before and after`,
+      );
+    const b = Date.parse(r['before.json']?.startedAt ?? '');
+    const bf = Date.parse(r['before.json']?.finishedAt ?? '');
+    const a = Date.parse(r['after.json']?.startedAt ?? '');
+    if (!(b <= bf && bf <= a)) reasons.push(`broker receipt times for ${flow} are out of order`);
+    const since = Date.parse(deployedAt ?? '');
+    if (!Number.isNaN(since) && !(b > since))
+      reasons.push(`live evidence for ${flow} was scanned before the deploy`);
+  }
   const at = Date.parse(record.capturedAt ?? '');
   const since = Date.parse(deployedAt ?? '');
   if (Number.isNaN(since)) reasons.push(`deploy time for ${mergeSha} unknown`);
@@ -2044,6 +2068,7 @@ function retainedShots(checks, head, name = BROWSER_CHECK) {
       }
       const digests = {};
       let identity;
+      let receipts;
       for (const sh of Array.isArray(record.screenshots) ? record.screenshots : []) {
         const bytes = execFileSync(
           'gh',
@@ -2056,12 +2081,16 @@ function retainedShots(checks, head, name = BROWSER_CHECK) {
           { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
         );
         digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
-        if (String(sh.path).endsWith('/identity.json')) {
+        const leaf = String(sh.path).split('/').at(-1);
+        if (['identity.json', 'before.json', 'after.json'].includes(leaf)) {
+          let parsed;
           try {
-            identity = JSON.parse(bytes.toString('utf8'));
+            parsed = JSON.parse(bytes.toString('utf8'));
           } catch {
-            identity = null;
+            parsed = null;
           }
+          if (leaf === 'identity.json') identity = parsed;
+          else (receipts ??= {})[leaf] = parsed;
         }
       }
       let provenance;
@@ -2073,7 +2102,14 @@ function retainedShots(checks, head, name = BROWSER_CHECK) {
           content: JSON.parse(bytes.toString('utf8')),
         };
       }
-      out[run.id] = { complete: true, onEvidenceBranch: true, digests, identity, provenance };
+      out[run.id] = {
+        complete: true,
+        onEvidenceBranch: true,
+        digests,
+        identity,
+        receipts,
+        provenance,
+      };
     } catch {
       out[run.id] = { complete: false, digests: {} };
     }

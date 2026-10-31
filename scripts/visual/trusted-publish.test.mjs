@@ -239,7 +239,7 @@ test('the runner checkout must be the pin, clean, with pinned primitives', () =>
   };
   const f = ['scripts/visual/flow.mjs'];
   assert.deepEqual(checkoutProblems(git({}), '/r', CAPTURE_PIN, f), []);
-  assert.match(checkoutProblems(git({ head: SHA }), '/r', CAPTURE_PIN, f).join(), /not 3dbcc6d/);
+  assert.match(checkoutProblems(git({ head: SHA }), '/r', CAPTURE_PIN, f).join(), /not 6ae7388/);
   assert.match(checkoutProblems(git({ dirty: true }), '/r', CAPTURE_PIN, f).join(), /uncommitted/);
   assert.match(
     checkoutProblems(git({ changed: true }), '/r', CAPTURE_PIN, f).join(),

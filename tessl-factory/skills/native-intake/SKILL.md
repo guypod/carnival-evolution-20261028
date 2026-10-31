@@ -112,13 +112,27 @@ credentials or anything from outside this repository's public record.
    never relaxes a required check, and never merges another way.
 3. A PR counts as shipped only when `node scripts/native/native.mjs deploy
 <merge sha>` reports `state: shipped`. `deployed-verification-owed` lists
-   what is still owed. Report each listed flow as `browser-flow-live-owed:
-<merge sha>:<flow>` with the reason "no reviewed live broker". Never run
-   `scripts/visual/run-flow.sh`, Vite, `npm` or any other script from a merge
-   checkout: merged code would run on this host with the writer key. Live
-   capture waits for an independently reviewed, pinned broker that serves
-   only the exact public Pages assets to a no-network browser container; until
-   an operator names one, live flows stay owed and nothing ships. Also run
+   what is still owed. For each listed live flow, use the same anchored
+   authority check as step 1. If it reports any problem, report the flow as
+   `browser-flow-live-owed: <merge sha>:<flow>` with the reason "no operator
+   browser authority". Otherwise, from the same separate clean checkout of
+   the record's wrapper `W`, with a clean checkout of the record's
+   `captureRunner`, run
+   `node scripts/visual/live-capture.mjs --merge <merge sha> --flow <flow>
+--runner <clean checkout of captureRunner> --publish`, one merge at a time.
+   It builds the exact merge with the pinned network-none primitives, takes
+   the manifest from that build, and plays the flow in a network-none browser
+   through the host broker, which fetches only manifest keys from the fixed
+   Pages origin. It publishes `browser-flow-live` only after both broker
+   receipts match, the report validates, the merge is still the current
+   deployment and the evidence reads back. Exit 3 is owed (no anchor, a
+   different wrapper, an unregistered flow, or a merge that is not the
+   current deployment); report it and any other non-zero exit as
+   `browser-flow-live-owed: <merge sha>:<flow>` with its last error line.
+   Never run `scripts/visual/run-flow.sh`, Vite, `npm` or any other script
+   from a merge checkout: merged code would run on this host with the writer
+   key. A merge whose `package.json` or lock differs from the capture pin
+   stays owed. Also run
    `node scripts/native/native.mjs owed` and report every merge it lists,
    including `superseded-verification-owed` ones, as browser QA still owed:
    never as shipped. A 200 response, the page title or premerge evidence is

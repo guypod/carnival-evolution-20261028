@@ -291,7 +291,7 @@ export async function publish({
   return gh('PATCH', `repos/${REPO}/check-runs/${checkId}`, body);
 }
 
-function git(dir, args) {
+export function git(dir, args) {
   const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : `error: ${r.stderr.trim()}`;
 }
@@ -397,7 +397,12 @@ export function capture(o) {
   }
 }
 
-function captureIn(base, { runner, candidate, flow }) {
+/**
+ * Builds `candidate` with the pinned primitives into `base`: the dependency
+ * snapshot, then the network-none build. Returns { images, deps, dist, left }.
+ * Shared by the premerge and live captures.
+ */
+export function isolatedBuild(base, { runner, candidate }) {
   const started = Date.now();
   const left = () => Math.min(DEADLINES.step, DEADLINES.total - (Date.now() - started) / 1000);
   const step = (name, args) => {
@@ -423,6 +428,11 @@ function captureIn(base, { runner, candidate, flow }) {
       owed: true,
     });
   if (built !== 0) throw Object.assign(new Error(`build exited ${built}`), { step: 'build' });
+  return { images, deps, dist: join(work, 'dist'), left, step };
+}
+
+function captureIn(base, { runner, candidate, flow }) {
+  const { images, deps, dist, step } = isolatedBuild(base, { runner, candidate });
   const harness = join(base, 'harness');
   mkdirSync(harness, { mode: 0o700 });
   for (const f of ['flow.mjs', 'static-serve.mjs']) {
@@ -436,7 +446,7 @@ function captureIn(base, { runner, candidate, flow }) {
     PLAYWRIGHT_IMAGE,
     harness,
     join(deps, 'pw'),
-    join(work, 'dist'),
+    dist,
     report,
     flow,
   ]);
@@ -577,7 +587,7 @@ async function main() {
   }
 }
 
-async function ghApi(method, path, body) {
+export async function ghApi(method, path, body) {
   const args = ['api', '-X', method, path];
   if (body) args.push('--input', '-');
   const r = spawnSync('gh', args, {
@@ -589,7 +599,7 @@ async function ghApi(method, path, body) {
 }
 
 /** Commits the files to the evidence branch through the API, on top of its current tip. */
-async function upload(dir, files) {
+export async function upload(dir, files) {
   const ref = await ghApi('GET', `repos/${REPO}/git/ref/heads/${EVIDENCE_BRANCH}`);
   const parent = ref.object.sha;
   const base = (await ghApi('GET', `repos/${REPO}/git/commits/${parent}`)).tree.sha;
@@ -613,7 +623,7 @@ async function upload(dir, files) {
 }
 
 /** sha256 of each retained file, read back from the evidence commit. */
-async function readback(commit, dir) {
+export async function readback(commit, dir) {
   const out = {};
   const list = await ghApi('GET', `repos/${REPO}/contents/${dir}?ref=${commit}`);
   for (const f of list) {

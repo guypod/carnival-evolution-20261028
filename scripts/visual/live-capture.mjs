@@ -20,9 +20,21 @@
 // service workers, cookies and auth are not exercised, so any flow needing an
 // external service or auth stays owed. Publishing the result needs the
 // operator authority anchor; this module only produces and verifies it.
-import { createHash } from 'node:crypto';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  CAPTURE_PIN,
+  LIVE_CHECK,
+  PLAYWRIGHT_IMAGE,
+  REPOSITORY as REPO,
+  deployContext,
+  triggerEvents,
+  trustedAuthority,
+} from '../native/native.mjs';
 
 import {
   BROKER_LIMITS,
@@ -31,7 +43,23 @@ import {
   createBroker,
   manifestProblems,
 } from './live-broker.mjs';
-import { FLOWS, LIMITS, privateDir, readPlain, validateReport } from './trusted-publish.mjs';
+import {
+  CONTROL_MS,
+  DEADLINES,
+  FLOWS,
+  LIMITS,
+  PRIMITIVES,
+  STEP_LABEL,
+  checkoutProblems,
+  ghApi,
+  git,
+  isolatedBuild,
+  privateDir,
+  readPlain,
+  readback,
+  upload,
+  validateReport,
+} from './trusted-publish.mjs';
 
 const sha256 = (b) => createHash('sha256').update(b).digest('hex');
 const SHA = /^[0-9a-f]{40}$/;
@@ -228,3 +256,265 @@ export function retain(mergeSha, flow, files) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+/** Files a live capture retains besides the screenshots and flow.json. */
+export const RECEIPTS = ['before.json', 'after.json', 'requests.json', 'identity.json'];
+
+/**
+ * Runs the browser container asynchronously, so the broker in this event loop
+ * keeps answering it. `spawn` and `control` are injected by tests. The child
+ * is the docker client; at `seconds` it is killed and every container with
+ * this step's label is killed, then listed again. Resolves to the exit code,
+ * 124 on timeout or a container left running, 125 when Docker could not be
+ * read or stopped. Never touches a container without this step's label.
+ */
+export function runBrowser(args, { step, seconds, spawn: sp = spawn, control = dockerControl }) {
+  return new Promise((resolve) => {
+    const child = sp('docker', args, { stdio: ['ignore', 'ignore', 'inherit'] });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, seconds * 1000);
+    const finish = async (code) => {
+      clearTimeout(timer);
+      const left = await control([
+        'ps',
+        '-q',
+        '--no-trunc',
+        '--filter',
+        `label=${STEP_LABEL}=${step}`,
+      ]);
+      if (left === null) return resolve(125);
+      if (left.length) {
+        if ((await control(['kill', ...left])) === null) return resolve(125);
+        const still = await control([
+          'ps',
+          '-q',
+          '--no-trunc',
+          '--filter',
+          `label=${STEP_LABEL}=${step}`,
+        ]);
+        return resolve(still === null || still.length ? 125 : 124);
+      }
+      resolve(timedOut ? 124 : code);
+    };
+    child.on('error', () => finish(125));
+    child.on('exit', (code) => finish(code ?? 124));
+  });
+}
+
+/** One bounded Docker control call: its output lines as ids, or null on any failure. */
+export function dockerControl(args) {
+  return new Promise((resolve) => {
+    execFile('docker', args, { timeout: CONTROL_MS, killSignal: 'SIGKILL' }, (err, out) => {
+      if (err) return resolve(null);
+      resolve(
+        String(out)
+          .split('\n')
+          .filter((id) => /^[0-9a-f]{64}$/.test(id)),
+      );
+    });
+  });
+}
+
+/**
+ * Why this merge is not the current deployment, from the Pages history read
+ * now: its first successful deploy time and no later deploy.
+ */
+export function deploymentProblems(mergeSha, ctx) {
+  if (ctx?.incomplete) return ['Pages deploy history not read'];
+  if (!ctx?.deployedAt) return [`${mergeSha} has no successful Pages deploy`];
+  if (ctx.supersededBy) return [`${mergeSha} was replaced on Pages by ${ctx.supersededBy}`];
+  return [];
+}
+
+/** The check run record a live pass carries, with every retained file listed by digest. */
+export function liveRecord(mergeSha, flow, evidence, capturedAt) {
+  const prefix = `evidence/live/${mergeSha}/${flow}`;
+  const identity = JSON.parse(evidence[`${prefix}/identity.json`].bytes.toString('utf8'));
+  return {
+    mergeSha,
+    deployedSha: mergeSha,
+    url: `${LIVE_ORIGIN}${LIVE_BASE}`,
+    capturedAt,
+    identity,
+    screenshots: Object.entries(evidence)
+      .filter(([p]) => p !== `${prefix}/flow.json`)
+      .map(([path, f]) => ({ path, sha256: f.sha256 })),
+  };
+}
+
+export function parseLiveArgs(argv) {
+  const o = {};
+  for (let i = 0; i < argv.length; i++) {
+    const k = argv[i];
+    if (k === '--publish') o.publish = true;
+    else if (/^--(merge|flow|runner)$/.test(k)) o[k.slice(2)] = argv[++i];
+    else throw new Error(`unknown argument ${k}`);
+  }
+  return o;
+}
+
+/**
+ * Problems before anything runs. For --publish, `authority` must be the
+ * anchored, approved record with a supported run route, and this checkout
+ * must be its wrapper. Without the anchor every live flow stays owed.
+ */
+export function liveInvocationProblems(o, wrapper, authority) {
+  const p = [];
+  if (!SHA.test(o.merge ?? '')) p.push('--merge is not a full sha');
+  if (!LIVE_FLOWS.has(o.flow) || !FLOWS[o.flow]) p.push(`flow ${o.flow} has no live capture: owed`);
+  if (!o.runner) p.push('--runner is missing');
+  if (o.publish) {
+    if (!authority) p.push('authority record not read: owed');
+    else if (!authority.complete) p.push('authority record not read: owed');
+    else if (authority.problems?.length) p.push(...authority.problems.map((x) => `${x}: owed`));
+    else if (authority.record?.wrapper !== wrapper)
+      p.push(`wrapper ${wrapper} is not the approved ${authority.record?.wrapper}: owed`);
+    else if (JSON.stringify(authority.record.flows?.[o.flow]) !== JSON.stringify(FLOWS[o.flow]))
+      p.push(`flow ${o.flow} is not the operator-approved spec: owed`);
+  }
+  return p;
+}
+
+/** The pinned harness for the live browser: flow.mjs and socket-adapter.mjs at CAPTURE_PIN. */
+export const LIVE_HARNESS = ['flow.mjs', 'socket-adapter.mjs'];
+
+/** Builds the exact merge in isolation and plays the flow through the broker. */
+export async function liveFromMerge({ runner, mergeSha, flow, upstream, seconds }) {
+  const base = privateDir('carnival-live-build-');
+  try {
+    const { images, deps, dist, left } = isolatedBuild(base, { runner, candidate: mergeSha });
+    const harness = join(base, 'harness');
+    mkdirSync(harness, { mode: 0o700 });
+    for (const f of LIVE_HARNESS) {
+      const bytes = execFileSync('git', [
+        '-C',
+        runner,
+        'show',
+        `${CAPTURE_PIN}:scripts/visual/${f}`,
+      ]);
+      writeFileSync(join(harness, f), bytes, { flag: 'wx', mode: 0o644 });
+    }
+    const step = randomUUID();
+    const browser = ({ socketDir, report }) =>
+      runBrowser(
+        browserArgs({
+          image: PLAYWRIGHT_IMAGE,
+          harness,
+          pw: join(deps, 'pw'),
+          socketDir,
+          report,
+          flow,
+          label: `${STEP_LABEL}=${step}`,
+        }),
+        { step, seconds: Math.max(1, Math.min(seconds ?? DEADLINES.step, left())) },
+      );
+    const out = await liveCapture({ mergeSha, flow, dist, browser, upstream });
+    return { ...out, images };
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+}
+
+async function main() {
+  const o = parseLiveArgs(process.argv.slice(2));
+  const self = join(dirname(fileURLToPath(import.meta.url)), '../..');
+  const wrapper = git(self, ['rev-parse', 'HEAD']);
+  const authority = o.publish ? trustedAuthority({ events: triggerEvents() }) : undefined;
+  const problems = [
+    ...liveInvocationProblems(o, wrapper, authority),
+    ...(o.publish ? checkoutProblems(git, self, authority?.record?.wrapper) : []),
+    ...(o.runner
+      ? checkoutProblems(git, o.runner, CAPTURE_PIN, [
+          ...PRIMITIVES,
+          'scripts/visual/socket-adapter.mjs',
+        ])
+      : []),
+  ];
+  if (problems.length) {
+    for (const p of problems) console.error(p);
+    process.exit(o.publish && problems.some((p) => p.endsWith('owed')) ? 3 : 2);
+  }
+  const live = async () => {
+    const runs = await ghApi('GET', `repos/${REPO}/actions/workflows/pages.yml/runs?per_page=50`);
+    const jobsOf = (run) => {
+      const out = [];
+      for (let n = 1; n <= Math.max(1, Number(run.run_attempt) || 1); n++)
+        out.push(
+          ...JSON.parse(
+            execFileSync(
+              'gh',
+              ['api', `repos/${REPO}/actions/runs/${run.id}/attempts/${n}/jobs?per_page=100`],
+              { encoding: 'utf8' },
+            ),
+          ).jobs,
+        );
+      return out;
+    };
+    return deploymentProblems(o.merge, deployContext(o.merge, runs.workflow_runs, jobsOf));
+  };
+  if (o.publish) {
+    const before = await live();
+    if (before.length) {
+      for (const p of before) console.error(`${p}: owed`);
+      process.exit(3);
+    }
+  }
+  let checkId;
+  let step = 'capture';
+  try {
+    if (o.publish) {
+      process.env.FLOW_CHECK_NAME = LIVE_CHECK;
+      const { startCheckRun } = await import('./flow-check.mjs');
+      checkId = (await ghApi('POST', `repos/${REPO}/check-runs`, startCheckRun(o.flow, o.merge)))
+        .id;
+    }
+    const out = await liveFromMerge({ runner: o.runner, mergeSha: o.merge, flow: o.flow });
+    console.log(
+      JSON.stringify({ ok: out.ok, problems: out.problems, identity: out.identity }, null, 2),
+    );
+    if (!out.ok) throw Object.assign(new Error(out.problems.join('; ')), { step: 'capture' });
+    if (!o.publish) return;
+    step = 'publish';
+    const capturedAt = new Date().toISOString();
+    const dir = `evidence/live/${o.merge}/${o.flow}`;
+    const files = Object.fromEntries(
+      Object.entries(out.evidence).map(([p, f]) => [p.slice(dir.length + 1), f.bytes]),
+    );
+    const commit = await upload(dir, files);
+    const back = await readback(commit, dir);
+    for (const [p, f] of Object.entries(out.evidence))
+      if (back?.[p] !== f.sha256) throw new Error(`readback of ${p} differs`);
+    const after = await live();
+    if (after.length) throw new Error(after.join('; '));
+    const { flowCheckRun } = await import('./flow-check.mjs');
+    const report = JSON.parse(files['flow.json'].toString('utf8'));
+    const body = flowCheckRun(
+      report,
+      o.merge,
+      commit,
+      dir,
+      0,
+      liveRecord(o.merge, o.flow, out.evidence, capturedAt),
+    );
+    delete body.head_sha;
+    await ghApi('PATCH', `repos/${REPO}/check-runs/${checkId}`, body);
+    step = 'published';
+  } catch (e) {
+    console.error(`${e.step ?? step}: ${e.message}`);
+    process.exitCode = 1;
+  } finally {
+    if (checkId && step !== 'published') {
+      const { failCheckRun } = await import('./flow-check.mjs');
+      await ghApi(
+        'PATCH',
+        `repos/${REPO}/check-runs/${checkId}`,
+        failCheckRun(o.flow, step, 1),
+      ).catch(() => console.error(`check run ${checkId} stays in progress; shipState refuses`));
+    }
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
