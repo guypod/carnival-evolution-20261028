@@ -15,7 +15,10 @@ and dodge the reeds floating towards you.
 - The river runs between two earth banks, and its ripples drift down at the
   same speed as the stars and reeds. With Quiet midway on, or when the system
   asks for reduced motion, the ripples hold still.
-- Your current star streak and the best streak this round show on the left.
+- During a round one panel on the left bank, next to the river, shows the time
+  left, your score, your current star streak, the best streak this round, stars
+  collected and reeds hit. The key hint sits on the right bank, level with the
+  lane buttons.
 - When time runs out the result screen shows your score, stars collected (and
   the points they earned), reeds hit, the streak bonus total and your best
   streak. Press **Play again** (or Space/Enter) to replay.

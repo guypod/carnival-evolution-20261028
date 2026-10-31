@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BANK_W,
+  HUD_PANEL,
+  KEY_HINT,
+  RIVER,
   FLOW_SPEED,
   RIPPLE_GAP,
   currentOffset,
@@ -33,6 +37,7 @@ import {
   type DuckState,
   type RiverObject,
 } from './game';
+import { theme } from '../../carnival/theme';
 
 function playing(seed = 1): DuckState {
   const state = createState(seededRng(seed));
@@ -377,5 +382,29 @@ describe('river current', () => {
 
   it('holds still under Quiet', () => {
     expect(currentOffset(3.7, true)).toBe(0);
+  });
+});
+
+describe('HUD layout', () => {
+  type Box = { x: number; y: number; w: number; h: number };
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const riverWithBanks = { x: RIVER.x - BANK_W, y: RIVER.y, w: RIVER.w + 2 * BANK_W, h: RIVER.h };
+  const inCanvas = (box: Box) =>
+    box.x >= 0 &&
+    box.y >= 0 &&
+    box.x + box.w <= theme.canvas.width &&
+    box.y + box.h <= theme.canvas.height;
+
+  it('puts the score panel beside the river, inside the canvas', () => {
+    expect(inCanvas(HUD_PANEL)).toBe(true);
+    expect(overlaps(HUD_PANEL, riverWithBanks)).toBe(false);
+    expect(RIVER.x - BANK_W - (HUD_PANEL.x + HUD_PANEL.w)).toBeLessThanOrEqual(12);
+  });
+
+  it('puts the key hint level with the lane buttons, clear of the river', () => {
+    expect(inCanvas(KEY_HINT)).toBe(true);
+    expect(overlaps(KEY_HINT, riverWithBanks)).toBe(false);
+    expect(KEY_HINT.x - (RIVER.x + RIVER.w + BANK_W)).toBeLessThanOrEqual(12);
   });
 });
