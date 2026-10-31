@@ -60,7 +60,10 @@ row scores double and every hit after that scores triple, up to a cap of x3:
 A shot that leaves the booth without hitting a target is a miss and resets the
 streak to 0. A shot still in the air does not count yet: it hits or misses when
 it lands. Each hit shows a splash and a popup with the points it scored and,
-on a streak, its multiplier.
+on a streak, its multiplier. The popup sits on a dark plate so it stays
+readable over the shelves, and floats up only a few pixels, so it never covers
+the rail above. In Quiet mode (the guide's setting, or your system's reduced
+motion) it holds still.
 
 Your final score is saved to the carnival's score board once, when the game ends.
 Playing again starts a new round in the picked mode with a full tank, no score
@@ -74,7 +77,8 @@ Add `?shots=25` to the page URL to change the size of the tank, for example
 ## Files
 
 - `game.ts`: the game logic (`createState`, `fire`, `shotPath`, `step`, `scoreForHit`,
-  `multiplierFor`, `registerHit`, `registerMiss`, `takeFinalScore`), the
+  `multiplierFor`, `registerHit`, `registerMiss`, `takeFinalScore`, and the
+  score popup's `popupRise`, `popupLabel` and `popupColor`), the
   challenge modes (`MODES`, `createReadyState`, `selectMode`, `beginRound`,
   `replay`, `keyAction`, `pointerAction`) and the `waterCannon` entry the
   midway registers.

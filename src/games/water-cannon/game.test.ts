@@ -6,6 +6,8 @@ import {
   MISS_SPLASH_LIFE,
   MAX_MULTIPLIER,
   MODES,
+  POPUP_PLATE,
+  POPUP_RISE,
   TANK_SIZE,
   applyAction,
   beginRound,
@@ -17,6 +19,9 @@ import {
   keyAction,
   modeById,
   modeLabel,
+  popupColor,
+  popupLabel,
+  popupRise,
   multiplierFor,
   pointerAction,
   registerHit,
@@ -433,5 +438,45 @@ describe('water cannon challenge modes', () => {
     state = applyAction(state, action as { type: 'start' });
     expect(state.tank).toBe(TANK_SIZE);
     expect(state.shots).toHaveLength(0);
+  });
+});
+
+function luminance(hex: string) {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a: string, b: string) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe('score popups', () => {
+  const plain = { x: 100, y: 110, age: 0, points: 30, multiplier: 1 };
+  const bonus = { ...plain, points: 90, multiplier: 3 };
+
+  it('labels the points and, on a streak, the multiplier', () => {
+    expect(popupLabel(plain)).toBe('+30');
+    expect(popupLabel(bonus)).toBe('+90 x3');
+  });
+
+  it('reads at 4.5:1 or better against its plate', () => {
+    expect(contrast(popupColor(plain), POPUP_PLATE)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(popupColor(bonus), POPUP_PLATE)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('floats up a short way and stops', () => {
+    expect(popupRise(0, false)).toBe(0);
+    expect(popupRise(0.4, false)).toBeGreaterThan(0);
+    expect(popupRise(10, false)).toBe(POPUP_RISE);
+    expect(POPUP_RISE).toBeLessThan(20);
+  });
+
+  it('holds still in Quiet mode', () => {
+    expect(popupRise(0.4, true)).toBe(0);
+    expect(popupRise(10, true)).toBe(0);
   });
 });
