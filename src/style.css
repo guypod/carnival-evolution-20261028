@@ -645,6 +645,29 @@ kbd {
   margin: 0;
 }
 
+/* The shared game page: the play area sits centred under the title, framed
+   like a booth counter, so the page reads as one stall at any width. */
+.game {
+  max-width: calc(800px + 2 * 24px);
+  margin: 0 auto;
+  padding: 16px 24px 28px;
+  border: 2px solid var(--color-accent);
+  border-top-width: 10px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: 0 12px 0 -4px var(--color-stripeA);
+}
+
+.game .game-header {
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .game {
+    padding: 12px 10px 18px;
+  }
+}
+
 .game canvas,
 .party canvas {
   display: block;
