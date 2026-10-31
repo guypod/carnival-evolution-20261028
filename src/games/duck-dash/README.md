@@ -10,7 +10,11 @@ and dodge the reeds floating towards you.
   of the **Left / Middle / Right** lane buttons (or anywhere in a lane).
 - Stars and reeds appear at the top of the river and take a little over two
   seconds to reach the duck, so there is time to react. A row never has reeds in
-  every lane.
+  every lane. Stars are gold five-point stars; reeds are clumps of tall brown
+  blades with red cattail heads.
+- The river runs between two earth banks, and its ripples drift down at the
+  same speed as the stars and reeds. With Quiet midway on, or when the system
+  asks for reduced motion, the ripples hold still.
 - Your current star streak and the best streak this round show on the left.
 - When time runs out the result screen shows your score, stars collected (and
   the points they earned), reeds hit, the streak bonus total and your best
