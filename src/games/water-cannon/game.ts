@@ -641,14 +641,19 @@ export const waterCannon: CarnivalGame = {
       event.preventDefault();
       state = applyAction(state, action);
     };
+    // Read Quiet before adding listeners, and treat a throwing query as no
+    // preference, so a failed lookup can't strand them.
+    let systemReduces: boolean;
+    try {
+      systemReduces = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
+    } catch {
+      systemReduces = false;
+    }
+    const quiet = isQuiet(motionPreference.load(), systemReduces);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerdown', onDown);
     window.addEventListener('keydown', onKeyDown);
 
-    const quiet = isQuiet(
-      motionPreference.load(),
-      window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false,
-    );
     let frame = 0;
     let last = performance.now();
     const loop = (time: number) => {
