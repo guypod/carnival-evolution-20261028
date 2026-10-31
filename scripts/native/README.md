@@ -229,9 +229,12 @@ into `main`, labelled `tessl`, when:
 - no reviewer has a request for changes still standing. A later `COMMENTED`
   review does not clear it; a later approval or a dismissal does;
 - the `check` run from GitHub Actions (app 15368) on that head succeeded, and
-  no other check or status on it failed or is still running. Only the newest
-  run of each check from each app counts, so a successful rerun replaces the
-  failure it reran;
+  no other check or status on it failed or is still running. That `check`
+  counts only when its check suite belongs to a `.github/workflows/ci.yml`
+  run on the head, read from the Actions runs for that commit: `pages.yml`
+  also has a job named `check`, and it is not CI. Only the newest run of each
+  check from each app in each check suite counts, so a successful rerun
+  replaces the failure it reran, and another workflow's run never does;
 - every listing was read to its last page.
 
 `mergeOne` gates twice, then merges with GitHub's atomic merge API

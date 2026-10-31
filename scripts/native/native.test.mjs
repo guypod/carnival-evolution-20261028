@@ -553,9 +553,11 @@ const review = (extra = {}) => ({
   body: reviewBody(),
   ...extra,
 });
+const CI_SUITE = 10;
 const ci = (extra = {}) => ({
   name: 'check',
   app: { id: CI_APP_ID },
+  check_suite: { id: CI_SUITE },
   head_sha: HEAD,
   status: 'completed',
   conclusion: 'success',
@@ -595,6 +597,10 @@ const snapshot = (extra = {}) => ({
   checks: {
     complete: true,
     items: [ci(), reviewerRun()],
+  },
+  ciRuns: {
+    complete: true,
+    items: [{ path: '.github/workflows/ci.yml', head_sha: HEAD, check_suite_id: CI_SUITE }],
   },
   combinedStatus: { state: 'pending', total_count: 0 },
   issue: sourceIssue(),
@@ -1958,7 +1964,7 @@ test('merge gate: a newer job of the same name from another workflow never repla
   // pages.yml also has a job named `check` and can be dispatched on any branch.
   const base = snapshot();
   base.checks.items = base.checks.items.filter((c) => c.name !== 'check');
-  const failed = ci({ id: 1, conclusion: 'failure', check_suite: { id: 10 } });
+  const failed = ci({ id: 1, conclusion: 'failure' });
   const pagesCheck = ci({ id: 2, check_suite: { id: 20 } });
   const s = {
     ...base,
@@ -1967,9 +1973,33 @@ test('merge gate: a newer job of the same name from another workflow never repla
   assert.equal(mergeGate(s).merge, false);
   assert.ok(mergeGate(s).reasons.includes('CI is not green on the head'));
   // A rerun inside the same suite still replaces the failure.
-  const rerun = ci({ id: 3, check_suite: { id: 10 } });
+  const rerun = ci({ id: 3 });
   const t = { ...base, checks: { complete: true, items: [...base.checks.items, failed, rerun] } };
   assert.equal(mergeGate(t).merge, true, JSON.stringify(mergeGate(t).reasons));
+});
+
+test('merge gate: a Pages check alone, with no CI run on the head, never passes', () => {
+  const base = snapshot();
+  const pagesOnly = {
+    ...base,
+    checks: {
+      complete: true,
+      items: [
+        ...base.checks.items.filter((c) => c.name !== 'check'),
+        ci({ check_suite: { id: 20 } }),
+      ],
+    },
+    ciRuns: {
+      complete: true,
+      items: [{ path: '.github/workflows/pages.yml', head_sha: HEAD, check_suite_id: 20 }],
+    },
+  };
+  assert.ok(mergeGate(pagesOnly).reasons.includes('no CI check on the head'));
+  const unread = { ...base, ciRuns: { complete: false, items: [] } };
+  assert.ok(mergeGate(unread).reasons.includes('CI workflow runs incomplete'));
+  assert.ok(
+    mergeGate({ ...base, ciRuns: undefined }).reasons.includes('CI workflow runs incomplete'),
+  );
 });
 
 test('a read failure at admission alone, with no deferral record, is retried after the grace', async () => {

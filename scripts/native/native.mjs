@@ -44,6 +44,8 @@ export const BOT_LOGIN = 'tessl-app[bot]';
 export const BOT_APP_ID = 4096310;
 export const CI_APP_ID = 15368;
 export const CI_CHECK = 'check';
+// The workflow whose `check` job is CI. pages.yml has a job of the same name.
+export const CI_WORKFLOW = '.github/workflows/ci.yml';
 export const REVIEWER_APP_ID = 4850038;
 export const BACKLOG_LABEL = 'auto backlog';
 export const TRIGGER_LABEL = 'tessl';
@@ -1148,6 +1150,7 @@ export function mergeGate(s) {
   if (!/^[0-9a-f]{40}$/.test(head ?? '')) reasons.push('no head sha');
   if (!s.reviews?.complete) reasons.push('review listing incomplete');
   if (!s.checks?.complete) reasons.push('check listing incomplete');
+  if (!s.ciRuns?.complete) reasons.push('CI workflow runs incomplete');
   if (reasons.length) return { merge: false, reasons };
 
   const reviews = [...s.reviews.items].sort(
@@ -1198,7 +1201,15 @@ export function mergeGate(s) {
     if (!newest.has(k) || c.id > newest.get(k).id) newest.set(k, c);
   }
   const runs = [...newest.values()];
-  const ci = runs.filter((c) => c.name === CI_CHECK && c.app?.id === CI_APP_ID);
+  // CI is the `check` job of a ci.yml run on this head, matched by check suite.
+  const ciSuites = new Set(
+    (s.ciRuns?.items ?? [])
+      .filter((r) => r.path === CI_WORKFLOW && r.head_sha === head)
+      .map((r) => r.check_suite_id),
+  );
+  const ci = runs.filter(
+    (c) => c.name === CI_CHECK && c.app?.id === CI_APP_ID && ciSuites.has(c.check_suite?.id),
+  );
   if (!ci.length) reasons.push('no CI check on the head');
   else if (ci.some((c) => c.status !== 'completed' || c.conclusion !== 'success'))
     reasons.push('CI is not green on the head');
@@ -1437,6 +1448,10 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         pr,
         reviews: pages(`${base}/pulls/${n}/reviews?per_page=100`),
         checks: { ...checks, items: checks.items.flatMap((p) => p.check_runs ?? p) },
+        ciRuns: (() => {
+          const r = pages(`${base}/actions/runs?head_sha=${sha}&per_page=100`);
+          return { ...r, items: r.items.flatMap((p) => p.workflow_runs ?? p) };
+        })(),
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
       };
     },
