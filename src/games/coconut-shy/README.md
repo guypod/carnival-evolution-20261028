@@ -12,7 +12,8 @@ Knock the coconuts off their posts before your balls run out.
   wobbles for 0.6 seconds, then falls off its post. A ball that lands between
   coconuts misses.
 - You have 6 balls. The round ends when every ball has landed and every hit
-  coconut has fallen, or as soon as all five coconuts are down.
+  coconut has fallen, or as soon as all five coconuts are down, even with a
+  spare ball still in the air.
 - The game over screen shows your score. Click it, or press Space or Enter, to
   play again. The keys do nothing while a link or button on the page has focus.
 
@@ -29,4 +30,5 @@ posts are worth more:
 | 160 px      | 40     |
 | 200 px      | 50     |
 
-Knocking all five down scores 170. The score is recorded once, when the round ends.
+Knocking all five down scores 170. The score is recorded once, when the round ends. If saving it
+fails, the game over screen still shows and you can play again.

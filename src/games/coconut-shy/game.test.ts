@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BALLS,
   FLIGHT_TIME,
@@ -10,6 +10,7 @@ import {
   createState,
   isRoundOver,
   press,
+  saveFinalScore,
   scoreForPost,
   step,
   takeFinalScore,
@@ -71,6 +72,35 @@ describe('coconut shy', () => {
     expect(state.phase).toBe('over');
     expect(takeFinalScore(state)).toBe(state.score);
     expect(takeFinalScore(state)).toBeNull();
+  });
+
+  it('ends the round as soon as every coconut is down, with a spare ball still in the air', () => {
+    const state = createState();
+    for (const coconut of state.coconuts.slice(0, -1)) coconut.state = 'fallen';
+    state.coconuts[state.coconuts.length - 1].state = 'wobbling';
+    run(state, WOBBLE_TIME - 0.05);
+    expect(throwBall(state)).toBe(true);
+    run(state, 0.1);
+    expect(state.phase).toBe('over');
+    expect(state.balls).toEqual([]);
+  });
+
+  it('keeps going when the score cannot be saved', () => {
+    const state = createState();
+    state.phase = 'over';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failure = new Error('storage full');
+    const record = vi.fn(() => {
+      throw failure;
+    });
+    try {
+      expect(saveFinalScore(state, record)).toBe(failure);
+    } finally {
+      consoleError.mockRestore();
+    }
+    expect(saveFinalScore(state, record)).toBeUndefined();
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(press(state).phase).toBe('playing');
   });
 
   it('starts a new round on a press after the round ends', () => {

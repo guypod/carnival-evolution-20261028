@@ -102,8 +102,9 @@ export function landBall(state: CoconutShyState, x: number): number {
 
 /** True when nothing more can happen: every coconut is down, or no balls are left or in play. */
 export function isRoundOver(state: CoconutShyState): boolean {
+  if (state.coconuts.every((c) => c.state === 'fallen')) return true;
   if (state.coconuts.some((c) => c.state === 'wobbling') || state.balls.length > 0) return false;
-  return state.ballsLeft === 0 || state.coconuts.every((c) => c.state === 'fallen');
+  return state.ballsLeft === 0;
 }
 
 export function step(state: CoconutShyState, dt: number): void {
@@ -119,7 +120,10 @@ export function step(state: CoconutShyState, dt: number): void {
     coconut.age += dt;
     if (coconut.state === 'wobbling' && coconut.age >= WOBBLE_TIME) coconut.state = 'fallen';
   }
-  if (isRoundOver(state)) state.phase = 'over';
+  if (isRoundOver(state)) {
+    state.phase = 'over';
+    state.balls = [];
+  }
 }
 
 /** Hands out the final score once, when the round is over, and null otherwise. */
@@ -127,6 +131,23 @@ export function takeFinalScore(state: CoconutShyState): number | null {
   if (state.phase !== 'over' || state.scoreTaken) return null;
   state.scoreTaken = true;
   return state.score;
+}
+
+/**
+ * Hands the final score to `record` once, when the round ends. A failed save is
+ * reported and returned instead of thrown, so the result still shows and the
+ * game can be played again.
+ */
+export function saveFinalScore(state: CoconutShyState, record: (score: number) => void): unknown {
+  const score = takeFinalScore(state);
+  if (score === null) return undefined;
+  try {
+    record(score);
+  } catch (error) {
+    console.error('Coconut Shy could not save the score', error);
+    return error;
+  }
+  return undefined;
 }
 
 /** Throws during a round, or starts a new round after one. Returns the state to carry on with. */
@@ -269,8 +290,7 @@ export const coconutShy: CarnivalGame = {
       const dt = Math.min((time - last) / 1000, 0.05);
       last = time;
       step(state, dt);
-      const finalScore = takeFinalScore(state);
-      if (finalScore !== null) recordScore(coconutShy.id, finalScore);
+      saveFinalScore(state, (score) => recordScore(coconutShy.id, score));
       draw(ctx, state);
       frame = requestAnimationFrame(loop);
     };
