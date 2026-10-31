@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { attemptProblems } from './isolated-record.mjs';
 import { resolveUnder } from './static-serve.mjs';
@@ -70,4 +72,74 @@ test('the static server serves only plain files under its root', () => {
     '/%E0%A4%A',
   ])
     assert.equal(resolveUnder(root, bad), null, bad);
+});
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** Runs a runner script with a docker that must never be reached. */
+function run(script, args, env = {}) {
+  const bin = mkdtempSync(join(tmpdir(), 'iso-bin-'));
+  writeFileSync(join(bin, 'docker'), '#!/bin/sh\necho "$@" >>"$0.calls"\nexit 1\n', {
+    mode: 0o755,
+  });
+  const r = spawnSync(join(HERE, script), args, {
+    encoding: 'utf8',
+    env: { PATH: `${bin}:${process.env.PATH}`, HOME: tmpdir(), ...env },
+  });
+  return { ...r, calls: existsSync(join(bin, 'docker.calls')) };
+}
+
+test('the isolated build fails closed before any candidate code runs', () => {
+  const work = () => join(mkdtempSync(join(tmpdir(), 'iso-work-')), 'w');
+  const git = join(HERE, '../../.git');
+  const noSnapshot = run('isolated-build.sh', [git, SHA, work(), join(tmpdir(), 'no-such-deps')]);
+  assert.equal(noSnapshot.status, 3, 'no dependency snapshot');
+  assert.match(noSnapshot.stderr, /no trusted dependency snapshot/);
+  assert.equal(noSnapshot.calls, false, 'docker never called without a snapshot');
+  const deps = mkdtempSync(join(tmpdir(), 'iso-deps-'));
+  mkdirSync(join(deps, 'node_modules/vite/bin'), { recursive: true });
+  writeFileSync(join(deps, 'node_modules/vite/bin/vite.js'), '');
+  const noDaemon = run('isolated-build.sh', [git, SHA, work(), deps]);
+  assert.equal(noDaemon.status === 0, false, 'docker unavailable');
+  assert.equal(run('isolated-build.sh', [git, 'HEAD', work(), deps]).status, 2, 'a ref');
+});
+
+test('the isolated browser refuses a used report directory and a missing image', () => {
+  const report = mkdtempSync(join(tmpdir(), 'iso-report-'));
+  writeFileSync(join(report, 'flow.json'), '{"result":"pass"}');
+  const used = run('isolated-browser.sh', ['img', report, report, report, report, FLOW]);
+  assert.equal(used.status, 2, 'a seeded report directory');
+  assert.equal(used.calls, false);
+  const empty = mkdtempSync(join(tmpdir(), 'iso-report-'));
+  assert.equal(
+    run('isolated-browser.sh', ['img', empty, empty, empty, empty, FLOW]).status,
+    3,
+    'no image',
+  );
+});
+
+test('the build never installs from the candidate or gives it a network', async () => {
+  const { readFileSync } = await import('node:fs');
+  const build = readFileSync(join(HERE, 'isolated-build.sh'), 'utf8');
+  const browser = readFileSync(join(HERE, 'isolated-browser.sh'), 'utf8');
+  for (const [name, src] of [
+    ['build', build],
+    ['browser', browser],
+  ]) {
+    const runs = src.split('\n').filter((l) => /docker run /.test(l));
+    assert.ok(runs.length > 0, name);
+    for (const l of runs) assert.match(l, /--network none/, `${name}: ${l}`);
+    const code = src
+      .split('\n')
+      .filter((l) => !l.startsWith('#'))
+      .join('\n');
+    assert.doesNotMatch(code, /docker\.sock|--privileged|--network host|--pid[ =]/, name);
+  }
+  assert.doesNotMatch(
+    build
+      .split('\n')
+      .filter((l) => !l.startsWith('#'))
+      .join('\n'),
+    /npm (ci|install)/,
+    'build installs nothing',
+  );
 });

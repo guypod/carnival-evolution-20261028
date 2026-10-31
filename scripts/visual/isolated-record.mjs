@@ -69,6 +69,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         runner: runnerSha,
         bootstrap: null,
         publishable: false,
+        // Build and page ran in --network none containers from the trusted
+        // dependency snapshot; Chromium's own sandbox was off (see
+        // isolated-flow.sh).
+        boundary: { network: 'none', chromiumSandbox: false, dependencies: 'runner-snapshot' },
         result: report.result,
         screenshots: report.screenshots,
       },

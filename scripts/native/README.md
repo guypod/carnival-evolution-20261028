@@ -313,31 +313,48 @@ before the merge sweep.
 flow on a pull request commit without running that commit's code on the host.
 It records evidence locally and publishes nothing.
 
+No candidate code ever has a network or the host's environment.
+
+- `isolated-deps.sh` prepares a trusted dependency snapshot before any
+  candidate code is on disk: the runner checkout's own `package.json` and
+  `package-lock.json` installed with `npm ci --ignore-scripts`, plus pinned
+  Playwright, in a digest-pinned `node:22-bookworm-slim` container. It is the
+  only networked step, and it runs no candidate code.
 - `isolated-build.sh` exports the exact commit with `git archive` (no `.git`,
-  symlinks refused) into a fresh directory and runs the candidate's `npm ci`
-  and `vite build` in a disposable container from a digest-pinned
-  `node:22-bookworm-slim` image: the caller's non-root uid, `--cap-drop ALL`,
-  `no-new-privileges`, a read-only root, memory, CPU and process limits, no
-  host environment, home, `gh` config, Git directory or Docker socket.
-  `npm ci` has public registry networking with no credentials, and the build
-  runs with `--network none`. It refuses when Docker reports no seccomp or
-  namespace option.
-- The host serves only the built files, with the runner's own
-  `static-serve.mjs` on `127.0.0.1`. The candidate's Vite never runs on the
-  host, and paths outside `dist`, traversal and symlinks are refused.
-- The flow, its assertions and the report come from the runner checkout
-  (`flow.mjs`), which must be clean. Chromium is driven from outside the page.
-  The candidate's tests, screenshots and JSON are never read.
-- `isolated-record.mjs` accepts only `flow.json` and `<flow>-<state>.png` as
-  plain files, recomputes every sha256, and writes `provenance.json` naming the
-  candidate, the runner commit, `bootstrap: null` and `publishable: false`.
-- `isolated-canary.sh` tests the boundary with nonsecret canaries: a hostile
-  candidate's install script and build try to read a controller canary file,
-  write a trusted-code canary and the controller's Git directory, find the
-  Docker socket or a token in the environment, and leave a forged `flow.json`
-  with a traversal path and a symlinked screenshot. It fails if any attempt
-  worked. `--unboxed` runs the same candidate on the host as a control, and
-  reports every breach.
+  symlinks refused) into a fresh directory. A candidate whose `package.json`,
+  `package-lock.json` or `.npmrc` differs from the snapshot is refused (exit 5)
+  and stays owed: nothing is installed from a candidate. The build, which runs
+  the candidate's Vite config, runs with `--network none` and the snapshot
+  mounted read-only. The container uses the caller's non-root uid,
+  `--cap-drop ALL`, `no-new-privileges`, a read-only root, memory, CPU and
+  process limits, and gets no host environment, home, `gh` config, Git
+  directory or Docker socket. It refuses when Docker reports no seccomp or
+  namespace option, when there is no snapshot, or when the image is not
+  already present (`--pull never`: only the operator pulls images).
+- `isolated-browser.sh` serves the built files and runs Chromium inside a
+  second `--network none` container from a digest-pinned Playwright image
+  (`mcr.microsoft.com/playwright:v1.61.1-noble`), with the same limits. The
+  committed `flow.mjs` and `static-serve.mjs` are copied out of the runner and
+  mounted read-only, as are the snapshot and the built files. Only a fresh,
+  empty report directory that the build never saw is writable. Chromium's own
+  sandbox cannot start under Docker's default seccomp profile, and the runner
+  changes no security settings, so it runs with `chromiumSandbox` off. The
+  container is the boundary, and the provenance says so.
+- `isolated-record.mjs` runs on the host, reads no candidate code, and accepts
+  only `flow.json` and `<flow>-<state>.png` as plain files. It recomputes every
+  sha256 and writes `provenance.json` naming the candidate, the runner commit,
+  `bootstrap: null`, `publishable: false` and the boundary.
+- `isolated-canary.sh` builds a hostile candidate (this runner's tree with a
+  hostile Vite config and page script) and tests both phases with nonsecret
+  canaries. The build tries to read a controller canary file, write a
+  trusted-code canary, the controller's Git directory and the snapshot, find
+  the Docker socket or a token, and open TCP connections to a host listener on
+  the Docker gateway, `169.254.169.254`, `10.0.0.1` and `127.0.0.1:2375`. It
+  also leaves a forged `flow.json` and a symlinked screenshot. The page
+  fetches the same addresses and `file://` URLs. The host listener counts
+  connections, so refusal is observed from outside. `--unboxed` runs the same
+  build on the host and the page on a bridge network as a control, and reports
+  breaches.
 
 Not done yet: no path publishes an isolated capture as a `browser-flow`
 check, and dispatch still reports every flow as owed. Publishing needs a
