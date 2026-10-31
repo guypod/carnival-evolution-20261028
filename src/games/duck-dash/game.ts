@@ -311,11 +311,11 @@ export function keyAction(
   return undefined;
 }
 
-const RIVER = { x: 160, y: 80, w: 480, h: 420 } as const;
+export const RIVER = { x: 160, y: 80, w: 480, h: 420 } as const;
 const LANE_W = RIVER.w / LANES;
 const TOP_Y = RIVER.y + 10;
 const DUCK_Y = 380;
-const BUTTON_Y = 430;
+export const BUTTON_Y = 430;
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
 
 /** Pixels the river flows per second: the same speed the stars and reeds float. */
@@ -406,7 +406,40 @@ function drawDuck(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fill();
 }
 
-const BANK_W = 18;
+export const BANK_W = 18;
+
+/** The score panel: one box on the left bank, level with the top of the river. */
+export const HUD_PANEL = { x: 8, y: RIVER.y, w: 126, h: 186 } as const;
+const HUD_ROW = 28;
+/** The key hint: beside the lane buttons, on the right bank. */
+export const KEY_HINT = { x: RIVER.x + RIVER.w + BANK_W + 10, y: BUTTON_Y, w: 122, h: 56 } as const;
+
+function drawHud(ctx: CanvasRenderingContext2D, state: DuckState) {
+  const { colors } = theme;
+  const { x, y, w, h } = HUD_PANEL;
+  ctx.fillStyle = colors.surface;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = colors.accent;
+  ctx.fillRect(x, y, w, 4);
+  const rows: [string, string][] = [
+    ['Time', `${Math.ceil(state.timeLeft)}s`],
+    ['Score', `${state.score}`],
+    ['Streak', `${state.streak}`],
+    ['Best', `${state.peakStreak}`],
+    ['Stars', `${state.collected}`],
+    ['Reeds hit', `${state.hits}`],
+  ];
+  ctx.font = canvasFont('body', 'bold');
+  rows.forEach(([label, value], i) => {
+    const rowY = y + 32 + i * HUD_ROW;
+    ctx.fillStyle = i < 3 ? colors.text : colors.muted;
+    ctx.textAlign = 'left';
+    ctx.fillText(label, x + 10, rowY);
+    ctx.fillStyle = i < 3 ? colors.accent : colors.muted;
+    ctx.textAlign = 'right';
+    ctx.fillText(value, x + w - 10, rowY);
+  });
+}
 
 function drawRiver(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
   const { colors } = theme;
@@ -469,17 +502,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
     ctx.fillRect(i * stripe, 0, stripe, 30);
   }
 
-  ctx.fillStyle = colors.text;
-  ctx.font = canvasFont('body', 'bold');
-  ctx.textAlign = 'left';
-  ctx.fillText(`Time ${Math.ceil(state.timeLeft)}s`, 16, 60);
-  ctx.fillText(`Score ${state.score}`, 16, 90);
-  ctx.fillText(`Streak ${state.streak}`, 16, 120);
-  ctx.fillText(`Best ${state.peakStreak}`, 16, 150);
-  ctx.textAlign = 'right';
-  ctx.fillText(`Stars ${state.collected}`, WIDTH - 16, 60);
-  ctx.fillText(`Reeds hit ${state.hits}`, WIDTH - 16, 90);
-
+  drawHud(ctx, state);
   drawRiver(ctx, state, offset);
 
   for (const object of state.objects) {
@@ -516,11 +539,12 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
       ctx.textAlign = 'center';
       ctx.fillText(['Left', 'Middle', 'Right'][lane], laneCentre(lane), BUTTON_Y + 34);
     }
-    ctx.fillStyle = colors.muted;
-    ctx.font = canvasFont('small');
+    ctx.fillStyle = colors.text;
+    ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'left';
-    ctx.fillText('Left/Right or A/D,', 12, 440);
-    ctx.fillText('or tap a lane', 12, 460);
+    ctx.fillText('Left/Right', KEY_HINT.x, KEY_HINT.y + 16);
+    ctx.fillText('or A/D,', KEY_HINT.x, KEY_HINT.y + 34);
+    ctx.fillText('or tap a lane', KEY_HINT.x, KEY_HINT.y + 52);
   } else {
     ctx.fillStyle = colors.background;
     ctx.globalAlpha = 0.85;
