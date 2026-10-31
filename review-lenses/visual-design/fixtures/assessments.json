@@ -1,0 +1,37 @@
+{
+  "note": "Assessments made by looking at the screenshots beside them, taken in headless Chromium 149 at 1280x800 and 390x844 after three Tab presses. They record a visual judgment; the test only checks that each assessment uses the rubric and agrees with its sample's label.",
+  "samples": {
+    "inconsistent": {
+      "expect": "finding",
+      "screenshots": ["inconsistent-desktop.png"],
+      "verdicts": {
+        "composition": "finding: controls in one line at the top, about 75% of the 1280x800 screen is empty background",
+        "typography": "finding: the Buy button and text box use the browser's default small font",
+        "spacing": "finding: radio buttons, text box and button run together with no grouping or frame",
+        "depth": "finding: flat background only, no frame, shadow or counter",
+        "materials": "finding: no carnival material; a bare table reads as a dashboard",
+        "art-integration": "finding: no art at all",
+        "controls": "finding: default grey button, default blue radio dots, white default text box with no label",
+        "responsive": "pass: nothing scrolls sideways at 390px",
+        "focus-contrast": "finding: button:focus removes the outline, so the focused Buy button shows no ring",
+        "quiet": "pass: nothing animates"
+      }
+    },
+    "compliant": {
+      "expect": "pass",
+      "screenshots": ["compliant-desktop.png", "compliant-narrow.png"],
+      "verdicts": {
+        "composition": "pass: the illustrated stall fills the left of the frame as the focal point; the counter panel beside it is filled by a price board and the form, centred, with no large empty area",
+        "typography": "pass: theme font throughout, gold headings, a letter-spaced price board title, controls inherit the font, bold labels and button",
+        "spacing": "pass: price board, radios, name field and button grouped in one framed counter with even gaps",
+        "depth": "pass: wood frame and drop shadow under the stall, a sky gradient, shaded awning, counter and shelves, a ground shadow under the stall and lantern glow",
+        "materials": "pass: scalloped red and cream striped awning, wood posts and plank counter with grain lines, glowing paper lanterns, bunting, balloons and plush prizes on shelves, a painted TICKETS sign",
+        "art-integration": "pass: the SVG scene shares the frame with its controls, the counter's striped top echoes the awning and both use only theme colours",
+        "controls": "pass: native radios, text box and button, all styled from the theme, labels associated",
+        "responsive": "pass: at 390px the scene scales down whole and the counter stacks under it, nothing cut off or scrolling sideways",
+        "focus-contrast": "pass: a 3px gold focus ring shows on the Buy button against the purple counter",
+        "quiet": "pass: nothing animates"
+      }
+    }
+  }
+}

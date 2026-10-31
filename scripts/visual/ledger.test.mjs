@@ -1,0 +1,715 @@
+// Execution tests for the visual repair loop's lifecycle: coverage, findings,
+// its own pull requests and the stored ledger. Each test runs the same
+// functions the loop's command line runs.
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import {
+  BATCH_SIZE,
+  LEDGER_BRANCH,
+  affectedRoutes,
+  allRoutes,
+  emptyLedger,
+  importersAt,
+  planRun,
+  readLedger,
+  reconcileOwnPrs,
+  recordReview,
+  repairConflicts,
+  repairable,
+  routeModules,
+  writeLedger,
+} from './ledger.mjs';
+
+const mainSource = readFileSync(new URL('../../src/main.ts', import.meta.url), 'utf8');
+const games = ['water-cannon', 'ring-toss'];
+const routes = allRoutes(mainSource, games);
+const NOW = '2026-10-30T00:00:00Z';
+const base = { mainSource, routes, openPrs: [], openPr: null, changedFiles: [], now: NOW };
+const prWith = (number, ...files) => ({ number, files: files.map((path) => ({ path })) });
+const finding = (route, criterion, extra = {}) => ({
+  route,
+  state: 'desktop-clean',
+  criterion,
+  note: `${criterion} on ${route}`,
+  ...extra,
+});
+
+/** Run every batch the plan asks for, as successive runs would. */
+function reviewAll(ledger, head, changedFiles, findingsFor = () => []) {
+  let runs = 0;
+  for (;;) {
+    const plan = planRun(ledger, { ...base, head, changedFiles });
+    if (plan.action !== 'review') return { ledger: plan.ledger, runs };
+    ledger = recordReview(plan.ledger, {
+      reviewed: plan.batch,
+      findings: plan.batch.flatMap(findingsFor),
+      now: NOW,
+    });
+    runs++;
+  }
+}
+
+test('the route list covers the midway, every standalone screen and every game', () => {
+  for (const r of ['#/', '#/balloon', '#/snack', '#/workshop', '#/play/water-cannon']) {
+    assert.ok(routes.includes(r), r);
+  }
+  assert.equal(routeModules(mainSource).get('src/wish-balloon.ts')?.[0], '#/balloon');
+});
+
+test('a shared style change owes every route a look, not three', () => {
+  assert.deepEqual(affectedRoutes(['src/style.css'], mainSource, routes), routes);
+  assert.deepEqual(affectedRoutes(['src/carnival/theme.ts'], mainSource, routes), routes);
+  assert.deepEqual(affectedRoutes(['src/wish-balloon.ts'], mainSource, routes), ['#/balloon']);
+  assert.deepEqual(affectedRoutes(['src/games/ring-toss/draw.ts'], mainSource, routes), [
+    '#/play/ring-toss',
+  ]);
+  // game.ts holds the name and description the midway and booth cards show.
+  assert.deepEqual(affectedRoutes(['src/games/ring-toss/game.ts'], mainSource, routes), routes);
+  assert.deepEqual(
+    affectedRoutes(['src/snack-stand.test.ts', 'README.md'], mainSource, routes),
+    [],
+  );
+});
+
+test('the first run owes every route a look instead of starting from the skill commit', () => {
+  const plan = planRun(emptyLedger(), { ...base, head: 'h1' });
+  assert.equal(plan.action, 'review');
+  assert.equal(plan.batch.length, BATCH_SIZE);
+  assert.deepEqual([...plan.ledger.pending].sort(), [...routes].sort());
+});
+
+test('coverage moves only after every owed route is reviewed, batch by batch', () => {
+  let ledger = recordReview(planRun(emptyLedger(), { ...base, head: 'h1' }).ledger, {
+    reviewed: routes,
+    findings: [],
+    now: NOW,
+  });
+  assert.equal(ledger.reviewedThrough, 'h1');
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  assert.equal(ledger.reviewedThrough, 'h1', 'partial coverage does not move the checkpoint');
+  const done = reviewAll(ledger, 'h2', ['src/style.css']);
+  assert.equal(done.ledger.reviewedThrough, 'h2');
+  assert.deepEqual(done.ledger.pending, []);
+  assert.equal(done.runs, Math.ceil((routes.length - BATCH_SIZE) / BATCH_SIZE));
+});
+
+test('an interrupted run leaves the ledger as it was, and the next run starts again', () => {
+  const ledger = recordReview(planRun(emptyLedger(), { ...base, head: 'h1' }).ledger, {
+    reviewed: routes,
+    findings: [],
+    now: NOW,
+  });
+  const first = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  // The run stops before `record`: nothing is saved, so the stored ledger is unchanged.
+  const again = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  assert.deepEqual(again.batch, first.batch);
+});
+
+test('other open pull requests never stop a visual inspection', () => {
+  const openPrs = [prWith(9, 'src/style.css'), prWith(10, 'src/snack-stand.ts')];
+  const plan = planRun(emptyLedger(), { ...base, head: 'h1', openPrs });
+  assert.equal(plan.action, 'review');
+  assert.equal(plan.batch.length, BATCH_SIZE);
+});
+
+const withBalloonFinding = () =>
+  reviewAll(emptyLedger(), 'h1', [], (r) => (r === '#/balloon' ? [finding(r, 'controls')] : []))
+    .ledger;
+
+test('an open pull request in unrelated files does not hold up a repair', () => {
+  const openPrs = [
+    prWith(9, 'src/snack-stand.ts', 'src/games/ring-toss/game.test.ts', 'README.md'),
+  ];
+  assert.equal(repairConflicts(openPrs, { mainSource, routes })['#/balloon'], undefined);
+  const plan = planRun(withBalloonFinding(), { ...base, head: 'h1', openPrs });
+  assert.deepEqual([plan.action, plan.targets], ['repair', ['#/balloon']]);
+});
+
+test('a queued issue without a pull request does not hold up a repair', () => {
+  // The plan reads only open pull requests: an issue has no files to overlap,
+  // and the shared writer key keeps its run from writing alongside this one.
+  const plan = planRun(withBalloonFinding(), { ...base, head: 'h1', openPrs: [] });
+  assert.equal(plan.action, 'repair');
+});
+
+test('a repair waits for an open pull request that changes the same or a shared file', () => {
+  for (const file of [
+    'src/wish-balloon.ts',
+    'src/style.css',
+    'src/main.ts',
+    'src/carnival/theme.ts',
+  ]) {
+    const ledger = withBalloonFinding();
+    const held = repairable(ledger, NOW).length;
+    const plan = planRun(ledger, { ...base, head: 'h1', openPrs: [prWith(9, file)] });
+    assert.equal(plan.action, 'defer', file);
+    assert.match(plan.reason, /#9/);
+    // Nothing is lost: the finding stays repairable for a later run.
+    assert.equal(repairable(plan.ledger, NOW).length, held, file);
+  }
+  // A pull request whose file list may be cut off counts as overlapping.
+  const many = prWith(9, ...Array.from({ length: 100 }, (_, i) => `docs/f${i}.md`));
+  assert.equal(repairConflicts([many], { mainSource, routes })['#/balloon'].length, 1);
+  assert.equal(repairConflicts([{ number: 9 }], { mainSource, routes })['#/balloon'].length, 1);
+});
+
+test('only the conflicting route waits; another repairable route is repaired', () => {
+  const ledger = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    ['#/balloon', '#/snack'].includes(r) ? [finding(r, 'controls')] : [],
+  ).ledger;
+  const plan = planRun(ledger, {
+    ...base,
+    head: 'h1',
+    openPrs: [prWith(9, 'src/wish-balloon.ts')],
+  });
+  assert.deepEqual([plan.action, plan.targets], ['repair', ['#/snack']]);
+  assert.ok(plan.conflicts['#/balloon']);
+});
+
+test('a game repair waits only for pull requests in that game or shared files', () => {
+  const route = '#/play/ring-toss';
+  const conflicts = (file) => repairConflicts([prWith(9, file)], { mainSource, routes })[route];
+  assert.ok(conflicts('src/games/ring-toss/draw.ts'));
+  assert.equal(conflicts('src/games/water-cannon/draw.ts'), undefined);
+  // A game's own module names it on the midway, so it reaches every route.
+  assert.ok(conflicts('src/games/water-cannon/game.ts'));
+});
+
+test('a repair waits for a pull request in a module its screen reads indirectly', () => {
+  const repo = new URL('../..', import.meta.url).pathname;
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  const conflicts = repairConflicts([prWith(9, 'src/prize-pavilion.ts')], {
+    mainSource,
+    routes,
+    importers: importersAt(repo, head),
+  });
+  assert.ok(conflicts['#/room'], 'prize-room.ts draws with prize-pavilion.ts');
+});
+
+test('a route the router no longer serves is not captured again and again', () => {
+  const ledger = withBalloonFinding();
+  ledger.pending = ['#/gone'];
+  ledger.findings.push({
+    ...ledger.findings[0],
+    fingerprint: '#/gone:desktop-clean:controls',
+    route: '#/gone',
+    seenAt: 'h0',
+  });
+  const plan = planRun(ledger, { ...base, head: 'h2' });
+  assert.ok(!(plan.batch ?? []).includes('#/gone'));
+  assert.ok(!(plan.targets ?? []).includes('#/gone'));
+  // Its finding is kept, untouched, in case the route comes back.
+  assert.ok(plan.ledger.findings.some((f) => f.route === '#/gone' && f.status === 'open'));
+});
+
+test('findings on routes the repair did not touch survive later commits', () => {
+  const findings = (r) =>
+    r === '#/snack' || r === '#/balloon' ? [finding(r, 'controls'), finding(r, 'composition')] : [];
+  let { ledger } = reviewAll(emptyLedger(), 'h1', [], findings);
+  assert.equal(repairable(ledger, NOW).length, 4);
+  // Four unrelated commits later, nothing about #/snack changed.
+  for (const head of ['h2', 'h3', 'h4', 'h5']) {
+    ledger = reviewAll(ledger, head, ['src/games/ring-toss/draw.ts'], findings).ledger;
+  }
+  assert.deepEqual(
+    repairable(ledger, NOW)
+      .map((f) => f.fingerprint)
+      .sort(),
+    [
+      '#/balloon:desktop-clean:composition',
+      '#/balloon:desktop-clean:controls',
+      '#/snack:desktop-clean:composition',
+      '#/snack:desktop-clean:controls',
+    ],
+  );
+  // Open findings are revisited in the first batch at a new head.
+  const plan = planRun(ledger, { ...base, head: 'h6', changedFiles: ['src/wish-balloon.ts'] });
+  assert.ok(plan.batch.includes('#/balloon') && plan.batch.includes('#/snack'), plan.batch);
+});
+
+test('a finding that no longer shows on a re-reviewed route is resolved', () => {
+  let { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    r === '#/snack' ? [finding(r, 'controls')] : [],
+  );
+  const plan = planRun(ledger, { ...base, head: 'h2' });
+  assert.ok(plan.batch.includes('#/snack'));
+  ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  assert.equal(ledger.findings[0].status, 'resolved');
+  assert.equal(repairable(ledger, NOW).length, 0);
+});
+
+const ownPr = (state, extra = {}) => ({
+  number: 41,
+  state,
+  headRefName: 'tessl/visual-repair-snack-20261030',
+  isCrossRepository: false,
+  author: { login: 'app/tessl-app' },
+  body: 'fixes\n<!-- tessl-visual-finding: #/snack:desktop-clean:controls -->',
+  closedAt: state === 'OPEN' ? null : '2026-10-29T00:00:00Z',
+  ...extra,
+});
+const withSnackFinding = () =>
+  reviewAll(emptyLedger(), 'h1', [], (r) => (r === '#/snack' ? [finding(r, 'controls')] : []))
+    .ledger;
+
+test('the loop recovers its own open pull request instead of deferring on it', () => {
+  const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [ownPr('OPEN')], NOW);
+  assert.equal(openPr, 41);
+  const plan = planRun(ledger, { ...base, head: 'h2', openPr });
+  assert.deepEqual([plan.action, plan.pr], ['monitor', 41]);
+  assert.equal(repairable(ledger, NOW).length, 0, 'no second repair of the same finding');
+});
+
+test('main is still inspected while the loop’s own repair awaits review', () => {
+  const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [ownPr('OPEN')], NOW);
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'], openPr });
+  assert.equal(plan.action, 'review');
+  assert.equal(plan.monitor, 41);
+  assert.equal(plan.batch.length, BATCH_SIZE);
+  // The finding still shows on main until the repair merges: it stays with the repair.
+  const reviewed = [...plan.batch, '#/snack'];
+  const after = recordReview(plan.ledger, {
+    reviewed,
+    findings: [finding('#/snack', 'controls'), finding('#/balloon', 'focus-contrast')],
+    now: NOW,
+  });
+  const snack = after.findings.find((f) => f.route === '#/snack');
+  assert.deepEqual([snack.status, snack.pr], ['pr-open', 41]);
+  // New findings are kept, but no second repair opens while #41 is open.
+  assert.ok(repairable(after, NOW).some((f) => f.route === '#/balloon'));
+  let next = after;
+  for (;;) {
+    const p = planRun(next, { ...base, head: 'h2', openPr });
+    if (p.action !== 'review') {
+      assert.deepEqual([p.action, p.pr], ['monitor', 41]);
+      break;
+    }
+    assert.equal(p.monitor, 41);
+    next = recordReview(p.ledger, { reviewed: p.batch, findings: [], now: NOW });
+  }
+  assert.equal(next.reviewedThrough, 'h2', 'coverage of the newer main moved on');
+});
+
+test('a merged own pull request is recorded and its route re-checked on main', () => {
+  const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [ownPr('MERGED')], NOW);
+  assert.equal(openPr, null);
+  assert.equal(ledger.findings[0].status, 'merged');
+  const plan = planRun(ledger, { ...base, head: 'h2', openPr });
+  assert.equal(plan.action, 'review');
+  assert.ok(plan.batch.includes('#/snack'));
+  // On main the finding is gone: merged becomes resolved, the repair held.
+  const after = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  assert.equal(after.findings[0].status, 'resolved');
+  // Or it is back: the repair did not hold, and it may be repaired again.
+  const back = recordReview(plan.ledger, {
+    reviewed: plan.batch,
+    findings: [finding('#/snack', 'controls')],
+    now: NOW,
+  });
+  assert.equal(repairable(back, NOW).length, 1);
+});
+
+test('a marker edited out of an open repair does not strand its finding', () => {
+  const ledger = reconcileOwnPrs(withSnackFinding(), [ownPr('OPEN')], NOW).ledger;
+  for (const [state, status] of [
+    ['MERGED', 'merged'],
+    ['CLOSED', 'declined'],
+  ]) {
+    const after = reconcileOwnPrs(ledger, [ownPr(state, { body: 'fixes' })], NOW).ledger;
+    assert.equal(after.findings[0].status, status, state);
+  }
+  // Closed, reopened and closed again without its marker: the newer decline holds.
+  const closed = reconcileOwnPrs(ledger, [ownPr('CLOSED', { body: 'fixes' })], NOW).ledger;
+  const again = reconcileOwnPrs(
+    closed,
+    [ownPr('CLOSED', { body: 'fixes', closedAt: '2026-10-30T00:00:00Z' })],
+    NOW,
+  ).ledger;
+  assert.equal(again.findings[0].declinedAt, '2026-10-30T00:00:00Z');
+});
+
+test('a retained branch from a merged or declined pull request never blocks a run', () => {
+  for (const state of ['MERGED', 'CLOSED']) {
+    const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [ownPr(state)], NOW);
+    const plan = planRun(ledger, { ...base, head: 'h2', openPr });
+    assert.notEqual(plan.action, 'defer', state);
+    assert.notEqual(plan.action, 'monitor', state);
+  }
+});
+
+test('a declined repair is kept declined for 30 days, even when seen again', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('CLOSED')], NOW);
+  assert.equal(ledger.findings[0].status, 'declined');
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/snack-stand.ts'] });
+  ledger = recordReview(plan.ledger, {
+    reviewed: plan.batch,
+    findings: [finding('#/snack', 'controls')],
+    now: NOW,
+  });
+  assert.equal(ledger.findings[0].status, 'declined');
+  assert.equal(repairable(ledger, NOW).length, 0);
+  assert.equal(repairable(ledger, '2026-12-15T00:00:00Z').length, 1);
+});
+
+test('repeating a reconcile with the same pull requests changes nothing', () => {
+  const once = reconcileOwnPrs(withSnackFinding(), [ownPr('MERGED')], NOW).ledger;
+  const twice = reconcileOwnPrs(once, [ownPr('MERGED')], NOW).ledger;
+  assert.deepEqual(twice, once);
+});
+
+test('other people’s and other loops’ pull requests are not the loop’s own', () => {
+  for (const pr of [
+    ownPr('OPEN', { headRefName: 'tessl/issue-303' }),
+    // Anyone with push access can choose the branch name; only the app's own count.
+    ownPr('OPEN', { author: { login: 'someone' } }),
+    ownPr('OPEN', { author: undefined }),
+  ]) {
+    const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [pr], NOW);
+    assert.equal(openPr, null);
+    assert.equal(ledger.findings[0].status, 'open');
+  }
+});
+
+function originRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'ledger-test-'));
+  const run = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  run(dir, 'init', '--quiet', '--bare', 'origin.git');
+  run(dir, 'init', '--quiet', 'a');
+  run(dir, 'init', '--quiet', 'b');
+  for (const clone of ['a', 'b']) {
+    run(join(dir, clone), 'remote', 'add', 'origin', join(dir, 'origin.git'));
+    run(join(dir, clone), 'config', 'user.email', 'test@example.com');
+    run(join(dir, clone), 'config', 'user.name', 'test');
+  }
+  return { a: join(dir, 'a'), b: join(dir, 'b'), origin: join(dir, 'origin.git'), run };
+}
+
+test('the ledger round-trips through an ordinary branch on origin', () => {
+  const { a, b, origin, run } = originRepo();
+  assert.deepEqual(readLedger(a), { ledger: emptyLedger(), base: null });
+  const saved = { ...emptyLedger(), reviewedThrough: 'h1' };
+  const commit = writeLedger(a, saved, null, 'first');
+  assert.equal(run(origin, 'rev-parse', `refs/heads/${LEDGER_BRANCH}`), commit);
+  assert.deepEqual(readLedger(b), { ledger: saved, base: commit });
+});
+
+test('a stale writer cannot overwrite a newer ledger', () => {
+  const { a, b } = originRepo();
+  writeLedger(a, emptyLedger(), null, 'first');
+  const fromB = readLedger(b);
+  const fromA = readLedger(a);
+  writeLedger(a, { ...fromA.ledger, reviewedThrough: 'h2' }, fromA.base, 'a wins');
+  assert.throws(() =>
+    writeLedger(b, { ...fromB.ledger, reviewedThrough: 'h-old' }, fromB.base, 'stale'),
+  );
+  assert.equal(readLedger(b).ledger.reviewedThrough, 'h2');
+});
+
+test('the independent pixel check reads committed screenshots without a browser', async () => {
+  const { decodePng, isBlank, summarise } = await import('./pixels.mjs');
+  const real = summarise(
+    decodePng(
+      readFileSync(
+        new URL('../../docs/visual-baseline/after/balloon-desktop-clean.png', import.meta.url),
+      ),
+    ),
+  );
+  assert.equal(real.width, 1280);
+  assert.equal(isBlank(real), false);
+  const { deflateSync } = await import('node:zlib');
+  const png = (w, h, rows) => {
+    const chunk = (type, body) => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(body.length);
+      head.write(type, 4, 'ascii');
+      return Buffer.concat([head, body, Buffer.alloc(4)]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w);
+    ihdr.writeUInt32BE(h, 4);
+    ihdr.set([8, 2, 0, 0, 0], 8);
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', deflateSync(Buffer.concat(rows))),
+      chunk('IEND', Buffer.alloc(0)),
+    ]);
+  };
+  const flat = Buffer.concat([Buffer.from([0]), Buffer.alloc(8 * 3, 40)]);
+  assert.equal(isBlank(summarise(decodePng(png(8, 8, Array(8).fill(flat))))), true);
+  // Rows missing from the payload, or an unknown filter, are refused, not invented.
+  assert.throws(() => decodePng(png(8, 16, Array(8).fill(flat))), /header needs/);
+  const badFilter = Buffer.concat([Buffer.from([9]), Buffer.alloc(8 * 3, 40)]);
+  assert.throws(() => decodePng(png(8, 8, Array(8).fill(badFilter))), /unknown filter/);
+});
+
+test('main moving between batches cannot keep refilling the backlog', () => {
+  let ledger = emptyLedger();
+  let runs = 0;
+  for (let i = 1; ledger.reviewedThrough === null; i++) {
+    // A new, unrelated commit on main before every run.
+    const plan = planRun(ledger, { ...base, head: `h${i}`, changedFiles: ['README.md'] });
+    assert.equal(plan.action, 'review');
+    ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+    assert.ok(++runs <= Math.ceil(routes.length / BATCH_SIZE), 'backlog shrinks every run');
+  }
+  assert.equal(ledger.reviewedThrough, 'h1', 'coverage holds through the interval it opened at');
+  // The later commits are owed in the next interval, from h1.
+  const next = planRun(ledger, { ...base, head: 'h9', changedFiles: ['src/wish-balloon.ts'] });
+  assert.deepEqual(next.batch, ['#/balloon']);
+});
+
+test('repairable findings left at the same head are repaired, not dropped', () => {
+  let { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    r === '#/snack' ? [finding(r, 'controls')] : [],
+  );
+  // Two failed repair attempts later the finding is still open at the same head.
+  const plan = planRun(ledger, { ...base, head: 'h1' });
+  assert.equal(plan.action, 'repair');
+  // A decline that has aged past 30 days comes back the same way.
+  ledger = reconcileOwnPrs(ledger, [ownPr('CLOSED')], NOW).ledger;
+  assert.equal(planRun(ledger, { ...base, head: 'h1' }).action, 'nothing');
+  const later = { ...base, head: 'h1', now: '2026-12-15T00:00:00Z' };
+  assert.notEqual(planRun(ledger, later).action, 'nothing');
+});
+
+test('an old pull request never overwrites a newer outcome, and each applies once', () => {
+  const old = ownPr('CLOSED', { number: 30 });
+  const merged = ownPr('MERGED', { number: 41 });
+  for (const order of [
+    [old, merged],
+    [merged, old],
+  ]) {
+    const { ledger } = reconcileOwnPrs(withSnackFinding(), order, NOW);
+    assert.deepEqual([ledger.findings[0].status, ledger.findings[0].pr], ['merged', 41]);
+  }
+  // Main shows the finding again: it reopens and stays open on the next run.
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [old, merged], NOW);
+  const plan = planRun(ledger, { ...base, head: 'h2' });
+  ledger = recordReview(plan.ledger, {
+    reviewed: plan.batch,
+    findings: [finding('#/snack', 'controls')],
+    now: NOW,
+  });
+  ledger = reconcileOwnPrs(ledger, [old, merged], NOW).ledger;
+  assert.equal(ledger.findings[0].status, 'open');
+});
+
+test('a fork pull request with the loop’s branch name is not the loop’s own', () => {
+  const fork = ownPr('OPEN', { isCrossRepository: true });
+  const { ledger, openPr } = reconcileOwnPrs(withSnackFinding(), [fork], NOW);
+  assert.equal(openPr, null);
+  assert.equal(ledger.findings[0].status, 'open');
+  const closed = ownPr('CLOSED', { isCrossRepository: true });
+  assert.equal(
+    reconcileOwnPrs(withSnackFinding(), [closed], NOW).ledger.findings[0].status,
+    'open',
+  );
+});
+
+test('a game registry change owes every route, because the midway lays out from it', () => {
+  assert.deepEqual(affectedRoutes(['src/games/index.ts'], mainSource, routes), routes);
+});
+
+test('a ledger read that fails is an error, not a first run', () => {
+  const { a, run } = originRepo();
+  run(a, 'remote', 'set-url', 'origin', join(a, 'no-such-remote.git'));
+  assert.throws(() => readLedger(a));
+});
+
+test('an older pull request seen in a later run never overwrites a newer outcome', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('MERGED', { number: 41 })], NOW);
+  ledger = reconcileOwnPrs(ledger, [ownPr('CLOSED', { number: 30 })], NOW).ledger;
+  assert.deepEqual([ledger.findings[0].status, ledger.findings[0].pr], ['merged', 41]);
+});
+
+test('open findings on four routes cannot starve owed coverage while main moves', () => {
+  const stuck = ['#/snack', '#/toy', '#/room', '#/plush'];
+  const findings = (r) => (stuck.includes(r) ? [finding(r, 'controls')] : []);
+  let { ledger } = reviewAll(emptyLedger(), 'h0', [], findings);
+  const opened = planRun(ledger, { ...base, head: 'h1', changedFiles: ['src/style.css'] });
+  ledger = opened.ledger;
+  let runs = 0;
+  for (let i = 1; ledger.reviewedThrough !== 'h1'; i++) {
+    const plan = planRun(ledger, { ...base, head: `h1-${i}`, changedFiles: ['src/style.css'] });
+    assert.equal(plan.action, 'review');
+    ledger = recordReview(plan.ledger, {
+      reviewed: plan.batch,
+      findings: plan.batch.flatMap(findings),
+      now: NOW,
+    });
+    assert.ok(++runs <= routes.length, 'coverage keeps moving');
+  }
+  assert.equal(repairable(ledger, NOW).length, 4, 'the open findings are still kept');
+});
+
+test('a reopened, re-closed or later merged pull request applies each new outcome', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('CLOSED')], NOW);
+  ledger = reconcileOwnPrs(ledger, [ownPr('OPEN')], NOW).ledger;
+  assert.equal(ledger.findings[0].status, 'pr-open', 'reopen');
+  const again = ownPr('CLOSED', { closedAt: '2026-10-29T12:00:00Z' });
+  ledger = reconcileOwnPrs(ledger, [again], NOW).ledger;
+  assert.deepEqual(
+    [ledger.findings[0].status, ledger.findings[0].declinedAt],
+    ['declined', '2026-10-29T12:00:00Z'],
+  );
+  ledger = reconcileOwnPrs(ledger, [ownPr('OPEN')], NOW).ledger;
+  ledger = reconcileOwnPrs(
+    ledger,
+    [ownPr('MERGED', { closedAt: '2026-10-29T18:00:00Z' })],
+    NOW,
+  ).ledger;
+  assert.equal(ledger.findings[0].status, 'merged', 'merge after reopen');
+});
+
+test('a decline cooldown survives resolution and recurrence of the finding', () => {
+  let { ledger } = reconcileOwnPrs(withSnackFinding(), [ownPr('CLOSED')], NOW);
+  let plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/snack-stand.ts'] });
+  ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  assert.equal(ledger.findings[0].status, 'resolved');
+  plan = planRun(ledger, { ...base, head: 'h3', changedFiles: ['src/snack-stand.ts'] });
+  ledger = recordReview(plan.ledger, {
+    reviewed: plan.batch,
+    findings: [finding('#/snack', 'controls')],
+    now: NOW,
+  });
+  assert.equal(repairable(ledger, NOW).length, 0, 'still within 30 days of the decline');
+  assert.equal(repairable(ledger, '2026-12-15T00:00:00Z').length, 1);
+});
+
+test('an owed route with an open finding is looked at in the first batch', () => {
+  const { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    r === routes.at(-1) ? [finding(r, 'controls')] : [],
+  );
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  assert.equal(plan.batch[0], routes.at(-1));
+  assert.equal(plan.batch.length, BATCH_SIZE);
+});
+
+test('a helper in one game’s folder that another module imports owes every route', () => {
+  const file = 'src/games/ring-toss/aim.ts';
+  const own = affectedRoutes([file], mainSource, routes, () => ['src/games/ring-toss/game.ts']);
+  assert.deepEqual(own, ['#/play/ring-toss']);
+  const shared = affectedRoutes([file], mainSource, routes, () => [
+    'src/games/water-cannon/game.ts',
+  ]);
+  assert.deepEqual(shared, routes);
+  // A folder for a game the router does not serve cannot be placed.
+  assert.deepEqual(affectedRoutes(['src/games/gone/aim.ts'], mainSource, routes), routes);
+});
+
+test('a backlog whose last route was removed completes instead of stalling', () => {
+  const ledger = {
+    ...emptyLedger(),
+    reviewedThrough: 'h0',
+    pending: ['#/gone'],
+    pendingThrough: 'h1',
+  };
+  const plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/snack-stand.ts'] });
+  assert.equal(plan.action, 'review');
+  assert.deepEqual(plan.batch, ['#/snack']);
+  const quiet = planRun(ledger, { ...base, head: 'h2', changedFiles: ['README.md'] });
+  assert.equal(quiet.action, 'nothing');
+  assert.equal(quiet.ledger.reviewedThrough, 'h2');
+});
+
+test('a route reviewed at a later commit than its interval is owed again', () => {
+  let ledger = reviewAll(emptyLedger(), 'h1', []).ledger;
+  // An interval opens at h2; the first batch is reviewed at h2, the rest at h3.
+  let plan = planRun(ledger, { ...base, head: 'h2', changedFiles: ['src/style.css'] });
+  ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  const late = [];
+  for (;;) {
+    plan = planRun(ledger, { ...base, head: 'h3' });
+    if (plan.action !== 'review') break;
+    late.push(...plan.batch);
+    ledger = recordReview(plan.ledger, { reviewed: plan.batch, findings: [], now: NOW });
+  }
+  assert.equal(ledger.reviewedThrough, 'h2');
+  assert.deepEqual(ledger.reviewedAt['#/'], 'h2');
+  // plan() owes the late routes whose files changed between h2 and h3.
+  const next = planRun(ledger, { ...base, head: 'h4', recheck: [late[0]] });
+  assert.ok(next.batch.includes(late[0]));
+  assert.ok(!planRun(ledger, { ...base, head: 'h4' }).batch);
+});
+
+test('revisits rotate, so a fifth route with a finding is not starved', () => {
+  const five = routes.slice(1, 6);
+  let { ledger } = reviewAll(emptyLedger(), 'h1', [], (r) =>
+    five.includes(r) ? [finding(r, 'controls')] : [],
+  );
+  const seen = new Set();
+  for (const [i, head] of ['h2', 'h3'].entries()) {
+    const plan = planRun(ledger, { ...base, head, changedFiles: ['README.md'] });
+    plan.batch.forEach((r) => seen.add(r));
+    ledger = recordReview(plan.ledger, {
+      reviewed: plan.batch,
+      findings: plan.batch.map((r) => finding(r, 'controls')),
+      now: `2026-11-0${i + 1}T00:00:00Z`,
+    });
+  }
+  assert.deepEqual([...seen].sort(), [...five].sort());
+});
+
+test('a module another screen imports owes every route, not just its own', () => {
+  const importers = (file) =>
+    ({
+      'src/prize-pavilion.ts': ['src/main.ts', 'src/prize-room.ts'],
+      'src/midway/palette.ts': ['src/postcard.ts'],
+    })[file] ?? ['src/main.ts'];
+  assert.deepEqual(
+    affectedRoutes(['src/prize-pavilion.ts'], mainSource, routes, importers),
+    routes,
+  );
+  assert.deepEqual(
+    affectedRoutes(['src/midway/palette.ts'], mainSource, routes, importers),
+    routes,
+  );
+  assert.deepEqual(affectedRoutes(['src/wish-balloon.ts'], mainSource, routes, importers), [
+    '#/balloon',
+  ]);
+});
+
+test('a module the midway also draws with in main.ts owes every route', () => {
+  // src/passport.ts feeds both #/postcard and the midway's passport panel.
+  assert.deepEqual(routeModules(mainSource).get('src/passport.ts'), []);
+  assert.deepEqual(affectedRoutes(['src/passport.ts'], mainSource, routes), routes);
+  assert.deepEqual(routeModules(mainSource).get('src/snack-stand.ts'), ['#/snack']);
+});
+
+test('a failed importer search stops the plan instead of narrowing coverage', () => {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const importers = importersAt(process.cwd(), head);
+  assert.ok(importers('src/prize-pavilion.ts').includes('src/prize-room.ts'));
+  assert.deepEqual(importers('src/no-such-module-anywhere.ts'), []);
+  assert.throws(() => importersAt(process.cwd(), 'not-a-commit')('src/prize-pavilion.ts'));
+  assert.throws(() => importersAt(mkdtempSync(join(tmpdir(), 'no-repo-')), head)('src/x.ts'));
+});
+
+test('a review outside its plan or the rubric is refused', async () => {
+  const { validateReview } = await import('./ledger.mjs');
+  const criteria = JSON.parse(
+    readFileSync(new URL('../../review-lenses/visual-design/rubric.json', import.meta.url)),
+  ).criteria;
+  const plan = { head: 'h1', batch: ['#/snack'] };
+  const ok = { head: 'h1', reviewed: ['#/snack'], findings: [finding('#/snack', 'controls')] };
+  assert.deepEqual(validateReview(ok, plan, criteria), []);
+  for (const bad of [
+    { ...ok, head: 'h0' },
+    { ...ok, reviewed: ['#/snack', '#/toy'] },
+    { ...ok, findings: [finding('#/snack', 'control')] },
+    { ...ok, findings: [finding('#/snack', 'controls', { state: 'wide' })] },
+    { ...ok, findings: [finding('#/toy', 'controls')] },
+    { ...ok, findings: [finding('#/snack', 'controls', { note: undefined })] },
+    { ...ok, findings: [finding('#/snack', 'controls', { note: '  ' })] },
+    { ...ok, pr: 7 },
+    { ...ok, findings: [finding('#/snack', 'controls', { fixedBy: 7 })] },
+  ]) {
+    assert.notDeepEqual(validateReview(bad, plan, criteria), [], JSON.stringify(bad));
+  }
+});
