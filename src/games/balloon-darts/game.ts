@@ -279,6 +279,45 @@ function drawBalloon(ctx: CanvasRenderingContext2D, cell: number) {
   if (star) ctx.fillText('5', x - 22, y - 26);
 }
 
+/** What a popped balloon leaves: a jagged scrap of rubber and its knot, hanging from the string. */
+function drawScrap(ctx: CanvasRenderingContext2D, cell: number) {
+  const { colors } = theme;
+  const { x, y } = cellCenter(cell);
+  const star = cell === STAR_CELL;
+  const knotY = y + BALLOON_RADIUS - 4;
+  // String.
+  ctx.strokeStyle = colors.muted;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, knotY + 8);
+  ctx.quadraticCurveTo(x + 8, y + BALLOON_RADIUS + 10, x, y + CELL / 2 - 2);
+  ctx.stroke();
+  // The torn scrap: a zigzag edge on top, so it reads as burst without its colour.
+  ctx.fillStyle = star ? colors.accent : BALLOON_COLORS[cell];
+  ctx.strokeStyle = colors.wood;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, knotY);
+  const teeth = [-18, -12, -16, -6, -10, 0, -14, 6, -9, 12, -17, 18];
+  for (let i = 0; i < teeth.length; i += 2) ctx.lineTo(x + teeth[i + 1], knotY + teeth[i]);
+  ctx.lineTo(x + 7, knotY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Knot.
+  ctx.beginPath();
+  ctx.moveTo(x - 5, knotY + 8);
+  ctx.lineTo(x + 5, knotY + 8);
+  ctx.lineTo(x, knotY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  if (star) {
+    ctx.fillStyle = colors.stripeA;
+    drawStar(ctx, x, y - 6, 14);
+  }
+}
+
 function drawResults(ctx: CanvasRenderingContext2D, lines: string[], title: string) {
   const { colors } = theme;
   ctx.fillStyle = colors.background;
@@ -331,12 +370,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
   }
   for (let cell = 0; cell < 9; cell++) {
     if (!state.popped[cell]) drawBalloon(ctx, cell);
-    else {
-      const { x, y } = cellCenter(cell);
-      ctx.fillStyle = colors.muted;
-      ctx.font = canvasFont('small');
-      ctx.fillText('popped', x, y + 5);
-    }
+    else drawScrap(ctx, cell);
   }
 
   // Pops: a burst of rays.
