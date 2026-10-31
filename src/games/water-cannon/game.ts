@@ -411,6 +411,39 @@ function drawSelector(ctx: CanvasRenderingContext2D, state: WaterCannonState) {
   ctx.fillText('Start (Space)', WIDTH / 2, START_BUTTON.y + 33);
 }
 
+/**
+ * Text and box colours for the mode and streak badges. Both use full-strength
+ * theme colours on the surface box so they read clearly, on the picker and in play.
+ */
+export function badgeColors(streak: number) {
+  const { colors } = theme;
+  return {
+    box: colors.surface,
+    mode: colors.text,
+    streak: multiplierFor(streak) > 1 ? colors.accent : colors.text,
+  };
+}
+
+function drawBadges(ctx: CanvasRenderingContext2D, state: WaterCannonState) {
+  const badge = badgeColors(state.streak);
+  ctx.textAlign = 'center';
+
+  // Streak indicator, lit up once the multiplier kicks in.
+  const multiplier = multiplierFor(state.streak);
+  ctx.fillStyle = badge.box;
+  ctx.fillRect(WIDTH - 196, 48, 180, 34);
+  ctx.fillStyle = badge.streak;
+  ctx.font = canvasFont(multiplier > 1 ? 'body' : 'small', 'bold');
+  ctx.fillText(`Streak ${state.streak}  x${multiplier}`, WIDTH - 106, 71);
+
+  // The round's mode, top left.
+  ctx.fillStyle = badge.box;
+  ctx.fillRect(16, 48, 180, 34);
+  ctx.fillStyle = badge.mode;
+  ctx.font = canvasFont('small', 'bold');
+  ctx.fillText(`Mode ${modeLabel(state.mode)}`, 106, 71);
+}
+
 function draw(
   ctx: CanvasRenderingContext2D,
   state: WaterCannonState,
@@ -532,23 +565,9 @@ function draw(
   ctx.textAlign = 'right';
   ctx.fillText(`Water ${state.tank}/${TANK_SIZE}`, WIDTH - 16, HEIGHT - 20);
 
-  // Streak indicator, lit up once the multiplier kicks in.
-  const multiplier = multiplierFor(state.streak);
-  ctx.fillStyle = colors.surface;
-  ctx.fillRect(WIDTH - 196, 48, 180, 34);
-  ctx.fillStyle = multiplier > 1 ? colors.accent : colors.muted;
-  ctx.font = canvasFont(multiplier > 1 ? 'body' : 'small', 'bold');
-  ctx.textAlign = 'center';
-  ctx.fillText(`Streak ${state.streak}  x${multiplier}`, WIDTH - 106, 71);
-
-  // The round's mode, top left.
-  ctx.fillStyle = colors.surface;
-  ctx.fillRect(16, 48, 180, 34);
-  ctx.fillStyle = colors.text;
-  ctx.font = canvasFont('small', 'bold');
-  ctx.fillText(`Mode ${modeLabel(state.mode)}`, 106, 71);
-
   if (state.phase === 'ready') drawSelector(ctx, state);
+  // The badges go on top of the picker's overlay so they stay readable there too.
+  drawBadges(ctx, state);
 
   if (state.phase === 'over') {
     ctx.fillStyle = colors.background;
