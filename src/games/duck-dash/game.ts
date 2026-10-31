@@ -189,6 +189,17 @@ export function resolveArrivals(state: DuckState, arrivals: RiverObject[]): void
   }
 }
 
+/** The result card's rows, as label and value, in the order they are drawn. */
+export function resultRows(state: DuckState): { label: string; value: string }[] {
+  return [
+    { label: 'Stars', value: `${state.collected} (+${state.collected * STAR_POINTS})` },
+    { label: 'Reeds hit', value: `${state.hits}` },
+    { label: 'Streak bonus', value: `+${state.bonus}` },
+    { label: 'Best streak', value: `${state.peakStreak}` },
+    { label: 'Score', value: `${state.score}` },
+  ];
+}
+
 function stepSlice(state: DuckState, dt: number): void {
   state.timeLeft = Math.max(state.timeLeft - dt, 0);
   if (state.flash) {
@@ -317,6 +328,11 @@ const TOP_Y = RIVER.y + 10;
 const DUCK_Y = 380;
 const BUTTON_Y = 430;
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
+/** The result table: first row baseline, row height and column edges. */
+const RESULT_TOP = 190;
+const RESULT_ROW = 34;
+const RESULT_LEFT = WIDTH / 2 - 150;
+const RESULT_RIGHT = WIDTH / 2 + 150;
 
 /** Pixels the river flows per second: the same speed the stars and reeds float. */
 export const FLOW_SPEED = (DUCK_Y - TOP_Y) / TRAVEL_TIME;
@@ -547,19 +563,28 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
       );
       ctx.fillText('Left/Right or A/D, or tap a lane button.', WIDTH / 2, 315);
     } else {
-      ctx.fillText(
-        `${state.collected} stars (${state.collected * STAR_POINTS} points), ${state.hits} reeds hit.`,
-        WIDTH / 2,
-        205,
-      );
-      ctx.fillText(
-        `Streak bonus +${state.bonus}, best streak ${state.peakStreak}.`,
-        WIDTH / 2,
-        240,
-      );
+      const rows = resultRows(state);
+      rows.forEach((row, i) => {
+        const y = RESULT_TOP + i * RESULT_ROW;
+        if (i === rows.length - 1) {
+          ctx.fillStyle = colors.muted;
+          ctx.fillRect(RESULT_LEFT, y - 26, RESULT_RIGHT - RESULT_LEFT, 2);
+        }
+        ctx.fillStyle = colors.text;
+        ctx.font = canvasFont('body', i === rows.length - 1 ? 'bold' : 'normal');
+        ctx.textAlign = 'left';
+        ctx.fillText(row.label, RESULT_LEFT, y);
+        ctx.textAlign = 'right';
+        ctx.fillText(row.value, RESULT_RIGHT, y);
+      });
+      ctx.textAlign = 'center';
       if (state.saveFailed) {
         ctx.fillStyle = colors.danger;
-        ctx.fillText('Your score could not be saved.', WIDTH / 2, 280);
+        ctx.fillText(
+          'Your score could not be saved.',
+          WIDTH / 2,
+          RESULT_TOP + rows.length * RESULT_ROW,
+        );
       }
     }
     ctx.fillStyle = colors.stripeA;
