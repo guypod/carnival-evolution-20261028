@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  KEY_BADGE,
+  keyBadgeOffset,
+  BALLOON_RADIUS,
+  BALLOON_WIDTH,
+  BALLOON_LIFT,
   BALLOON_POINTS,
   DARTS_PER_ROUND,
   FLIGHT_TIME,
@@ -233,5 +238,26 @@ describe('balloon darts', () => {
     win.dispatchEvent(new Event('keydown'));
     expect(handlers.pointerdown).toHaveBeenCalledTimes(1);
     expect(handlers.keydown).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps every key number readable (4.5:1) on its badge', () => {
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [luminance(KEY_BADGE.text), luminance(KEY_BADGE.fill)].sort((a, b) => b - a);
+    expect((hi + 0.05) / (lo + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('puts every key badge inside its balloon, the star included', () => {
+    for (let cell = 0; cell < 9; cell++) {
+      // The badge's lowest point, measured from the balloon body's centre.
+      const dy = keyBadgeOffset(cell) + BALLOON_LIFT + KEY_BADGE.radius;
+      expect(dy).toBeLessThan(BALLOON_RADIUS);
+      expect(KEY_BADGE.radius).toBeLessThan(BALLOON_WIDTH);
+    }
   });
 });

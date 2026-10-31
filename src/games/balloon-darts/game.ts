@@ -35,6 +35,20 @@ const BALLOON_COLORS = [
   theme.colors.danger,
 ];
 
+/**
+ * Each balloon's key number sits on a small disc so it reads on every balloon
+ * colour: the number in `text` on a `background` disc.
+ */
+export const KEY_BADGE = {
+  fill: theme.colors.background,
+  text: theme.colors.text,
+  radius: 11,
+} as const;
+/** How far below the balloon's centre its key badge sits; the star's sits lower, under its star. */
+export function keyBadgeOffset(cell: number) {
+  return cell === STAR_CELL ? 8 : 0;
+}
+
 export interface Dart {
   /** The cell aimed at, or -1 for a throw that hits no cell. */
   cell: number;
@@ -262,7 +276,7 @@ function drawBalloon(ctx: CanvasRenderingContext2D, cell: number) {
     ctx.ellipse(x, y - BALLOON_LIFT, BALLOON_WIDTH, BALLOON_RADIUS, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.fillStyle = colors.stripeA;
-    drawStar(ctx, x, y - 8, 18);
+    drawStar(ctx, x, y - 20, 16);
   }
   // Shine.
   ctx.fillStyle = colors.text;
@@ -271,12 +285,20 @@ function drawBalloon(ctx: CanvasRenderingContext2D, cell: number) {
   ctx.ellipse(x - 14, y - 20, 6, 11, -0.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
-  // Key number and points.
-  ctx.fillStyle = star ? colors.background : colors.text;
+  // Key number on its badge, and the star's points.
+  const badgeY = y + keyBadgeOffset(cell);
+  ctx.fillStyle = KEY_BADGE.fill;
+  ctx.beginPath();
+  ctx.arc(x, badgeY, KEY_BADGE.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = KEY_BADGE.text;
   ctx.font = canvasFont('small', 'bold');
   ctx.textAlign = 'center';
-  ctx.fillText(star ? `${STAR_POINTS}` : String(cell + 1), x, star ? y + 22 : y + 6);
-  if (star) ctx.fillText('5', x - 22, y - 26);
+  ctx.fillText(String(cell + 1), x, badgeY + 5);
+  if (star) {
+    ctx.fillStyle = colors.background;
+    ctx.fillText(`${STAR_POINTS}`, x, y + 32);
+  }
 }
 
 function drawResults(ctx: CanvasRenderingContext2D, lines: string[], title: string) {
