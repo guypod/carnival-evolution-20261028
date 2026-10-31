@@ -15,7 +15,10 @@ Putt round a three-hole course of walls and bumpers in as few strokes as you can
    red bumpers. You can't aim or putt again until it stops.
 5. The ball drops into the cup only when it is over the cup and moving slowly
    enough. A fast ball rolls straight over.
-6. When the hole ends, press **Next** (or Space/Enter) for the next hole. After
+6. When the hole ends, the result ("Sunk in n! +points" or "Out of strokes: +0")
+   shows in a banner below the green, in place of the help and the meter, so
+   the course and where the ball stopped stay in view. Press **Next** (click or
+   tap it, or press Space/Enter) for the next hole. After
    the third hole you see your total; press **Play again** for a new round.
 
 Each hole allows 6 strokes. If the ball is not in the cup when the sixth putt

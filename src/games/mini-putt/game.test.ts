@@ -9,6 +9,7 @@ import {
   MAX_STROKES,
   METER,
   METER_LABEL,
+  RESULT_BANNER,
   SINK_SPEED,
   aimAt,
   beginRound,
@@ -366,6 +367,11 @@ describe('controls', () => {
       expect(row[i - 1].x + row[i - 1].w).toBeLessThan(row[i].x);
     }
     for (const box of row) expect(box.y).toBeGreaterThan(COURSE.y + COURSE.h);
+  });
+
+  it('shows the hole result below the green, clear of the Next button', () => {
+    expect(RESULT_BANNER.y).toBeGreaterThan(COURSE.y + COURSE.h);
+    expect(RESULT_BANNER.x + RESULT_BANNER.w).toBeLessThan(ACTION_BUTTON.x);
   });
 
   it('putts from the action button only while aiming', () => {
