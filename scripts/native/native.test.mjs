@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {
   BACKLOG_LABEL,
   BATCH_SIZE,
+  BOT_APP_ID,
   BOT_ID,
   CI_APP_ID,
   OWNER_ID,
@@ -24,9 +25,18 @@ import {
   readBatch,
   slotProgress,
   MISSING_LABEL_ROUTE,
+  admissionMarker,
+  admit,
+  contentDigest,
+  journalMarker,
+  readAdmissions,
+  readItem,
+  readJournal,
+  requestId,
 } from './native.mjs';
 
 const bot = { id: BOT_ID, login: 'tessl-app[bot]', type: 'Bot' };
+const app = { id: BOT_APP_ID };
 const owner = { id: OWNER_ID, login: 'guypod', type: 'User' };
 const reviewer = { id: REVIEWER_ID, login: REVIEWER_LOGIN, type: 'Bot' };
 const HEAD = 'a'.repeat(40);
@@ -47,10 +57,23 @@ function fakeGitHub({
   failCreateAt,
   landUncertain,
   ownerRoute = true,
+  autoJournal = true,
 } = {}) {
   const calls = [];
   let next = 1000;
   const state = { issues: structuredClone(issues), comments: structuredClone(comments), links };
+  // Backlog issues given to the fixture were filed by the producer, so each
+  // has its journal entry unless the test says otherwise.
+  for (const i of autoJournal ? state.issues : []) {
+    const item = readItem(i);
+    if (!item || readJournal(state.comments[i.number] ?? []).length) continue;
+    (state.comments[i.number] ??= []).unshift({
+      user: bot,
+      performed_via_github_app: { id: BOT_APP_ID },
+      created_at: '2026-10-30T00:00:00Z',
+      body: journalMarker(item.slot, item.index, i.number, contentDigest(i.title, i.body)),
+    });
+  }
   const adapter = {
     calls,
     state,
@@ -97,18 +120,23 @@ function fakeGitHub({
     },
     comment: async (n, body) => {
       calls.push(['comment', n]);
-      (state.comments[n] ??= []).push({ user: bot, body });
+      (state.comments[n] ??= []).push({
+        user: bot,
+        performed_via_github_app: { id: BOT_APP_ID },
+        created_at: `2026-10-31T00:0${(state.comments[n] ?? []).length}:00Z`,
+        body,
+      });
     },
-    labelAsOwner: async (n, label) => {
+    labelAsBot: async (n, label) => {
       calls.push(['addLabel', n, label]);
       state.issues.find((i) => i.number === n).labels.push({ name: label });
-      state.links[`actor:${n}`] = owner;
+      state.links[`actor:${n}`] = bot;
     },
     wasLabelledTessl: async (n) => Boolean(state.links[`labelled:${n}`]),
     labelActor: async (n) => state.links[`actor:${n}`],
     linkedPullRequests: async (n) => ({ complete: true, items: state.links[n] ?? [] }),
   };
-  if (!ownerRoute) delete adapter.labelAsOwner;
+  if (!ownerRoute) delete adapter.labelAsBot;
   return adapter;
 }
 
@@ -277,7 +305,7 @@ const writes = (gh) =>
 const claimed = (slot, n) => ({ user: bot, body: claimMarker(slot, n) });
 const EARLIER = 'dispatch-2026-10-31T0000';
 
-test('one dispatch claims and has the owner label exactly one issue, the oldest', async () => {
+test('one dispatch claims and labels exactly one issue as the bot, the oldest', async () => {
   const gh = fakeGitHub({ issues: [backlogIssue(12), backlogIssue(11), backlogIssue(13)] });
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.status, 'dispatched');
@@ -298,7 +326,7 @@ test('dispatch never starts implementation directly: the label is the only start
   assert.equal(gh.calls.filter((c) => c[0] === 'trigger').length, 0);
 });
 
-test('without an owner label route, dispatch fails closed before any write', async () => {
+test('without a bot label route, dispatch fails closed before any write', async () => {
   const gh = fakeGitHub({ issues: [backlogIssue(11)], ownerRoute: false });
   gh.addLabel = async (n, l) => gh.calls.push(['addLabel', n, l]);
   const r = await dispatch(gh, DSLOT);
@@ -307,16 +335,16 @@ test('without an owner label route, dispatch fails closed before any write', asy
   assert.deepEqual(writes(gh), []);
 });
 
-test('a label that lands but not from the owner is reported, not counted as dispatched', async () => {
+test('a label that lands but not from the bot is reported, not counted as dispatched', async () => {
   const gh = fakeGitHub({ issues: [backlogIssue(11)] });
-  const route = gh.labelAsOwner;
-  gh.labelAsOwner = async (n, l) => {
+  const route = gh.labelAsBot;
+  gh.labelAsBot = async (n, l) => {
     await route(n, l);
-    gh.state.links[`actor:${n}`] = bot;
+    gh.state.links[`actor:${n}`] = owner;
   };
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.status, 'failed');
-  assert.match(r.reason, /not added by the owner/);
+  assert.match(r.reason, /not added by the bot/);
 });
 
 test('a retried slot resumes its own claim and writes nothing new', async () => {
@@ -417,7 +445,7 @@ test('an uncertain claim or label write is read back before anything else', asyn
   assert.equal(r.status, 'blocked');
   assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'));
   gh = fakeGitHub({ issues: [backlogIssue(11)], comments: { 11: [claimed(DSLOT, 11)] } });
-  gh.labelAsOwner = async () => {
+  gh.labelAsBot = async () => {
     throw new Error('timeout');
   };
   r = await dispatch(gh, DSLOT);
@@ -920,8 +948,8 @@ test('after recovering an earlier claim, a retry of the same slot never dispatch
       ['comment', 11],
       ['addLabel', 11, 'tessl'],
     ]);
-    assert.equal(gh.state.comments[11][0].body, claimMarker(EARLIER, 11));
-    assert.match(gh.state.comments[11][1].body, new RegExp(claimMarker(DSLOT, 11)));
+    assert.equal(gh.state.comments[11][1].body, claimMarker(EARLIER, 11));
+    assert.match(gh.state.comments[11][2].body, new RegExp(claimMarker(DSLOT, 11)));
     change(gh);
     const again = await dispatch(gh, DSLOT);
     assert.equal(again.issue, 11, name);
@@ -963,7 +991,7 @@ test('a batch file keeps its slot across a six-hour boundary, so a rerun fills t
   // The rerun is after 06:00 London: the file's slot still decides.
   const after = readBatch(file, new Date('2026-10-31T06:10:00Z'));
   assert.equal(after.slot, SLOT);
-  const gh2 = fakeGitHub({ issues: gh.state.issues });
+  const gh2 = fakeGitHub({ issues: gh.state.issues, comments: gh.state.comments });
   const r = await produceBacklog(gh2, after.slot, after.candidates);
   assert.equal(r.status, 'complete');
   assert.equal(r.slot, SLOT);
@@ -973,7 +1001,7 @@ test('a batch file keeps its slot across a six-hour boundary, so a rerun fills t
     file.candidates.slice(7).map((c) => c.title),
   );
   // Once that slot is complete, the same file files nothing in any later run.
-  const gh3 = fakeGitHub({ issues: gh2.state.issues });
+  const gh3 = fakeGitHub({ issues: gh2.state.issues, comments: gh2.state.comments });
   assert.equal((await produceBacklog(gh3, after.slot, after.candidates)).status, 'complete');
   assert.deepEqual(writes(gh3), []);
 });
@@ -1038,7 +1066,7 @@ test('a source issue label restored by someone other than the owner, or unread, 
   ]) {
     const g = mergeGate(snapshot({ issueLabelActor }));
     assert.equal(g.merge, false, JSON.stringify(issueLabelActor));
-    assert.match(g.reasons.join(), /source issue label/);
+    assert.match(g.reasons.join(), /source issue label|admission/);
   }
 });
 
@@ -1066,4 +1094,427 @@ test('a merge whose result is unknown is reported as uncertain, not refused or m
   });
   const r = await mergeOne(adapter, 30);
   assert.equal(r.status, 'uncertain');
+});
+
+// ---------- admission (native-bot-backlog-labelled -> MODE=admit) ----------
+//
+// Fixture events shaped like GitHub's issues.labeled webhook. They show the
+// decisions admit makes; they are not a live webhook delivery.
+
+const ASLOT = 'backlog-2026-10-30T18';
+const CSLOT = 'dispatch-2026-10-31T0020';
+const NOW = new Date('2026-10-31T00:30:00Z');
+const LABEL_EVENT = 9001;
+const fileIssue = (n, extra = {}) => {
+  const title = `Backlog item ${n}`;
+  const body = `Do it.\n\n${itemMarker(ASLOT, 3, `item-${n}`)}`;
+  return {
+    number: n,
+    id: 50_000 + n,
+    node_id: `I_node${n}`,
+    repository_url: 'https://api.github.com/repos/guypod/carnival-evolution-20261028',
+    state: 'open',
+    user: bot,
+    title,
+    body,
+    assignees: [],
+    labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }],
+    ...extra,
+  };
+};
+const appComment = (body, created_at) => ({
+  user: bot,
+  performed_via_github_app: app,
+  created_at,
+  body,
+});
+
+/** A world where #40 is a valid, dispatched backlog issue awaiting admission. */
+function admitWorld({ issue = fileIssue(40), comments, events, branch = false, prs = [] } = {}) {
+  const n = issue.number;
+  const fresh = fileIssue(n);
+  const gh = fakeGitHub({
+    autoJournal: false,
+    issues: [issue],
+    comments: {
+      [n]: comments ?? [
+        appComment(
+          journalMarker(ASLOT, 3, n, contentDigest(fresh.title, fresh.body)),
+          '2026-10-30T18:05:00Z',
+        ),
+        appComment(claimMarker(CSLOT, n), '2026-10-31T00:21:00Z'),
+      ],
+    },
+    links: { [n]: prs },
+  });
+  gh.listEvents = async () => ({
+    complete: true,
+    items: events ?? [
+      { id: 1, event: 'labeled', label: { name: BACKLOG_LABEL }, actor: bot },
+      {
+        id: LABEL_EVENT,
+        event: 'labeled',
+        label: { name: 'tessl' },
+        actor: bot,
+        created_at: '2026-10-31T00:21:30Z',
+      },
+    ],
+  });
+  gh.branchExists = async () => branch;
+  gh.triggerImplementation = async (num, request) => gh.calls.push(['handoff', num, request]);
+  return gh;
+}
+const labelledEvent = (issue = fileIssue(40), extra = {}) => [
+  {
+    event: 'issues',
+    payload: {
+      action: 'labeled',
+      label: { name: 'tessl' },
+      sender: bot,
+      issue,
+      repository: {
+        id: REPOSITORY_ID,
+        full_name: 'guypod/carnival-evolution-20261028',
+        fork: false,
+      },
+      ...extra,
+    },
+  },
+];
+const handoffs = (gh) => gh.calls.filter((c) => c[0] === 'handoff');
+
+test('admit: a valid bot-labelled backlog issue is recorded once, then handed off once', async () => {
+  const gh = admitWorld();
+  const r = await admit(gh, labelledEvent(), NOW);
+  assert.equal(r.status, 'admitted', JSON.stringify(r));
+  assert.equal(r.how, 'new');
+  assert.equal(r.event, LABEL_EVENT);
+  assert.deepEqual(handoffs(gh), [['handoff', 40, requestId(40, LABEL_EVENT)]]);
+  // The admission record lands before the handoff, from the app.
+  const order = gh.calls.filter((c) => ['comment', 'handoff'].includes(c[0])).map((c) => c[0]);
+  assert.deepEqual(order, ['comment', 'handoff']);
+  const records = readAdmissions(gh.state.comments[40]);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].request, requestId(40, LABEL_EVENT));
+});
+
+test('admit: a retry after a crash reuses the record and the same request id', async () => {
+  const gh = admitWorld();
+  gh.triggerImplementation = async () => {
+    throw new Error('socket hang up');
+  };
+  const first = await admit(gh, labelledEvent(), NOW);
+  assert.equal(first.status, 'uncertain');
+  const gh2 = admitWorld({ comments: gh.state.comments[40] });
+  const again = await admit(gh2, labelledEvent(), NOW);
+  assert.equal(again.status, 'admitted');
+  assert.equal(again.how, 'resumed');
+  assert.ok(!gh2.calls.some((c) => c[0] === 'comment'), 'no second record');
+  assert.deepEqual(handoffs(gh2), [['handoff', 40, requestId(40, LABEL_EVENT)]]);
+  // Once the run has made its branch, a further retry hands off nothing.
+  const gh3 = admitWorld({ comments: gh.state.comments[40], branch: true });
+  const done = await admit(gh3, labelledEvent(), NOW);
+  assert.equal(done.how, 'already running');
+  assert.deepEqual(handoffs(gh3), []);
+});
+
+test('admit: an uncertain record write is read back, and a missing record hands off nothing', async () => {
+  let gh = admitWorld();
+  const post = gh.comment;
+  gh.comment = async (n, b) => {
+    await post(n, b);
+    throw new Error('timeout');
+  };
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'admitted');
+  assert.equal(handoffs(gh).length, 1);
+  gh = admitWorld();
+  gh.comment = async () => {
+    throw new Error('timeout');
+  };
+  const r = await admit(gh, labelledEvent(), NOW);
+  assert.equal(r.status, 'blocked');
+  assert.deepEqual(handoffs(gh), []);
+});
+
+const refusedWith = async (gh, events, pattern) => {
+  const r = await admit(gh, events, NOW);
+  assert.notEqual(r.status, 'admitted', JSON.stringify(r));
+  assert.match((r.reasons ?? []).join('; '), pattern);
+  assert.deepEqual(handoffs(gh), [], 'no handoff');
+  assert.ok(!gh.calls.some((c) => c[0] === 'comment'), 'no write');
+  assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'), 'no label');
+};
+
+test('admit refuses an event that is not the approved bot label route', async () => {
+  const person = { id: 7, login: 'someone', type: 'User' };
+  const cases = [
+    [[], /exactly one event/],
+    [[...labelledEvent(), ...labelledEvent()], /exactly one event/],
+    [labelledEvent(fileIssue(40), { action: 'unlabeled' }), /not labeled/],
+    [labelledEvent(fileIssue(40), { label: { name: 'bug' } }), /not tessl/],
+    [labelledEvent(fileIssue(40), { sender: owner }), /sender/],
+    [labelledEvent(fileIssue(40), { sender: { ...bot, type: 'User' } }), /sender/],
+    [labelledEvent(fileIssue(40), { sender: { ...bot, id: 1 } }), /sender/],
+    [labelledEvent(fileIssue(40, { user: person })), /author/],
+    [labelledEvent(fileIssue(40, { state: 'closed' })), /not open/],
+    [labelledEvent(fileIssue(40, { pull_request: {} })), /pull request/],
+    [labelledEvent(fileIssue(40, { labels: [{ name: 'tessl' }] })), /auto backlog/],
+    [labelledEvent(fileIssue(40, { node_id: undefined })), /node id/],
+    [
+      labelledEvent(fileIssue(40), {
+        repository: { id: 1, full_name: 'x/y', fork: false },
+      }),
+      /another repository/,
+    ],
+    [
+      labelledEvent(fileIssue(40), {
+        repository: {
+          id: REPOSITORY_ID,
+          full_name: 'guypod/carnival-evolution-20261028',
+          fork: true,
+        },
+      }),
+      /fork/,
+    ],
+    [[{ event: 'issue_comment', payload: labelledEvent()[0].payload }], /not issues.labeled/],
+  ];
+  for (const [events, pattern] of cases) await refusedWith(admitWorld(), events, pattern);
+});
+
+test('admit refuses on fresh issue state: identity, author, closed, unlabelled, held, assigned', async () => {
+  const person = { id: 7, login: 'someone', type: 'User' };
+  const cases = [
+    [fileIssue(40, { node_id: 'I_other' }), /identity/],
+    [fileIssue(40, { id: 1 }), /identity/],
+    [fileIssue(40, { repository_url: 'https://api.github.com/repos/x/y' }), /another repository/],
+    [fileIssue(40, { user: person }), /author/],
+    [fileIssue(40, { state: 'closed' }), /closed/],
+    [fileIssue(40, { labels: [{ name: BACKLOG_LABEL }] }), /tessl label is gone/],
+    [fileIssue(40, { labels: [{ name: 'tessl' }] }), /auto backlog/],
+    [
+      fileIssue(40, { labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }, { name: 'On Hold' }] }),
+      /held/,
+    ],
+    [fileIssue(40, { assignees: [person] }), /assigned/],
+    [fileIssue(40, { body: 'no marker' }), /backlog marker|content/],
+  ];
+  for (const [issue, pattern] of cases)
+    await refusedWith(admitWorld({ issue }), labelledEvent(), pattern);
+});
+
+test('admit refuses edited content and a journal that is missing, forged or for another item', async () => {
+  const fresh = fileIssue(40);
+  const digest = contentDigest(fresh.title, fresh.body);
+  const claim = appComment(claimMarker(CSLOT, 40), '2026-10-31T00:21:00Z');
+  const cases = [
+    [{ issue: fileIssue(40, { title: 'Edited title' }) }, /content changed/],
+    [
+      { issue: fileIssue(40, { body: `Edited.\n\n${itemMarker(ASLOT, 3, 'item-40')}` }) },
+      /content changed/,
+    ],
+    [{ comments: [claim] }, /journal/],
+    // The marker text without GitHub's app stamp is not the producer.
+    [
+      {
+        comments: [
+          { ...appComment(journalMarker(ASLOT, 3, 40, digest)), performed_via_github_app: null },
+          claim,
+        ],
+      },
+      /journal/,
+    ],
+    [{ comments: [appComment(journalMarker(ASLOT, 4, 40, digest)), claim] }, /another item/],
+    [
+      {
+        comments: [
+          appComment(journalMarker(ASLOT, 3, 40, digest)),
+          appComment(journalMarker(ASLOT, 3, 40, digest)),
+          claim,
+        ],
+      },
+      /single producer journal/,
+    ],
+  ];
+  for (const [world, pattern] of cases)
+    await refusedWith(admitWorld(world), labelledEvent(), pattern);
+});
+
+test('admit refuses after a person comments, acts, or takes the issue back', async () => {
+  const fresh = fileIssue(40);
+  const journal = appComment(
+    journalMarker(ASLOT, 3, 40, contentDigest(fresh.title, fresh.body)),
+    '2026-10-30T18:05:00Z',
+  );
+  const claim = appComment(claimMarker(CSLOT, 40), '2026-10-31T00:21:00Z');
+  const label = {
+    id: LABEL_EVENT,
+    event: 'labeled',
+    label: { name: 'tessl' },
+    actor: bot,
+    created_at: '2026-10-31T00:21:30Z',
+  };
+  await refusedWith(
+    admitWorld({ comments: [journal, claim, { user: owner, body: 'wait', created_at: 'z' }] }),
+    labelledEvent(),
+    /comment not from the app/,
+  );
+  // A comment by the bot account without the app stamp (another integration) counts as a person's.
+  await refusedWith(
+    admitWorld({ comments: [journal, claim, { user: bot, body: 'x', created_at: 'z' }] }),
+    labelledEvent(),
+    /comment not from the app/,
+  );
+  await refusedWith(
+    admitWorld({ events: [{ id: 2, event: 'renamed', actor: owner }, label] }),
+    labelledEvent(),
+    /person acted/,
+  );
+  await refusedWith(
+    admitWorld({
+      events: [
+        { ...label, id: 1 },
+        { id: 2, event: 'unlabeled', label: { name: 'tessl' }, actor: bot },
+        label,
+      ],
+    }),
+    labelledEvent(),
+    /taken back|exactly once/,
+  );
+});
+
+test('admit refuses without a durable scheduled claim before the label, or with a shared slot', async () => {
+  const fresh = fileIssue(40);
+  const journal = appComment(
+    journalMarker(ASLOT, 3, 40, contentDigest(fresh.title, fresh.body)),
+    '2026-10-30T18:05:00Z',
+  );
+  await refusedWith(admitWorld({ comments: [journal] }), labelledEvent(), /no scheduled claim/);
+  await refusedWith(
+    admitWorld({
+      comments: [journal, { user: bot, body: claimMarker(CSLOT, 40), created_at: 'a' }],
+    }),
+    labelledEvent(),
+    /no scheduled claim/,
+  );
+  await refusedWith(
+    admitWorld({ comments: [journal, appComment(claimMarker(CSLOT, 40), '2026-10-31T00:22:00Z')] }),
+    labelledEvent(),
+    /precede/,
+  );
+  await refusedWith(
+    admitWorld({
+      comments: [
+        journal,
+        appComment(claimMarker('dispatch-2026-11-02T0000', 40), '2026-10-31T00:21:00Z'),
+      ],
+    }),
+    labelledEvent(),
+    /future/,
+  );
+  const gh = admitWorld();
+  gh.state.comments[41] = [appComment(claimMarker(CSLOT, 41), '2026-10-31T00:20:30Z')];
+  await refusedWith(gh, labelledEvent(), /also claimed #41/);
+});
+
+test('admit refuses an existing run: a linked pull request, a branch, or an earlier admission', async () => {
+  await refusedWith(
+    admitWorld({ prs: [{ event: 'cross-referenced' }] }),
+    labelledEvent(),
+    /linked pull/,
+  );
+  await refusedWith(admitWorld({ branch: true }), labelledEvent(), /branch already exists/);
+  const gh = admitWorld();
+  gh.state.comments[40].push(
+    appComment(
+      admissionMarker({
+        issue: 40,
+        node: 'I_node40',
+        slot: CSLOT,
+        digest: 'f'.repeat(64),
+        event: 1,
+        request: requestId(40, 1),
+      }),
+      '2026-10-31T00:22:00Z',
+    ),
+  );
+  await refusedWith(gh, labelledEvent(), /another label event/);
+});
+
+test('admit fails closed when any listing is incomplete or unknown', async () => {
+  for (const breakIt of [
+    (gh) => (gh.listComments = async () => ({ items: [], complete: false })),
+    (gh) => (gh.listEvents = async () => ({ items: [], complete: false })),
+    (gh) => (gh.failHistory = true),
+    (gh) => (gh.linkedPullRequests = async () => ({ items: [], complete: false })),
+    (gh) => (gh.branchExists = async () => undefined),
+    (gh) => (gh.getIssue = async () => undefined),
+  ]) {
+    const gh = admitWorld();
+    breakIt(gh);
+    await refusedWith(gh, labelledEvent(), /incomplete|unknown|not read/);
+  }
+});
+
+test('the producer journals every filed item with its digest, from the app, and recovers a missed one', async () => {
+  const gh = fakeGitHub();
+  assert.equal((await produceBacklog(gh, SLOT, candidates(18))).status, 'complete');
+  for (const issue of gh.state.issues) {
+    const j = readJournal(gh.state.comments[issue.number] ?? []);
+    assert.equal(j.length, 1, `#${issue.number}`);
+    assert.equal(j[0].digest, contentDigest(issue.title, issue.body));
+  }
+  // A crash between a create and its journal: the rerun journals it, once.
+  const gh2 = fakeGitHub({ issues: gh.state.issues, comments: { ...gh.state.comments } });
+  const first = gh.state.issues[0].number;
+  delete gh2.state.comments[first];
+  assert.equal((await produceBacklog(gh2, SLOT, candidates(18))).status, 'complete');
+  assert.deepEqual(writes(gh2), [['comment', first]]);
+  // The dispatcher's claim on a journaled item still dispatches it.
+  assert.equal(readJournal(gh2.state.comments[first]).length, 1);
+});
+
+test('merge gate: a bot hand-off counts only with an admission for that exact label event', () => {
+  const record = (event, node = 'I_node29') =>
+    appComment(
+      admissionMarker({
+        issue: 29,
+        node,
+        slot: CSLOT,
+        digest: 'f'.repeat(64),
+        event,
+        request: requestId(29, event),
+      }),
+      'x',
+    );
+  const base = { issue: { ...sourceIssue(), node_id: 'I_node29' } };
+  const ok = mergeGate(
+    snapshot({
+      ...base,
+      issueLabelActor: { complete: true, actor: bot, eventId: 77 },
+      admissions: { complete: true, items: [record(77)] },
+    }),
+  );
+  assert.equal(ok.merge, true, ok.reasons.join());
+  for (const extra of [
+    { admissions: { complete: true, items: [] } },
+    { admissions: { complete: false, items: [record(77)] } },
+    { admissions: { complete: true, items: [record(76)] } },
+    { admissions: { complete: true, items: [record(77, 'I_other')] } },
+    { admissions: { complete: true, items: [{ ...record(77), performed_via_github_app: null }] } },
+    { admissions: { complete: true, items: [{ ...record(77), user: owner }] } },
+  ]) {
+    const g = mergeGate(
+      snapshot({ ...base, issueLabelActor: { complete: true, actor: bot, eventId: 77 }, ...extra }),
+    );
+    assert.equal(g.merge, false, JSON.stringify(extra));
+  }
+  // The owner's own hand-off needs no admission record.
+  assert.equal(mergeGate(snapshot()).merge, true);
+});
+
+test('dispatch skips a backlog item with no producer journal, since admission would refuse it', async () => {
+  const gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)] });
+  gh.state.comments[11] = [];
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.issue, 12);
 });

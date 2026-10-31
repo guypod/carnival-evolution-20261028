@@ -1,6 +1,6 @@
 ---
 name: native-intake
-description: Run the carnival's native creative intake. MODE=backlog files exactly 18 distinct enhancement issues labelled `auto backlog` (never `tessl`) for the current six-hour London slot. MODE=dispatch merges Tessl pull requests that pass the evolution merge gate on their exact current head, atomically pinned to that head, then has one eligible backlog issue labelled `tessl` through the owner's label route, failing closed when there is none. Use only from the native-intake schedules or a manual verification trigger.
+description: Run the carnival's native creative intake. MODE=backlog files exactly 18 distinct enhancement issues labelled `auto backlog` (never `tessl`) for the current six-hour London slot. MODE=dispatch merges Tessl pull requests that pass the evolution merge gate on their exact current head, atomically pinned to that head, then labels one claimed backlog issue `tessl` as the bot. MODE=admit runs the deterministic admission check on that bot label and alone hands an admitted issue to implement-github-issue. Use only from the native-intake schedules or a manual verification trigger.
 ---
 
 # Native intake
@@ -73,13 +73,25 @@ deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
    screenshots looked at. A 200 response or the page title alone is not app
    QA. Otherwise report the QA still owed. Never say merged means live.
 3. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs dispatch`.
-   The run only starts when the owner adds `tessl`, because the
-   `github-issue-labelled` trigger accepts only user 1106394. This action has
-   only the `tessl-app[bot]` identity and no approved route that labels as the
-   owner, so dispatch reports `blocked` with that missing capability and
-   writes nothing. Never start `implement-github-issue` directly, never add
-   the label as the bot, and never change the trigger's guards to make this
-   work. `busy`, `idle`, `blocked`, `labelled` and `stopped` are all normal
-   outcomes. Report the one you got.
+   It claims one eligible backlog issue for the slot and adds `tessl` as
+   `tessl-app[bot]`. That label starts no implementation by itself: it fires
+   the `native-bot-backlog-labelled` trigger, which runs MODE=admit. Never
+   start `implement-github-issue` from dispatch. `busy`, `idle`, `blocked`,
+   `labelled` and `stopped` are all normal outcomes. Report the one you got.
+
+## MODE=admit (the native-bot-backlog-labelled trigger)
+
+1. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs admit <repository root>/.cloud-launch/trigger-events.json`.
+   Run it once and report its JSON. It reads the issue, its comments, its
+   events, the repository's claim history, linked pull requests and the
+   `tessl/issue-<n>` branch fresh, and refuses unless every check passes. On
+   a pass it writes one admission record and hands off with
+   `tessl action trigger implement-github-issue` and a request id keyed by
+   the label event, then returns without waiting for that run.
+2. `refused` and `blocked` are final for this run: never hand off any other
+   way, never relabel, never edit the issue, and never retry with a weaker
+   check. `uncertain` means the handoff call failed without an answer: rerun
+   the same command once; its request id makes a repeat start no second run.
+3. Write nothing else on the issue. The admission script is the only writer.
 
 Report the script's JSON output, plus the browser checks you actually did (routes captured and what you saw) and any browser QA still owed. Claim nothing neither the script nor your own screenshots show.

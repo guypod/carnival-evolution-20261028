@@ -71,7 +71,7 @@ export function assertSupportedPredicate(key, predicate) {
   const [op] = ops;
   const arg = predicate[op];
   if (op === 'matches' && typeof arg === 'string') return;
-  if (op === 'exists' && arg === true) return;
+  if (op === 'exists' && typeof arg === 'boolean') return;
   if (op === 'in' && Array.isArray(arg) && arg.every(isScalar)) return;
   if (op === 'any' && key.includes('*') && arg && isScalar(arg.equals)) {
     if (Object.keys(arg).length === 1) return;
@@ -94,6 +94,7 @@ function matchOne(key, predicate, payload) {
   const [op] = Object.keys(predicate);
   const arg = predicate[op];
   if (op === 'any') return values.some((value) => value === arg.equals);
+  if (op === 'exists' && arg === false) return values.every((v) => v === undefined || v === null);
   if (values.length !== 1) return false;
   const [value] = values;
   if (op === 'exists') return value !== undefined && value !== null;

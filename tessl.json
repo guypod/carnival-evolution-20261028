@@ -84,6 +84,28 @@
       },
       "action": "implement-github-issue"
     },
+    "native-bot-backlog-labelled": {
+      "description": "The Tessl app's own tessl label on its own open auto backlog issue in this repository runs the deterministic admission check, which alone may hand the issue to implement-github-issue",
+      "on": ["github:issues.labeled"],
+      "when": {
+        "event.label.name": "tessl",
+        "event.sender.type": "Bot",
+        "event.sender.id": 295179765,
+        "event.sender.login": "tessl-app[bot]",
+        "event.issue.user.type": "Bot",
+        "event.issue.user.id": 295179765,
+        "event.issue.state": "open",
+        "event.issue.pull_request": { "exists": false },
+        "event.issue.labels.*.name": { "any": { "equals": "auto backlog" } },
+        "event.repository.id": 1437265009,
+        "event.repository.full_name": "guypod/carnival-evolution-20261028",
+        "event.repository.fork": false
+      },
+      "concurrency": {
+        "keys": [{ "key": "native-admit:{{ event.repository.id }}#{{ event.issue.number }}", "limit": 1 }]
+      },
+      "action": { "use": "native-intake", "inputs": { "MODE": "admit" } }
+    },
     "shepherd-pr-review": {
       "on": [
         "github:pull_request_review.submitted"

@@ -8,6 +8,7 @@
 export const REPOSITORY_ID = 1437265009;
 export const OWNER_ID = 1106394;
 export const REVIEWER_ID = 325629464;
+export const BOT_ID = 295179765;
 
 const ENVIRONMENT = 'carnival-evolution-20261028-factory';
 const SKILL_PREFIX = 'tessl-labs/factory@0.6.0#';
@@ -182,6 +183,31 @@ export const EXPECTED_TRIGGERS = {
     },
     concurrency: implementKey,
     action: 'implement-github-issue',
+  },
+  // The owner-approved bot route (issue #425): only the Tessl app's own tessl
+  // label on its own open auto backlog issue here. It starts no
+  // implementation itself: native-intake MODE=admit checks GitHub as it is
+  // now and alone hands off. github-issue-labelled above is unchanged.
+  'native-bot-backlog-labelled': {
+    description:
+      "The Tessl app's own tessl label on its own open auto backlog issue in this repository runs the deterministic admission check, which alone may hand the issue to implement-github-issue",
+    on: ['github:issues.labeled'],
+    when: {
+      'event.label.name': 'tessl',
+      'event.sender.type': 'Bot',
+      'event.sender.id': BOT_ID,
+      'event.sender.login': 'tessl-app[bot]',
+      'event.issue.user.type': 'Bot',
+      'event.issue.user.id': BOT_ID,
+      'event.issue.state': 'open',
+      'event.issue.pull_request': { exists: false },
+      'event.issue.labels.*.name': { any: { equals: 'auto backlog' } },
+      ...repo,
+      'event.repository.full_name': 'guypod/carnival-evolution-20261028',
+      'event.repository.fork': false,
+    },
+    concurrency: key('native-admit:{{ event.repository.id }}#{{ event.issue.number }}'),
+    action: { use: 'native-intake', inputs: { MODE: 'admit' } },
   },
   'shepherd-pr-review': {
     on: ['github:pull_request_review.submitted'],

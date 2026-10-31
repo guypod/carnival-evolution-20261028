@@ -16,19 +16,60 @@ with fixture adapters in `native.test.mjs`.
 
 ## Admission
 
-The only way a backlog issue starts work is the existing `github-issue-labelled`
-trigger, which needs a `tessl` label added by user 1106394 (type `User`) on an
-open issue in repository 1437265009. That guard is unchanged. Native writes
-come from `tessl-app[bot]` (id 295179765), so a label it adds starts nothing.
+There are two separate ways a backlog issue can start work.
 
-`dispatch` therefore needs an owner label route: an adapter `labelAsOwner`
-backed by an already-approved route that acts as the owner. After labelling it
-reads the label event and counts the dispatch only if the actor is user 1106394. The `gh` adapter has no such route, so today `dispatch` returns
-`blocked` with `MISSING_LABEL_ROUTE` before writing anything. It never starts
-`implement-github-issue` directly and never labels as the bot.
+- `github-issue-labelled`, unchanged: a `tessl` label added by user 1106394
+  (type `User`) on an open issue in repository 1437265009.
+- `native-bot-backlog-labelled`, owner-approved for issue #425: a `tessl`
+  label added by `tessl-app[bot]` (user 295179765, type `Bot`) on an open
+  issue, not a pull request, that the same bot opened and that carries
+  `auto backlog`, in `guypod/carnival-evolution-20261028` (id 1437265009,
+  not a fork). It runs `native-intake` with `MODE=admit`. It does not start
+  `implement-github-issue`.
+
+`dispatch` claims one issue for its slot and adds `tessl` as the bot. That
+label only wakes `admit`. `admit` (`native.mjs admit <trigger-events.json>`)
+reads GitHub fresh, under the writer key, and refuses unless all of these
+hold:
+
+- the event is a single `issues.labeled` with the shape the trigger matches,
+  and the issue's node id and id match the event;
+- the issue is open, the bot's own, in this repository, not a pull request,
+  labelled `auto backlog` and `tessl`, with no hold label and no assignee;
+- the producer's journal has exactly one entry for this item, and its
+  digest matches the current title and body;
+- every comment on the issue is the app's own, so no person has commented;
+- every event on the issue is the bot's, `tessl` was added exactly once and
+  never removed;
+- the app wrote a claim before the label, in a dispatch slot no later than
+  now that claimed no other issue, read from the complete repository-wide
+  claim history;
+- there is no linked pull request, no `tessl/issue-<n>` branch, and no
+  admission for a different label event;
+- every listing was read to its last page.
+
+On a pass it writes one admission record, then calls
+`tessl action trigger implement-github-issue --request-id carnival-admit:<repo id>:<n>:<label event id>`
+with `GITHUB_ISSUE_NUMBER` and `GITHUB_ISSUE_LABEL=tessl`. It returns as soon
+as Tessl accepts the request, so it never waits on the run it starts while
+holding the writer key. That action keeps its own queued writer key. A retry
+reuses the record and the same request id, so Tessl starts no second run.
+Once the branch exists, a retry hands off nothing.
+
+Provenance is GitHub's own `performed_via_github_app.id` (4096310, the
+Tessl app's App id, not an installation id) on the bot's comments, plus the
+bot's user id and type. Marker text or a git author never counts on its own.
+The trust scope is the shared Tessl App identity the owner approved: anything
+that runs as that app can write these records. Nothing narrower is claimed.
 
 ## Records
 
+- Journal marker, in an app comment on each filed issue:
+  `<!-- carnival-backlog:journal:v1 slot=<slot> index=<i> issue=<n> digest=<sha256> -->`,
+  the digest of the title and body as filed. A rerun of the slot journals
+  any issue a crash left without one. `admit` refuses an issue without it.
+- Admission marker, in an app comment:
+  `<!-- carnival-admission:v1 issue=<n> node=<id> slot=<claim slot> digest=<sha256> event=<label event id> request=<request id> -->`.
 - Item marker, in the body of a bot-authored issue:
   `<!-- carnival-backlog:item:v1 slot=backlog-<date>T<hh> index=<0-17> scope=<key> -->`.
   A slot is complete when all 18 indexes exist. A retry files only the
@@ -68,7 +109,8 @@ into `main`, labelled `tessl`, when:
   branch's issue, and that issue is an open issue of this repository that
   still carries `tessl` (a PR whose `tessl-factory:issue-label` marker names
   another label is refused, since only `tessl` starts work), last added by the owner, user 1106394, as read from the
-  issue's complete event history;
+  issue's complete event history, or last added by `tessl-app[bot]` with an
+  app admission record for that exact label event and issue node;
 - the newest review by `tessl-reviewer[bot]` (id 325629464) is on the exact
   head, not dismissed, and has exactly one `workflow-run:v1` marker and one
   `result:v1` marker with `approved=true`. Advisory findings are allowed. The
@@ -105,8 +147,10 @@ just a 200 response.
 - Schedules and the action take effect only after this reaches `main` and
   Tessl syncs `tessl.json`. `tessl doctor --automations` validates the file
   locally only.
-- Until an owner label route exists, dispatch writes nothing and reports the
-  missing capability.
+- The bot route has run only against fixtures. Live delivery of a bot
+  `issues.labeled` event to `native-bot-backlog-labelled`, and
+  `tessl action trigger` from inside the action, still need one real check
+  after this merges.
 - Listings are read through one `gh` call capped at 64 MiB. Past that cap
   the call fails and the listing counts as incomplete. The step that needs
   it stops before its own write; writes earlier in the same run, such as a
