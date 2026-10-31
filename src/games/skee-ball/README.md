@@ -1,6 +1,6 @@
 # Skee Ball
 
-Roll ten balls up a wooden ramp into the scoring rings.
+Roll ten balls up a sloped wooden alley into the scoring rings.
 
 ## How to play
 
@@ -10,8 +10,9 @@ Roll ten balls up a wooden ramp into the scoring rings.
 3. Watch the power meter on the right sweep up and down. The gold band on the
    meter shows the power that reaches the chosen lane's centre ring.
 4. Press the **Roll** button at the bottom right (click or tap it), or Space or
-   Enter, to roll. Each press rolls one ball. The ball rolls up the ramp as far
-   as the power you released it at. You can't change lanes or roll again while
+   Enter, to roll. Each press rolls one ball. You see the ball roll up the
+   chosen lane, away from you, as far as the power you released it at, then
+   rest in the ring it scored (that ring lights up) or short of the rings. You can't change lanes or roll again while
    it rolls.
 5. After ten balls the round ends. Press **Play again** (click or tap it, or
    press Space/Enter) for a new round.
