@@ -8,13 +8,18 @@ import {
   CAPTURE_PIN,
   FLOWS,
   LIMITS,
+  parseArgs,
+  NODE_IMAGE,
+  PLAYWRIGHT_IMAGE,
   checkoutProblems,
   invocationProblems,
+  uploadPaths,
   privateDir,
   publish,
   stage,
   validateReport,
 } from './trusted-publish.mjs';
+import { AUTHORITY_PATH, BOUNDARY, REPOSITORY, authorityProblems } from '../native/native.mjs';
 
 const FLOW = 'mini-putt-hole-next';
 const SHA = 'a'.repeat(40);
@@ -118,29 +123,90 @@ test('a flow the trusted runner does not register stays owed', () => {
   );
 });
 
-test('publishing needs an approved wrapper that is not the candidate', () => {
-  const ok = { pr: '449', candidate: SHA, flow: FLOW, runner: '/r' };
+/** An operator authority record as the coordinator would install it. */
+const authority = (extra = {}) => {
+  const record = {
+    schema: 'carnival-browser-authority',
+    version: 1,
+    approved: true,
+    approvedBy: 'operator',
+    repository: REPOSITORY,
+    wrapper: WRAPPER,
+    captureRunner: CAPTURE_PIN,
+    images: { node: NODE_IMAGE, playwright: PLAYWRIGHT_IMAGE },
+    boundary: BOUNDARY,
+    flows: { [FLOW]: FLOWS[FLOW] },
+    bootstrap: null,
+    ...extra,
+  };
+  return { complete: true, record, problems: authorityProblems(record) };
+};
+
+test('publishing needs the operator authority naming this wrapper', () => {
+  const ok = { pr: '450', candidate: SHA, flow: FLOW, runner: '/r' };
+  const pub = { ...ok, publish: true };
   assert.deepEqual(invocationProblems(ok, WRAPPER), []);
-  assert.match(invocationProblems({ ...ok, publish: true }, WRAPPER).join(), /approved-wrapper/);
+  assert.deepEqual(invocationProblems(pub, WRAPPER, authority()), []);
+  assert.match(invocationProblems(pub, WRAPPER).join(), /authority record missing/);
+  assert.match(invocationProblems(pub, WRAPPER, { complete: false }).join(), /not read/);
+  assert.match(invocationProblems(pub, 'd'.repeat(40), authority()).join(), /not the approved/);
   assert.match(
-    invocationProblems(
-      { ...ok, publish: true, 'approved-wrapper': 'd'.repeat(40) },
-      WRAPPER,
-    ).join(),
-    /not the approved/,
-  );
-  assert.deepEqual(
-    invocationProblems({ ...ok, publish: true, 'approved-wrapper': WRAPPER }, WRAPPER),
-    [],
+    invocationProblems(pub, WRAPPER, authority({ approved: false })).join(),
+    /not operator-approved/,
   );
   assert.match(
-    invocationProblems(
-      { ...ok, candidate: WRAPPER, publish: true, 'approved-wrapper': WRAPPER },
-      WRAPPER,
-    ).join(),
-    /cannot be the candidate/,
+    invocationProblems(pub, WRAPPER, authority({ repository: 'x/y' })).join(),
+    /another repository/,
   );
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ captureRunner: SHA })).join(),
+    /capture pin/,
+  );
+  assert.match(
+    invocationProblems(
+      pub,
+      WRAPPER,
+      authority({ images: { node: 'node:22', playwright: PLAYWRIGHT_IMAGE } }),
+    ).join(),
+    /images/,
+  );
+  assert.match(
+    invocationProblems(
+      pub,
+      WRAPPER,
+      authority({ flows: { [FLOW]: { checks: ['x'], states: ['y'] } } }),
+    ).join(),
+    /not the operator-approved spec/,
+  );
+  // A --approved-wrapper argument is no longer accepted: only the record decides.
+  assert.throws(() => parseArgs(['--approved-wrapper', WRAPPER]), /unknown argument/);
   assert.match(invocationProblems({ ...ok, candidate: 'HEAD' }, WRAPPER).join(), /full sha/);
+});
+
+test('the wrapper may be the candidate only under the exact 449 bootstrap', () => {
+  const pub = { pr: '449', candidate: WRAPPER, flow: FLOW, runner: '/r', publish: true };
+  assert.match(invocationProblems(pub, WRAPPER, authority()).join(), /without an exact bootstrap/);
+  const boot = authority({ bootstrap: { pr: 449, head: WRAPPER } });
+  assert.deepEqual(invocationProblems(pub, WRAPPER, boot), []);
+  assert.match(invocationProblems({ ...pub, pr: '450' }, WRAPPER, boot).join(), /bootstrap/);
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ bootstrap: { pr: 450, head: WRAPPER } })).join(),
+    /may only name pull request 449/,
+  );
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ bootstrap: { pr: 449, head: SHA } })).join(),
+    /bootstrap head is not the wrapper/,
+  );
+  // An ordinary candidate under a bootstrap record still runs.
+  assert.deepEqual(invocationProblems({ ...pub, candidate: SHA }, WRAPPER, boot), []);
+});
+
+test('an attempt writes only its own evidence folder, never the control record', () => {
+  assert.deepEqual(uploadPaths(SHA, FLOW, ['flow.json']), [`evidence/${SHA}/${FLOW}/flow.json`]);
+  assert.throws(() => uploadPaths(SHA, FLOW, ['../../control/x.json']));
+  assert.throws(() => uploadPaths('control', FLOW, ['x']));
+  assert.throws(() => uploadPaths(SHA, 'candidate-added', ['x']));
+  assert.ok(AUTHORITY_PATH.startsWith('control/'));
 });
 
 test('the runner checkout must be the pin, clean, with pinned primitives', () => {
@@ -176,8 +242,10 @@ function mock({ heads = [SHA, SHA], uploadSha = 'e'.repeat(40), corrupt = false 
     return { html_url: 'x' };
   };
   const stored = {};
+  const uploads = [];
   const upload = async (dir, files) => {
     if (!uploadSha) throw new Error('upload unavailable');
+    uploads.push(...Object.keys(files).map((n) => `${dir}/${n}`));
     for (const [n, b] of Object.entries(files)) stored[`${dir}/${n}`] = sha256(b);
     return uploadSha;
   };
@@ -185,7 +253,7 @@ function mock({ heads = [SHA, SHA], uploadSha = 'e'.repeat(40), corrupt = false 
     if (corrupt) return { ...stored, [Object.keys(stored)[0]]: '0'.repeat(64) };
     return stored;
   };
-  return { gh, upload, readback, writes };
+  return { gh, upload, readback, writes, uploads };
 }
 
 const staged = () => stage(validateReport(report(), FLOW), FLOW);
@@ -210,6 +278,11 @@ test('a validated capture is published with its record and provenance', async ()
   const record = JSON.parse(body.output.text.match(/v1 (\{.*\}) -->/s)[1]);
   assert.equal(record.head, SHA);
   assert.equal(record.provenance.captureRunner, CAPTURE_PIN);
+  assert.match(record.provenanceSha256, /^[0-9a-f]{64}$/);
+  // Routine publishing writes the evidence folder only, never the authority record.
+  assert.ok(m.uploads.every((p) => p.startsWith(`evidence/${SHA}/${FLOW}/`)));
+  assert.ok(!m.uploads.includes(AUTHORITY_PATH));
+  assert.ok(m.writes.every((w) => !w.path.includes('contents/control')));
   assert.equal(record.screenshots.length, 3);
   assert.ok(record.screenshots.every((s) => s.path.startsWith(`evidence/${SHA}/${FLOW}/`)));
 });

@@ -1242,6 +1242,140 @@ export function changedFiles(listing, count) {
   return { complete: !!listing?.complete && items.length === count, items };
 }
 
+// ---------- operator browser authority ----------
+//
+// Premerge browser evidence counts only under an operator-approved authority
+// record read from a fixed trusted location: AUTHORITY_PATH on the evidence
+// branch, through the GitHub API, never from any candidate checkout. The
+// record names the reviewed wrapper commit W, the capture pin, the image
+// digests, the boundary and the flow registry. The operator installs it after
+// reviewing W; no routine run writes it, updates its pins or infers approval
+// from main's HEAD. Trust model: anyone who can write the evidence branch (the
+// operator and the approved factory App) is trusted; this does not protect
+// against a compromised controller credential.
+
+/** The reserved control record on the evidence branch. Uploads never touch control/. */
+export const AUTHORITY_PATH = 'control/operator-browser-authority.json';
+export const AUTHORITY_SCHEMA = 'carnival-browser-authority';
+/** The independently reviewed capture-primitives commit. */
+export const CAPTURE_PIN = '3dbcc6d5da3799b40660db5c9b8cb65725b76853';
+export const NODE_IMAGE =
+  'node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da';
+export const PLAYWRIGHT_IMAGE =
+  'mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48';
+export const BOUNDARY = {
+  network: 'none',
+  chromiumSandbox: false,
+  dependencies: 'runner-snapshot',
+};
+/** The only pull request whose head may also be the wrapper, and only when the record names it. */
+export const BOOTSTRAP_PR = 449;
+
+const isSha = (v) => typeof v === 'string' && /^[0-9a-f]{40}$/.test(v);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Why an authority record is not usable, as a list. Empty means it is well formed and approved. */
+export function authorityProblems(a) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return ['authority record missing'];
+  const p = [];
+  if (a.schema !== AUTHORITY_SCHEMA || a.version !== 1) p.push('authority record schema unknown');
+  if (a.approved !== true || typeof a.approvedBy !== 'string' || !a.approvedBy)
+    p.push('authority record is not operator-approved');
+  if (a.repository !== REPOSITORY) p.push('authority record is for another repository');
+  if (!isSha(a.wrapper)) p.push('authority record names no wrapper commit');
+  if (a.captureRunner !== CAPTURE_PIN)
+    p.push('authority record capture pin is not the reviewed one');
+  if (!same(a.images, { node: NODE_IMAGE, playwright: PLAYWRIGHT_IMAGE }))
+    p.push('authority record images are not the pinned digests');
+  if (!same(a.boundary, BOUNDARY)) p.push('authority record boundary is not the isolated one');
+  const flows = a.flows && typeof a.flows === 'object' && !Array.isArray(a.flows) ? a.flows : {};
+  if (!Object.keys(flows).length) p.push('authority record registers no flow');
+  for (const [f, spec] of Object.entries(flows))
+    if (
+      !Array.isArray(spec?.checks) ||
+      !spec.checks.length ||
+      !Array.isArray(spec?.states) ||
+      !spec.states.length
+    )
+      p.push(`authority record spec for ${f} is malformed`);
+  if (a.bootstrap != null) {
+    if (a.bootstrap.pr !== BOOTSTRAP_PR || !isSha(a.bootstrap.head))
+      p.push(`authority record bootstrap may only name pull request ${BOOTSTRAP_PR} and a head`);
+    else if (a.bootstrap.head !== a.wrapper)
+      p.push('authority record bootstrap head is not the wrapper');
+  }
+  return p;
+}
+
+/**
+ * Whether the authority lets wrapper W capture `candidate` for pull request
+ * `pr`. Ordinary runs need W to differ from the candidate. W may equal the
+ * candidate only for the record's own bootstrap: pull request BOOTSTRAP_PR at
+ * exactly that head.
+ */
+export function wrapperProblems(a, pr, candidate, wrapper) {
+  if (wrapper !== a?.wrapper) return [`wrapper ${wrapper} is not the approved ${a?.wrapper}`];
+  if (wrapper !== candidate) return [];
+  const b = a?.bootstrap;
+  if (b && b.pr === BOOTSTRAP_PR && Number(pr) === BOOTSTRAP_PR && b.head === candidate) return [];
+  return ['the wrapper is the candidate without an exact bootstrap authorization'];
+}
+
+/** The authority, as { complete, record } for the gate; anything unread or invalid is problems. */
+export function readAuthority(fetch) {
+  try {
+    const bytes = fetch(AUTHORITY_PATH);
+    if (bytes == null)
+      return { complete: true, record: undefined, problems: ['authority record missing'] };
+    const record = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    return { complete: true, record, problems: authorityProblems(record) };
+  } catch {
+    return { complete: false, problems: ['authority record not read'] };
+  }
+}
+
+/** Why a passing run's retained provenance does not bind it to the authority. */
+function provenanceReasons(head, flow, pr, record, shots, authority) {
+  const r = [];
+  if (!authority?.complete || authority.problems?.length)
+    return [...(authority?.problems ?? ['authority record not read']).map((x) => `${flow}: ${x}`)];
+  const a = authority.record;
+  const spec = a.flows?.[flow];
+  if (!spec) return [`flow ${flow} is not in the operator-approved registry: owed`];
+  const prov = record.provenance;
+  if (!prov || !/^[0-9a-f]{64}$/.test(record.provenanceSha256 ?? ''))
+    return [`browser-flow evidence for ${flow} carries no provenance (legacy record)`];
+  const kept = shots?.provenance;
+  if (!kept) r.push(`provenance for ${flow} is not retained`);
+  else {
+    if (kept.sha256 !== record.provenanceSha256)
+      r.push(`retained provenance for ${flow} does not match its sha256`);
+    if (!same(kept.content, prov))
+      r.push(`retained provenance for ${flow} differs from the record`);
+  }
+  if (prov.flow !== flow || prov.candidate !== head)
+    r.push(`provenance for ${flow} names another flow or candidate`);
+  if (prov.repository !== REPOSITORY) r.push(`provenance for ${flow} is for another repository`);
+  if (prov.captureRunner !== a.captureRunner)
+    r.push(`provenance for ${flow} has the wrong capture pin`);
+  r.push(...wrapperProblems(a, pr, head, prov.wrapper).map((x) => `provenance for ${flow}: ${x}`));
+  const imgs =
+    prov.images && typeof prov.images === 'object' ? Object.keys(prov.images).sort() : [];
+  if (!same(imgs, Object.values(a.images).sort()))
+    r.push(`provenance for ${flow} has the wrong images`);
+  if (!same(prov.boundary, a.boundary)) r.push(`provenance for ${flow} has the wrong boundary`);
+  if (!same(prov.spec, spec)) r.push(`provenance for ${flow} has the wrong flow spec`);
+  const names = (Array.isArray(record.flows) ? record.flows : []).map((f) => f?.name);
+  if (
+    !same(
+      names,
+      spec.checks.map((c) => `${flow}: ${c}`),
+    )
+  )
+    r.push(`browser-flow evidence for ${flow} does not run the approved checks`);
+  return r;
+}
+
 /** The check run external_id that ties a browser-flow attempt to its flow. */
 export const flowExternalId = (flow) => `${BROWSER_CHECK}:${flow}`;
 
@@ -1265,7 +1399,7 @@ function readRecord(run) {
  * Reviews and comments never count. With no `required` flows and nothing
  * owed, it refuses: there is nothing to accept.
  */
-export function browserEvidence(head, checks, shots, required = { flows: [], owed: [] }) {
+export function browserEvidence(head, checks, shots, required = { flows: [], owed: [] }, ctx = {}) {
   const reasons = [...(required.owed ?? [])];
   const mine = (checks ?? [])
     .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
@@ -1290,9 +1424,13 @@ export function browserEvidence(head, checks, shots, required = { flows: [], owe
       reasons.push(`browser-flow evidence for ${flow} ${run.conclusion}`);
       continue;
     }
-    reasons.push(
-      ...recordReasons(head, flow, readRecord(run), shots?.[run.id], `evidence/${head}/${flow}/`),
-    );
+    const record = readRecord(run);
+    const own = recordReasons(head, flow, record, shots?.[run.id], `evidence/${head}/${flow}/`);
+    reasons.push(...own);
+    if (record)
+      reasons.push(
+        ...provenanceReasons(head, flow, ctx.pr, record, shots?.[run.id], ctx.authority),
+      );
   }
   return reasons;
 }
@@ -1440,7 +1578,12 @@ export function mergeGate(s) {
   }
   // An app change also needs the factory's own browser-flow evidence for this head.
   if (needsBrowserEvidence(s.files))
-    reasons.push(...browserEvidence(head, s.checks.items, s.browserShots, requiredFlows(s.files)));
+    reasons.push(
+      ...browserEvidence(head, s.checks.items, s.browserShots, requiredFlows(s.files), {
+        pr: pr?.number,
+        authority: s.browserAuthority,
+      }),
+    );
   if (s.combinedStatus && !['success', 'pending'].includes(s.combinedStatus.state))
     reasons.push(`commit status ${s.combinedStatus.state}`);
   if (s.combinedStatus?.state === 'pending' && s.combinedStatus.total_count > 0)
@@ -1692,12 +1835,47 @@ function retainedShots(checks, head, name = BROWSER_CHECK) {
           }
         }
       }
-      out[run.id] = { complete: true, onEvidenceBranch: true, digests, identity };
+      let provenance;
+      if (name === BROWSER_CHECK && record.provenance) {
+        const dir = `evidence/${head}/${run.external_id.slice(BROWSER_CHECK.length + 1)}`;
+        const bytes = rawAt(`${dir}/provenance.json`, record.evidenceCommit);
+        provenance = {
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          content: JSON.parse(bytes.toString('utf8')),
+        };
+      }
+      out[run.id] = { complete: true, onEvidenceBranch: true, digests, identity, provenance };
     } catch {
       out[run.id] = { complete: false, digests: {} };
     }
   }
   return out;
+}
+
+/** Raw bytes of `path` at `ref`, read through the GitHub API. */
+function rawAt(path, ref) {
+  return execFileSync(
+    'gh',
+    [
+      'api',
+      '-H',
+      'Accept: application/vnd.github.raw',
+      `repos/${REPOSITORY}/contents/${encodeURI(path)}?ref=${encodeURIComponent(ref)}`,
+    ],
+    { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
+  );
+}
+
+/** The authority record from the evidence branch on GitHub; a 404 is missing. */
+export function trustedAuthority() {
+  return readAuthority((path) => {
+    try {
+      return rawAt(path, EVIDENCE_BRANCH);
+    } catch (e) {
+      if (/HTTP 404|Not Found/.test(String(e.stderr ?? e.message))) return null;
+      throw e;
+    }
+  });
 }
 
 /** Who last added `label` to issue `n`, read from every page of its events. */
@@ -1865,6 +2043,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         })(),
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
         files: changedFiles(pages(`${base}/pulls/${n}/files?per_page=100`), pr.changed_files),
+        browserAuthority: trustedAuthority(),
         browserShots: retainedShots(
           checks.items.flatMap((p) => p.check_runs ?? p),
           sha,
@@ -1917,7 +2096,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const adapter = ghAdapter({ writerKeyHeld: held });
   if (command === 'slot') {
     print({ backlog: backlogSlot(now), dispatch: dispatchSlot(now), london: londonParts(now) });
-  } else if (!held && !['deploy', 'flows', 'owed'].includes(command)) {
+  } else if (!held && !['deploy', 'flows', 'owed', 'authority'].includes(command)) {
     console.error('refusing: set CARNIVAL_APP_WRITER_HELD=1 only inside the native-intake action');
     process.exit(3);
   } else if (command === 'backlog') {
@@ -1950,6 +2129,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       }
       print(results);
     }
+  } else if (command === 'authority') {
+    // Read-only: whether the operator's authority record is installed and valid.
+    const a = trustedAuthority();
+    print({ path: `${EVIDENCE_BRANCH}:${AUTHORITY_PATH}`, ...a });
   } else if (command === 'flows') {
     // The flows a pull request's head needs, and what no flow covers yet.
     const pr = JSON.parse(gh(['api', `repos/${REPOSITORY}/pulls/${arg}`]));

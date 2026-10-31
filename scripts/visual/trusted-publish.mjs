@@ -14,8 +14,12 @@
 // - The expected checks and screenshots for each flow are listed here, not
 //   read from the candidate. A flow the candidate adds stays owed until a
 //   reviewed update to this file registers it.
-// - --publish needs --approved-wrapper naming this checkout's own clean HEAD,
-//   which the coordinator selects after an independent review of that commit.
+// - The operator's authority record (control/operator-browser-authority.json
+//   on factory-state/browser-evidence, read through the GitHub API, never from
+//   any checkout) must name this checkout's own clean HEAD as the wrapper, the
+//   capture pin, the image digests, the boundary and the flow. The wrapper may
+//   be the candidate only under that record's exact bootstrap entry. This run
+//   never writes that record and uploads only under evidence/<candidate>/<flow>.
 //
 // The report directory is fresh and private. After the browser container
 // exits, the original directory is validated without following links (plain
@@ -27,7 +31,7 @@
 // failure; an older pass is never reused.
 //
 //   node scripts/visual/trusted-publish.mjs --pr <n> --candidate <sha> --flow <flow>
-//     --runner <clean checkout of CAPTURE_PIN> [--publish --approved-wrapper <sha>]
+//     --runner <clean checkout of CAPTURE_PIN> [--publish]
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
@@ -46,14 +50,20 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const REPO = 'guypod/carnival-evolution-20261028';
+import {
+  AUTHORITY_PATH,
+  BOUNDARY,
+  CAPTURE_PIN,
+  NODE_IMAGE,
+  PLAYWRIGHT_IMAGE,
+  REPOSITORY as REPO,
+  authorityProblems,
+  readAuthority,
+  wrapperProblems,
+} from '../native/native.mjs';
+
+export { CAPTURE_PIN, NODE_IMAGE, PLAYWRIGHT_IMAGE, REPO };
 export const EVIDENCE_BRANCH = 'factory-state/browser-evidence';
-/** The independently reviewed capture-primitives commit the operator selected. */
-export const CAPTURE_PIN = '3dbcc6d5da3799b40660db5c9b8cb65725b76853';
-export const NODE_IMAGE =
-  'node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da';
-export const PLAYWRIGHT_IMAGE =
-  'mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48';
 export const PRIMITIVES = [
   'scripts/visual/isolated-deps.sh',
   'scripts/visual/isolated-build.sh',
@@ -209,16 +219,32 @@ export function checkoutProblems(git, dir, sha, files = []) {
   return problems;
 }
 
-/** The provenance stored with the evidence. */
+/** The provenance stored with the evidence, bound to the authority's spec for the flow. */
 export const provenance = (o) => ({
+  repository: REPO,
+  pr: Number(o.pr),
   flow: o.flow,
   candidate: o.candidate,
   captureRunner: CAPTURE_PIN,
   wrapper: o.wrapper,
   images: o.images,
-  boundary: { network: 'none', chromiumSandbox: false, dependencies: 'runner-snapshot' },
+  boundary: BOUNDARY,
+  spec: o.spec ?? FLOWS[o.flow],
   kind: 'premerge-loopback-capture',
 });
+
+/** Where an attempt may write: only its own evidence/<candidate>/<flow> folder. */
+export function uploadPaths(candidate, flow, names) {
+  const dir = `evidence/${candidate}/${flow}`;
+  if (!/^[0-9a-f]{40}$/.test(candidate) || !FLOWS[flow])
+    throw new Error(`refusing to write ${dir}`);
+  return names.map((n) => {
+    if (!/^[A-Za-z0-9._-]+$/.test(n) || n.startsWith('.')) throw new Error(`refusing name ${n}`);
+    const path = `${dir}/${n}`;
+    if (path === AUTHORITY_PATH || path.startsWith('control/')) throw new Error(`refusing ${path}`);
+    return path;
+  });
+}
 
 /**
  * Publishes a staged, validated capture. `gh` is (method, path, body) =>
@@ -241,7 +267,9 @@ export async function publish({
   const head = (await gh('GET', `repos/${REPO}/pulls/${pr}`)).head?.sha;
   if (head !== candidate) throw new Error(`pull request head moved to ${head}`);
   const dir = `evidence/${candidate}/${flow}`;
-  const files = { ...staged.files, 'provenance.json': Buffer.from(JSON.stringify(prov, null, 2)) };
+  const provBytes = Buffer.from(JSON.stringify(prov, null, 2));
+  const files = { ...staged.files, 'provenance.json': provBytes };
+  uploadPaths(candidate, flow, Object.keys(files));
   const commit = await upload(dir, files);
   if (!SHA.test(commit ?? '')) throw new Error('evidence upload returned no commit');
   const back = await readback(commit, dir);
@@ -250,7 +278,10 @@ export async function publish({
   const again = (await gh('GET', `repos/${REPO}/pulls/${pr}`)).head?.sha;
   if (again !== candidate) throw new Error(`pull request head moved to ${again}`);
   const { flowCheckRun } = await import('./flow-check.mjs');
-  const body = flowCheckRun(staged.report, candidate, commit, dir, 0, { provenance: prov });
+  const body = flowCheckRun(staged.report, candidate, commit, dir, 0, {
+    provenance: prov,
+    provenanceSha256: sha256(provBytes),
+  });
   delete body.head_sha;
   return gh('PATCH', `repos/${REPO}/check-runs/${checkId}`, body);
 }
@@ -323,24 +354,34 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--publish') o.publish = true;
-    else if (/^--(pr|candidate|flow|runner|approved-wrapper)$/.test(k)) o[k.slice(2)] = argv[++i];
+    else if (/^--(pr|candidate|flow|runner)$/.test(k)) o[k.slice(2)] = argv[++i];
     else throw new Error(`unknown argument ${k}`);
   }
   return o;
 }
 
-/** Problems with an invocation before anything runs. */
-export function invocationProblems(o, wrapper) {
+/**
+ * Problems with an invocation before anything runs. `authority` is the
+ * operator's record as read from the trusted location ({ record, problems }),
+ * required for --publish. Nothing on the command line or in a checkout can
+ * stand in for it.
+ */
+export function invocationProblems(o, wrapper, authority) {
   const problems = [];
   if (!/^[1-9][0-9]*$/.test(o.pr ?? '')) problems.push('--pr is not a number');
   if (!SHA.test(o.candidate ?? '')) problems.push('--candidate is not a full sha');
   if (!FLOWS[o.flow]) problems.push(`flow ${o.flow} is not registered in the trusted runner: owed`);
   if (!o.runner) problems.push('--runner is missing');
   if (o.publish) {
-    if (!SHA.test(o['approved-wrapper'] ?? '')) problems.push('--publish needs --approved-wrapper');
-    else if (o['approved-wrapper'] !== wrapper)
-      problems.push(`wrapper is ${wrapper}, not the approved ${o['approved-wrapper']}`);
-    if (wrapper === o.candidate) problems.push('the wrapper cannot be the candidate');
+    const p = authority?.problems ?? authorityProblems(authority?.record);
+    if (authority && !authority.complete) problems.push('authority record not read');
+    else if (p.length) problems.push(...p);
+    else {
+      const a = authority.record;
+      problems.push(...wrapperProblems(a, o.pr, o.candidate, wrapper));
+      if (JSON.stringify(a.flows?.[o.flow]) !== JSON.stringify(FLOWS[o.flow]))
+        problems.push(`flow ${o.flow} is not the operator-approved spec: owed`);
+    }
   }
   return problems;
 }
@@ -349,9 +390,10 @@ async function main() {
   const o = parseArgs(process.argv.slice(2));
   const self = join(dirname(fileURLToPath(import.meta.url)), '../..');
   const wrapper = git(self, ['rev-parse', 'HEAD']);
+  const authority = o.publish ? readAuthority(authorityAt) : undefined;
   const problems = [
-    ...invocationProblems(o, wrapper),
-    ...(o.publish ? checkoutProblems(git, self, o['approved-wrapper']) : []),
+    ...invocationProblems(o, wrapper, authority),
+    ...(o.publish ? checkoutProblems(git, self, authority?.record?.wrapper) : []),
     ...(o.runner ? checkoutProblems(git, o.runner, CAPTURE_PIN, PRIMITIVES) : []),
   ];
   if (problems.length) {
@@ -397,6 +439,23 @@ async function ghApi(method, path, body) {
   return JSON.parse(r.stdout || '{}');
 }
 
+/** The authority record on the evidence branch, through the API; null when absent. */
+function authorityAt(path) {
+  const r = spawnSync(
+    'gh',
+    [
+      'api',
+      '-H',
+      'Accept: application/vnd.github.raw',
+      `repos/${REPO}/contents/${path}?ref=${EVIDENCE_BRANCH}`,
+    ],
+    { maxBuffer: 1 << 20 },
+  );
+  if (r.status === 0) return r.stdout;
+  if (/404|Not Found/.test(String(r.stderr))) return null;
+  throw new Error('authority record not read');
+}
+
 /** Commits the files to the evidence branch through the API, on top of its current tip. */
 async function upload(dir, files) {
   const ref = await ghApi('GET', `repos/${REPO}/git/ref/heads/${EVIDENCE_BRANCH}`);
@@ -408,6 +467,7 @@ async function upload(dir, files) {
       content: bytes.toString('base64'),
       encoding: 'base64',
     });
+    // base_tree keeps every other path, including the reserved control record.
     tree.push({ path: `${dir}/${name}`, mode: '100644', type: 'blob', sha: blob.sha });
   }
   const t = await ghApi('POST', `repos/${REPO}/git/trees`, { base_tree: base, tree });

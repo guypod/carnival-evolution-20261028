@@ -62,36 +62,49 @@ credentials or anything from outside this repository's public record.
    same-repository `tessl/issue-<n>` branch, run
    `node scripts/native/native.mjs flows <pr>`. It derives the flows from
    every changed path, old and new, and lists in `owed` whatever no flow
-   covers. If `owed` is not empty, the PR cannot merge: report each entry as
-   a repair: the PR's own implementation or shepherd run may add the missing
-   flow to `scripts/visual/flow.mjs`, `KNOWN_FLOWS` and `GAME_FLOWS` in
-   `scripts/native/native.mjs` on the same branch, and the flow then gates
-   that head. Do not substitute another
-   game's flow or claim the change was played. Otherwise report every listed
-   flow as `browser-flow-owed: <pr>:<flow>` with the reason "no isolated
-   runner", unless the operator has named an independently reviewed wrapper
-   commit `W` that is dispatch's own `main` checkout. Then, for each flow
-   registered in `FLOWS` in `main`'s `scripts/visual/trusted-publish.mjs`,
-   run that file from dispatch's own checkout (never the PR's) as
+   covers. Report each `owed` entry as owed: the PR cannot merge. A PR cannot
+   qualify its own head by adding a flow. New coverage needs a separate,
+   operator-reviewed update to the wrapper, the capture pin and the flow
+   registry, then a new authority record. Do not substitute another game's
+   flow or claim the change was played. Games with no registered flow and PRs
+   that change dependencies stay owed. Coverage is not universal.
+
+   Then run `node scripts/native/native.mjs authority`. It reads the
+   operator's record `control/operator-browser-authority.json` from
+   `factory-state/browser-evidence` through the GitHub API, never from any
+   checkout. If it reports any problem, report every listed flow as
+   `browser-flow-owed: <pr>:<flow>` with the reason "no operator browser
+   authority" and stop this step. Otherwise the record names the wrapper
+   commit `W`. Use a separate, clean checkout of exactly `W` (not dispatch's
+   own checkout and not `main`'s `HEAD`, which moves) and a clean checkout of
+   the record's `captureRunner`. For each flow the record registers, run from
+   `W`:
    `node scripts/visual/trusted-publish.mjs --pr <pr> --candidate <head sha>
---flow <flow> --runner <clean checkout of CAPTURE_PIN> --publish
---approved-wrapper W`, one PR at a time, and report a non-zero exit as
-   `browser-flow-owed: <pr>:<flow>` with its last error line. A flow that
-   wrapper does not register stays owed: a PR cannot register its own flow
-   there. Dispatch holds the writer key, so it never checks out, installs,
-   builds, serves or runs anything from a PR's head: not `npm ci`, not the
-   PR's `scripts/visual/run-flow.sh`, Vite config, npm lifecycle scripts or
-   any module they import. Clearing token variables or using a detached
-   worktree does not change that. Premerge `browser-flow` evidence stays
-   owed until a trusted runner exists that plays the candidate in a
-   credential-free sandbox and publishes from `main`'s own code. Never edit
-   or push the PR branch here.
+--flow <flow> --runner <clean checkout of captureRunner> --publish`,
+   one PR at a time. The wrapper reads the same record again and refuses
+   unless its own clean `HEAD` is `W`, the pins and the flow spec match, and
+   `W` differs from the candidate (the record's `bootstrap` entry may allow
+   only PR 449 at that exact head). Report a non-zero exit as
+   `browser-flow-owed: <pr>:<flow>` with its last error line. A flow the
+   record does not register stays owed. Never write, edit or update the
+   authority record, its pins or its registry, and never infer approval from
+   `main`'s `HEAD`: only the operator installs it, after reviewing `W`.
+   Dispatch holds the writer key, so it never checks out, installs, builds,
+   serves or runs anything from a PR's head: not `npm ci`, not the PR's
+   `scripts/visual/run-flow.sh`, Vite config, npm lifecycle scripts or any
+   module they import. Clearing token variables or using a detached worktree
+   does not change that. Never edit or push the PR branch here. Trust model:
+   the operator and the approved factory App, which can write the evidence
+   branch, are trusted. This does not protect against a compromised controller
+   credential.
+
 2. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs merge`. For an
    open Tessl PR whose source issue, branch and single `Closes` line agree,
    whose newest `tessl-reviewer[bot]` review on the exact head carries
    `approved=true` (advisory findings allowed) and matches the reviewer's own
-   check run on that head, with green `check` CI, the newest passing
-   `browser-flow` attempt for every required flow and no request for changes
+   check run on that head, with green `check` CI, the newest `browser-flow`
+   attempt for every required flow passing under the operator's authority
+   record with matching retained `provenance.json` and no request for changes
    still standing, it gates again and merges atomically with that head as the
    expected SHA. It never arms GitHub auto-merge, never submits a review,
    never relaxes a required check, and never merges another way.

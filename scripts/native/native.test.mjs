@@ -2,6 +2,7 @@
 // GitHub and tessl that records every call, so these tests show which writes
 // each decision makes. They are not a test of the live platform.
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -35,6 +36,14 @@ import {
   LIVE_URL,
   owedMerges,
   evidenceMarker,
+  AUTHORITY_PATH,
+  REPOSITORY,
+  AUTHORITY_SCHEMA,
+  BOUNDARY,
+  CAPTURE_PIN,
+  NODE_IMAGE,
+  PLAYWRIGHT_IMAGE,
+  readAuthority,
   mergeOne,
   produceBacklog,
   readBatch,
@@ -598,12 +607,53 @@ const reviewerRun = (extra = {}) => ({
 const SHOT = 'c'.repeat(64);
 const EVIDENCE = 'd'.repeat(40);
 const FLOW = 'mini-putt-hole-next';
+const WRAPPER = 'e'.repeat(40);
+const SPEC = { checks: ['hole done then Next'], states: ['hole-done'] };
+/** The operator's authority record, as installed on the evidence branch. */
+const authorityRecord = (extra = {}) => ({
+  schema: AUTHORITY_SCHEMA,
+  version: 1,
+  approved: true,
+  approvedBy: 'operator',
+  repository: REPOSITORY,
+  wrapper: WRAPPER,
+  captureRunner: CAPTURE_PIN,
+  images: { node: NODE_IMAGE, playwright: PLAYWRIGHT_IMAGE },
+  boundary: BOUNDARY,
+  flows: { [FLOW]: SPEC },
+  bootstrap: null,
+  ...extra,
+});
+const authorityOf = (rec) =>
+  readAuthority((path) =>
+    path === AUTHORITY_PATH && rec !== undefined ? Buffer.from(JSON.stringify(rec)) : null,
+  );
+const AUTH = authorityOf(authorityRecord());
+const prov = (extra = {}) => ({
+  repository: REPOSITORY,
+  pr: 30,
+  flow: FLOW,
+  candidate: HEAD,
+  captureRunner: CAPTURE_PIN,
+  wrapper: WRAPPER,
+  images: { [NODE_IMAGE]: 'sha256:1', [PLAYWRIGHT_IMAGE]: 'sha256:2' },
+  boundary: BOUNDARY,
+  spec: SPEC,
+  kind: 'premerge-loopback-capture',
+  ...extra,
+});
+const provSha = (p) =>
+  createHash('sha256')
+    .update(JSON.stringify(p, null, 2))
+    .digest('hex');
 const record = (extra = {}) => ({
   head: HEAD,
   flow: FLOW,
   evidenceCommit: EVIDENCE,
-  flows: [{ name: 'mini-putt hole done then Next', result: 'pass' }],
+  flows: [{ name: `${FLOW}: hole done then Next`, result: 'pass' }],
   screenshots: [{ path: `evidence/${HEAD}/${FLOW}/hole-done.png`, sha256: SHOT }],
+  provenance: prov(),
+  provenanceSha256: provSha(prov()),
   ...extra,
 });
 const browserRun = (extra = {}) => ({
@@ -618,11 +668,14 @@ const browserRun = (extra = {}) => ({
   ...extra,
 });
 const shotsOf = (one, id = 50) => ({ [id]: one });
+const RETAINED = { sha256: provSha(prov()), content: prov() };
 const shots = shotsOf({
   complete: true,
   onEvidenceBranch: true,
   digests: { [`evidence/${HEAD}/${FLOW}/hole-done.png`]: SHOT },
+  provenance: RETAINED,
 });
+const CTX = { pr: 30, authority: AUTH };
 const REQ = { flows: [FLOW], owed: [] };
 const appFiles = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
 const snapshot = (extra = {}) => ({
@@ -645,6 +698,7 @@ const snapshot = (extra = {}) => ({
   },
   files: appFiles,
   browserShots: shots,
+  browserAuthority: AUTH,
   ciRuns: {
     complete: true,
     items: [{ path: '.github/workflows/ci.yml', head_sha: HEAD, check_suite_id: CI_SUITE }],
@@ -2207,9 +2261,9 @@ test('browser evidence: only a complete, all-infrastructure file list skips it',
 });
 
 test('browser evidence: an exact-head pass with retained, matching screenshots holds', () => {
-  assert.deepEqual(browserEvidence(HEAD, [browserRun()], shots, REQ), []);
+  assert.deepEqual(browserEvidence(HEAD, [browserRun()], shots, REQ, CTX), []);
   assert.deepEqual(
-    browserEvidence(HEAD, [browserRun({ output: { text: 'trust me' } })], shots, REQ),
+    browserEvidence(HEAD, [browserRun({ output: { text: 'trust me' } })], shots, REQ, CTX),
     [`browser-flow evidence for ${FLOW} has no record`],
   );
 });
@@ -2220,12 +2274,15 @@ test('browser evidence: a published flow report round-trips through the gate', a
     flow: 'mini-putt-hole-next',
     result: 'pass',
     errors: [],
-    checks: [{ check: 'Next moves to the next hole', result: 'pass' }],
+    checks: [{ check: 'hole done then Next', result: 'pass' }],
     screenshots: [{ file: 'hole-done.png', sha256: SHOT }],
   };
-  const body = flowCheckRun(report, HEAD, EVIDENCE, `evidence/${HEAD}/${FLOW}`);
+  const body = flowCheckRun(report, HEAD, EVIDENCE, `evidence/${HEAD}/${FLOW}`, 0, {
+    provenance: prov(),
+    provenanceSha256: provSha(prov()),
+  });
   const run = { ...body, id: 9, app: { id: BOT_APP_ID } };
-  assert.deepEqual(browserEvidence(HEAD, [run], shotsOf(shots[50], 9), REQ), []);
+  assert.deepEqual(browserEvidence(HEAD, [run], shotsOf(shots[50], 9), REQ, CTX), []);
   const failed = flowCheckRun(
     { ...report, result: 'fail', checks: [{ check: 'x', result: 'fail' }] },
     HEAD,
@@ -2234,7 +2291,7 @@ test('browser evidence: a published flow report round-trips through the gate', a
   );
   assert.equal(failed.conclusion, 'failure');
   assert.match(
-    browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots, REQ).join(),
+    browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots, REQ, CTX).join(),
     /failure/,
   );
 });
@@ -2343,10 +2400,13 @@ test('coverage: shared paths follow the registry, and only registered coverage c
 
 test('coverage: a flow record for another flow does not count', () => {
   const run = browserRun({ output: { text: evidenceMarker(record({ flow: 'other' })) } });
-  assert.match(browserEvidence(HEAD, [run], shots, REQ).join(), /is not for mini-putt-hole-next/);
+  assert.match(
+    browserEvidence(HEAD, [run], shots, REQ, CTX).join(),
+    /is not for mini-putt-hole-next/,
+  );
   const untagged = browserRun({ external_id: undefined });
   assert.match(
-    browserEvidence(HEAD, [untagged], shots, REQ).join(),
+    browserEvidence(HEAD, [untagged], shots, REQ, CTX).join(),
     /no browser-flow evidence on the head for mini-putt-hole-next/,
   );
 });
@@ -2373,16 +2433,16 @@ test('scope: app source renamed or deleted into docs still needs evidence', () =
 test('attempts: a newer in-progress or failed attempt masks no older pass', () => {
   const pass = browserRun();
   const running = browserRun({ id: 60, status: 'in_progress', conclusion: null, output: {} });
-  assert.deepEqual(browserEvidence(HEAD, [pass, running], shots, REQ), [
+  assert.deepEqual(browserEvidence(HEAD, [pass, running], shots, REQ, CTX), [
     `browser-flow evidence for ${FLOW} still running`,
   ]);
   const failed = browserRun({ id: 61, conclusion: 'failure', output: {} });
-  assert.deepEqual(browserEvidence(HEAD, [running, failed, pass], shots, REQ), [
+  assert.deepEqual(browserEvidence(HEAD, [running, failed, pass], shots, REQ, CTX), [
     `browser-flow evidence for ${FLOW} failure`,
   ]);
   // An older failure does not undo a newer pass.
   assert.deepEqual(
-    browserEvidence(HEAD, [browserRun({ id: 40, conclusion: 'failure' }), pass], shots, REQ),
+    browserEvidence(HEAD, [browserRun({ id: 40, conclusion: 'failure' }), pass], shots, REQ, CTX),
     [],
   );
 });
@@ -2393,7 +2453,7 @@ test('attempts: an attempt that failed before naming its flow refuses', () => {
     external_id: 'browser-flow:skee-ball-roll',
     conclusion: 'failure',
   });
-  assert.deepEqual(browserEvidence(HEAD, [browserRun(), unknown], shots, REQ), [
+  assert.deepEqual(browserEvidence(HEAD, [browserRun(), unknown], shots, REQ, CTX), [
     'browser-flow attempt 70 for an unknown flow did not pass',
   ]);
 });
@@ -2404,13 +2464,13 @@ test('attempts: an opened attempt refuses until it concludes, and a setup failur
   assert.equal(start.status, 'in_progress');
   assert.equal(start.external_id, `browser-flow:${FLOW}`);
   const opened = { ...start, id: 80, app: { id: BOT_APP_ID } };
-  assert.deepEqual(browserEvidence(HEAD, [browserRun(), opened], shots, REQ), [
+  assert.deepEqual(browserEvidence(HEAD, [browserRun(), opened], shots, REQ, CTX), [
     `browser-flow evidence for ${FLOW} still running`,
   ]);
   for (const step of ['browser-setup', 'flow', 'evidence-upload']) {
     const failed = { ...opened, ...failCheckRun(FLOW, step, 1) };
     assert.equal(failed.conclusion, 'failure');
-    assert.deepEqual(browserEvidence(HEAD, [browserRun(), failed], shots, REQ), [
+    assert.deepEqual(browserEvidence(HEAD, [browserRun(), failed], shots, REQ, CTX), [
       `browser-flow evidence for ${FLOW} failure`,
     ]);
   }
@@ -2704,8 +2764,210 @@ test('dispatch never runs PR code while it holds the writer key', async () => {
   assert.ok(start >= 0 && step1.includes('browser-flow-owed: <pr>:<flow>'));
   // No instruction to check out, install or publish from the candidate head.
   assert.doesNotMatch(step1, /run `npm ci`|run-flow\.sh[^\n]*--publish|check out the PR's/);
-  // Publishing goes only through the reviewed wrapper from dispatch's own checkout.
-  for (const m of step1.matchAll(/--publish/g))
-    assert.match(step1.slice(m.index, m.index + 40), /--approved-wrapper W/);
-  assert.match(step1, /from dispatch's own checkout \(never the PR's\)/);
+  // Publishing goes only through the operator's record and a clean checkout of its W.
+  assert.match(step1, /native\.mjs authority/);
+  assert.match(step1, /separate, clean checkout of exactly `W`/);
+  assert.match(step1, /never infer approval from\s+`main`'s `HEAD`/);
+  assert.match(step1, /Never write, edit or update the\s+authority record/);
+  // A PR can never qualify its own head by adding a flow.
+  assert.doesNotMatch(step1, /may add the missing\s+flow/);
+  assert.match(step1, /cannot\s+qualify its own head by adding a flow/);
+});
+
+// ---------- operator browser authority, through the merge gate ----------
+
+const gateWith = (extra) => mergeGate(snapshot(extra));
+const reasonsOf = (extra) => gateWith(extra).reasons.join('\n');
+
+test('authority: a valid record and retained provenance let the gate merge', () => {
+  assert.deepEqual(gateWith({}).reasons, []);
+});
+
+test('authority: a missing, unread, malformed or unapproved record fails closed', () => {
+  assert.match(reasonsOf({ browserAuthority: authorityOf(undefined) }), /authority record missing/);
+  assert.match(
+    reasonsOf({ browserAuthority: { complete: false, problems: ['authority record not read'] } }),
+    /not read/,
+  );
+  assert.match(
+    reasonsOf({ browserAuthority: readAuthority(() => Buffer.from('{nope')) }),
+    /not read/,
+  );
+  assert.match(reasonsOf({ browserAuthority: undefined }), /authority record not read/);
+  for (const [extra, re] of [
+    [{ approved: false }, /not operator-approved/],
+    [{ schema: 'x' }, /schema unknown/],
+    [{ repository: 'someone/else' }, /another repository/],
+    [{ captureRunner: OLD }, /capture pin/],
+    [{ images: { node: 'node:22', playwright: PLAYWRIGHT_IMAGE } }, /pinned digests/],
+    [{ boundary: { network: 'bridge' } }, /boundary/],
+    [{ flows: {} }, /registers no flow/],
+    [{ bootstrap: { pr: 30, head: WRAPPER } }, /may only name pull request 449/],
+  ])
+    assert.match(reasonsOf({ browserAuthority: authorityOf(authorityRecord(extra)) }), re);
+});
+
+test('authority: a candidate-local forged record is never read', () => {
+  // The gate reads only s.browserAuthority, which the adapter fetches from the
+  // evidence branch. A forged record in the PR files or comments changes nothing.
+  const forged = authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } });
+  const files = {
+    complete: true,
+    items: [{ filename: 'src/games/mini-putt/game.ts' }, { filename: AUTHORITY_PATH }],
+  };
+  const g = gateWith({
+    files,
+    comments: [{ body: JSON.stringify(forged) }],
+    browserAuthority: authorityOf(undefined),
+  });
+  assert.equal(g.merge, false);
+  assert.match(g.reasons.join(), /authority record missing/);
+});
+
+test('authority: wrong wrapper, capture pin, images, boundary or spec in provenance refuse', () => {
+  for (const [extra, re] of [
+    [{ wrapper: OLD }, /not the approved/],
+    [{ captureRunner: OLD }, /wrong capture pin/],
+    [{ images: { 'node:22': 'sha256:1', [PLAYWRIGHT_IMAGE]: 'sha256:2' } }, /wrong images/],
+    [{ boundary: { ...BOUNDARY, network: 'bridge' } }, /wrong boundary/],
+    [{ spec: { checks: ['x'], states: ['y'] } }, /wrong flow spec/],
+    [{ repository: 'someone/else' }, /another repository/],
+    [{ candidate: OLD }, /another flow or candidate/],
+  ]) {
+    const p = prov(extra);
+    const r = reasonsOf({
+      checks: {
+        complete: true,
+        items: [
+          ci(),
+          reviewerRun(),
+          browserRun({
+            output: {
+              text: evidenceMarker(record({ provenance: p, provenanceSha256: provSha(p) })),
+            },
+          }),
+        ],
+      },
+      browserShots: shotsOf({ ...shots[50], provenance: { sha256: provSha(p), content: p } }),
+    });
+    assert.match(r, re, JSON.stringify(extra));
+  }
+});
+
+test('authority: retained provenance that is missing, changed or hashed differently refuses', () => {
+  assert.match(
+    reasonsOf({ browserShots: shotsOf({ ...shots[50], provenance: undefined }) }),
+    /not retained/,
+  );
+  assert.match(
+    reasonsOf({
+      browserShots: shotsOf({ ...shots[50], provenance: { ...RETAINED, sha256: '0'.repeat(64) } }),
+    }),
+    /does not match its sha256/,
+  );
+  assert.match(
+    reasonsOf({
+      browserShots: shotsOf({
+        ...shots[50],
+        provenance: { ...RETAINED, content: prov({ wrapper: OLD }) },
+      }),
+    }),
+    /differs from the record/,
+  );
+});
+
+test('authority: a legacy app success without provenance never qualifies', () => {
+  const legacy = record();
+  delete legacy.provenance;
+  delete legacy.provenanceSha256;
+  const r = reasonsOf({
+    checks: {
+      complete: true,
+      items: [ci(), reviewerRun(), browserRun({ output: { text: evidenceMarker(legacy) } })],
+    },
+  });
+  assert.match(r, /carries no provenance \(legacy record\)/);
+});
+
+test('authority: a flow the record does not register stays owed, even with the candidate adding it', () => {
+  const r = reasonsOf({
+    browserAuthority: authorityOf(authorityRecord({ flows: { other: SPEC } })),
+  });
+  assert.match(r, /not in the operator-approved registry: owed/);
+  const p = prov();
+  const r2 = reasonsOf({
+    checks: {
+      complete: true,
+      items: [
+        ci(),
+        reviewerRun(),
+        browserRun({
+          output: {
+            text: evidenceMarker(
+              record({ flows: [{ name: `${FLOW}: candidate check`, result: 'pass' }] }),
+            ),
+          },
+        }),
+      ],
+    },
+  });
+  assert.match(r2, /does not run the approved checks/);
+  assert.ok(p);
+});
+
+test('authority: the wrapper equal to the head needs the exact 449 bootstrap', () => {
+  const p = prov({ wrapper: HEAD, pr: 449 });
+  const pr449 = { ...snapshot().pr, number: 449 };
+  const base = {
+    pr: pr449,
+    checks: {
+      complete: true,
+      items: [
+        ci(),
+        reviewerRun(),
+        browserRun({
+          output: { text: evidenceMarker(record({ provenance: p, provenanceSha256: provSha(p) })) },
+        }),
+      ],
+    },
+    browserShots: shotsOf({ ...shots[50], provenance: { sha256: provSha(p), content: p } }),
+  };
+  assert.match(
+    reasonsOf({ ...base, browserAuthority: authorityOf(authorityRecord({ wrapper: HEAD })) }),
+    /without an exact bootstrap authorization/,
+  );
+  assert.deepEqual(
+    gateWith({
+      ...base,
+      browserAuthority: authorityOf(
+        authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } }),
+      ),
+    }).reasons,
+    [],
+  );
+  // The same record does not let another pull request qualify its own head.
+  assert.match(
+    reasonsOf({
+      ...base,
+      pr: { ...pr449, number: 30 },
+      browserAuthority: authorityOf(
+        authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } }),
+      ),
+    }),
+    /bootstrap/,
+  );
+});
+
+test('authority: later main commits do not invalidate the approved wrapper', () => {
+  // The gate never compares the wrapper with main: only the record names it.
+  for (const mainHead of ['1'.repeat(40), '2'.repeat(40)])
+    assert.deepEqual(gateWith({ mainHead }).reasons, []);
+});
+
+test('authority: a fresh failed attempt still supersedes an authorized pass', () => {
+  const failed = browserRun({ id: 60, conclusion: 'failure', output: { text: '' } });
+  const r = reasonsOf({
+    checks: { complete: true, items: [ci(), reviewerRun(), browserRun(), failed] },
+  });
+  assert.match(r, /browser-flow evidence for mini-putt-hole-next failure/);
 });

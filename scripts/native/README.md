@@ -253,9 +253,10 @@ into `main`, labelled `tessl`, when:
 A reviewer's `approved=true` and comments on the issue or PR are not browser
 evidence. `requiredFlows` reads every changed path, the new name and, for a
 rename, the old one. A change in `src/games/<game>/` needs that game's flows
-from `GAME_FLOWS`, and a game with none is owed a flow: the gate refuses, and
-the repair is to add the flow to `scripts/visual/flow.mjs`, `KNOWN_FLOWS` and
-`GAME_FLOWS`, in the same pull request. One game's pass never stands in for
+from `GAME_FLOWS`, and a game with none is owed a flow: the gate refuses. A
+pull request cannot qualify its own head by adding a flow: new coverage needs
+a separate, operator-reviewed update to the wrapper, the capture pin and the
+flow registry, and then a new authority record. One game's pass never stands in for
 another's. A change to the flow scripts replays every flow. Other app code
 follows `SHARED_COVERAGE`, a finite registry of what each shared path reaches:
 `src/carnival/` and `src/games/*.ts` reach every game folder, `src/main.ts`,
@@ -428,24 +429,70 @@ It has no mode that publishes a directory it did not just capture.
   list exactly the expected checks, all passing, and no errors. Each PNG
   needs a valid signature, a 1280 pixel width and its recorded sha256. Only
   those bytes are copied to fresh private staging, which is validated again.
-- **Publishing.** `--publish` needs `--approved-wrapper <sha>` equal to the
-  wrapper checkout's own clean `HEAD`, and that commit may not be the
-  candidate. It opens the check run in progress first, re-reads the PR head,
-  commits the screenshots, `flow.json` and `provenance.json` (candidate,
-  capture runner, wrapper and image ids) to `factory-state/browser-evidence`
-  through the API, reads every file back and compares its sha256, re-reads
-  the head again, and only then concludes the check as a success with the
-  usual record plus `provenance`. Any failure concludes it as a failure, so
-  an older pass is never reused.
+- **Authority.** `--publish` and the merge gate both read one operator
+  record, `control/operator-browser-authority.json` on
+  `factory-state/browser-evidence`, through the GitHub API and never from a
+  checkout. A missing, unread, malformed or unapproved record fails closed.
+  The record names the wrapper commit `W`, the capture pin, the image
+  digests, the boundary and each flow's checks and states. The wrapper must
+  run from a clean checkout of exactly `W`, and `W` must differ from the
+  candidate, except under the record's `bootstrap` entry, which may name only
+  pull request 449 at a head equal to `W`. Later commits on `main` do not
+  matter: nothing compares `W` with `main`. No routine run writes the record
+  or updates its pins; the operator installs it after reviewing `W`.
+- **Publishing.** It opens the check run in progress first, re-reads the PR
+  head, commits the screenshots, `flow.json` and `provenance.json`
+  (repository, PR, candidate, capture runner, wrapper, image ids, boundary,
+  flow spec) under `evidence/<candidate>/<flow>/` only, on top of the branch
+  tip so `control/` is kept, reads every file back and compares its sha256,
+  re-reads the head again, and only then concludes the check as a success
+  with the usual record plus `provenance` and `provenanceSha256`. Any failure
+  concludes it as a failure, so an older pass is never reused.
+- **Gate.** A passing run counts only when its record carries provenance,
+  the retained `provenance.json` at the evidence commit hashes to
+  `provenanceSha256` and parses to the same content, and that provenance
+  names this repository, head and flow, the record's wrapper (or the exact
+  bootstrap), capture pin, image digests, boundary and flow spec, with the
+  record's checks. A legacy app success without that never qualifies.
 - **Not live QA.** This is a loopback capture of a build. Shipping still
   needs the separate `browser-flow-live` run on the deployed site.
-- **Status.** This wrapper has had no independent review, so nothing it
-  produced is authoritative yet. The bootstrap is for the coordinator: after
-  reviewing wrapper commit `W`, check out `W` and `CAPTURE_PIN` as two clean
-  worktrees and run, from `W`:
+- **Status.** No authority record is installed, so nothing qualifies yet. The
+  coordinator reviews the final wrapper commit `W`, installs the record once
+  (shape below), then checks out `W` and `CAPTURE_PIN` as two clean worktrees
+  and runs, from `W`:
   `node scripts/visual/trusted-publish.mjs --pr 449 --candidate <head>
---flow mini-putt-hole-next --runner <CAPTURE_PIN worktree> --publish
---approved-wrapper W`, with the factory app's token for `gh`.
+--flow mini-putt-hole-next --runner <CAPTURE_PIN worktree> --publish`, with
+  the factory app's token for `gh`. The record:
+
+  ```json
+  {
+    "schema": "carnival-browser-authority",
+    "version": 1,
+    "approved": true,
+    "approvedBy": "<operator login>",
+    "repository": "guypod/carnival-evolution-20261028",
+    "wrapper": "<W: final reviewed sha>",
+    "captureRunner": "3dbcc6d5da3799b40660db5c9b8cb65725b76853",
+    "images": {
+      "node": "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da",
+      "playwright": "mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48"
+    },
+    "boundary": { "network": "none", "chromiumSandbox": false, "dependencies": "runner-snapshot" },
+    "flows": {
+      "mini-putt-hole-next": {
+        "checks": ["<FLOWS checks in W>"],
+        "states": ["aiming", "hole-done", "after-next"]
+      }
+    },
+    "bootstrap": { "pr": 449, "head": "<W, only if W is the PR 449 head>" }
+  }
+  ```
+
+  `node scripts/native/native.mjs authority` shows what is installed.
+
+- **Trust model.** The operator and the approved factory App, which can
+  write the evidence branch and post check runs, are trusted. This does not
+  protect against a compromised controller credential.
 - **Limits.** Shared host kernel, Chromium's own sandbox off, and only
   candidates with the runner's exact `package.json`, lockfile and `.npmrc`
   (anything else stays owed). The evidence is still reported by the factory
