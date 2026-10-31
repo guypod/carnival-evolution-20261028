@@ -18,7 +18,9 @@ import {
   duckDash,
   frameClock,
   keyAction,
+  LANE_BUTTONS,
   laneAt,
+  laneTapAt,
   laneCentre,
   moveDuck,
   resolveArrivals,
@@ -228,6 +230,25 @@ describe('duck dash', () => {
   it('finds the lane under a pointer', () => {
     for (let lane = 0; lane < LANES; lane++) expect(laneAt(laneCentre(lane))).toBe(lane);
     expect(laneAt(0)).toBeUndefined();
+  });
+
+  it('moves the duck to the lane of a tapped lane button below the river', () => {
+    const y = LANE_BUTTONS.y + LANE_BUTTONS.h / 2;
+    for (let lane = 0; lane < LANES; lane++) {
+      expect(laneTapAt(laneCentre(lane), y)).toBe(lane);
+      const state = createState(seededRng(1));
+      startRound(state);
+      setLane(state, laneTapAt(laneCentre(lane), y) ?? -1);
+      expect(state.lane).toBe(lane);
+    }
+    expect(laneTapAt(laneCentre(1), LANE_BUTTONS.y + LANE_BUTTONS.h + 1)).toBeUndefined();
+    expect(laneTapAt(0, y)).toBeUndefined();
+  });
+
+  it('keeps the lane buttons below the river and on the canvas', () => {
+    // The river runs from y 80 to 432 on the 800x500 canvas.
+    expect(LANE_BUTTONS.y).toBeGreaterThan(80 + 352);
+    expect(LANE_BUTTONS.y + LANE_BUTTONS.h).toBeLessThanOrEqual(500);
   });
 });
 

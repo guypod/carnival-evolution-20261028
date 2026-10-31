@@ -311,11 +311,12 @@ export function keyAction(
   return undefined;
 }
 
-const RIVER = { x: 160, y: 80, w: 480, h: 420 } as const;
+const RIVER = { x: 160, y: 80, w: 480, h: 352 } as const;
 const LANE_W = RIVER.w / LANES;
 const TOP_Y = RIVER.y + 10;
 const DUCK_Y = 380;
-const BUTTON_Y = 430;
+/** The lane buttons sit in a row below the river, clear of the duck. */
+export const LANE_BUTTONS = { y: RIVER.y + RIVER.h + 6, h: 52 } as const;
 const BUTTON = { x: WIDTH / 2 - 110, y: 380, w: 220, h: 52 } as const;
 
 /** Pixels the river flows per second: the same speed the stars and reeds float. */
@@ -340,6 +341,15 @@ export function laneCentre(lane: number): number {
 export function laneAt(x: number): number | undefined {
   if (x < RIVER.x || x >= RIVER.x + RIVER.w) return undefined;
   return clampLane(Math.floor((x - RIVER.x) / LANE_W));
+}
+
+/**
+ * The lane a pointer at canvas (x, y) moves the duck to: a lane of the river,
+ * or the lane button below it. Each button is as wide as its lane.
+ */
+export function laneTapAt(x: number, y: number): number | undefined {
+  if (y < RIVER.y || y > LANE_BUTTONS.y + LANE_BUTTONS.h) return undefined;
+  return laneAt(x);
 }
 
 function onButton(x: number, y: number) {
@@ -507,14 +517,14 @@ function draw(ctx: CanvasRenderingContext2D, state: DuckState, offset: number) {
       ctx.fillText(text, laneCentre(state.lane), DUCK_Y - 60);
       ctx.globalAlpha = 1;
     }
-    // Lane buttons along the bottom for pointer and touch.
+    // Lane buttons in a row below the river for pointer and touch.
     for (let lane = 0; lane < LANES; lane++) {
       ctx.fillStyle = lane === state.lane ? colors.accent : colors.surface;
-      ctx.fillRect(RIVER.x + lane * LANE_W + 6, BUTTON_Y, LANE_W - 12, 56);
+      ctx.fillRect(RIVER.x + lane * LANE_W + 6, LANE_BUTTONS.y, LANE_W - 12, LANE_BUTTONS.h);
       ctx.fillStyle = lane === state.lane ? colors.background : colors.text;
       ctx.font = canvasFont('body', 'bold');
       ctx.textAlign = 'center';
-      ctx.fillText(['Left', 'Middle', 'Right'][lane], laneCentre(lane), BUTTON_Y + 34);
+      ctx.fillText(['Left', 'Middle', 'Right'][lane], laneCentre(lane), LANE_BUTTONS.y + 32);
     }
     ctx.fillStyle = colors.muted;
     ctx.font = canvasFont('small');
@@ -600,8 +610,8 @@ export const duckDash: CarnivalGame = {
         if (onButton(x, y)) begin();
         return;
       }
-      const lane = laneAt(x);
-      if (lane !== undefined && y >= RIVER.y) setLane(state, lane);
+      const lane = laneTapAt(x, y);
+      if (lane !== undefined) setLane(state, lane);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return;
