@@ -62,3 +62,26 @@ export function fitCamera(
     y: fit(focus.y - view.h / 2 - 16, bounds.top, bounds.bottom, view.h),
   };
 }
+
+/** CSS pixels at the top of the canvas kept for the corner controls. */
+export const CONTROLS_BAND = 128;
+
+/**
+ * Lifts the camera's corner so the highest booth sign sits below the corner
+ * controls' band, but never so far that `focus` leaves the bottom of the view
+ * or the camera passes `top`. `signTop` and `focus` are world points.
+ */
+export function clearOfControls(
+  camera: Point,
+  signTop: number,
+  focus: Point,
+  view: { w: number; h: number },
+  zoom: number,
+  top: number,
+  band = CONTROLS_BAND,
+): Point {
+  const clear = signTop - band / zoom;
+  if (camera.y <= clear) return camera;
+  const lowest = focus.y - view.h + 48;
+  return { x: camera.x, y: Math.max(top, lowest, clear) };
+}

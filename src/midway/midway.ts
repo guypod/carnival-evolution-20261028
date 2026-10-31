@@ -67,7 +67,7 @@ import {
   type ChimeStones,
   type StoneInput,
 } from './stepping-stones';
-import { DEFAULT_VIEW_SCALE, fitCamera, unproject, viewZoom } from './view';
+import { DEFAULT_VIEW_SCALE, clearOfControls, fitCamera, unproject, viewZoom } from './view';
 import {
   HIDDEN_LOCATE,
   isLocateKey,
@@ -811,15 +811,23 @@ export function startMidway(canvas: HTMLCanvasElement, options: MidwayOptions): 
     floaters.splice(0, floaters.length, ...floaters.filter((f) => f.age < 6));
   };
 
+  /** The top of the highest booth sign, in world pixels, with room for its board. */
+  const signTop = Math.min(
+    ...map.booths.map((b) => toScreen(b.x + 1, b.y + 1).y - BOOTH_SIGN_HEIGHT - 16),
+  );
+
   const updateCamera = (dt: number) => {
     const focus = toScreen(player.x, player.y);
     const margin = 40;
-    const target = fitCamera(focus, view, {
+    const top = HORIZON - 150;
+    const fitted = fitCamera(focus, view, {
       left: -map.height * 16 - margin,
       right: map.width * 16 + margin,
-      top: HORIZON - 150,
+      top,
       bottom: (map.width + map.height) * 8 + 30,
     });
+    // Keep the booth signs out from under the corner controls.
+    const target = clearOfControls(fitted, signTop, focus, view, zoom, top);
     const ease = cameraReady ? 1 - Math.exp(-dt * 5) : 1;
     camera.x += (target.x - camera.x) * ease;
     camera.y += (target.y - camera.y) * ease;
