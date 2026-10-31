@@ -398,6 +398,123 @@
       "fingerprints": [
         "9d8b4ffcd4c8c333"
       ]
+    },
+    {
+      "runId": "01a191c2-6f34-77c7-b3ad-6dcf72c7300c",
+      "learner": "lens-tuning",
+      "trigger": "schedule",
+      "slot": "2026-10-31T11:40 Europe/London",
+      "scheduledFor": "2026-10-31T11:40:00.000Z",
+      "delayMinutes": 1,
+      "since": "2026-10-29T17:40:00.000Z",
+      "startedAt": "2026-10-31T11:41:09.000Z",
+      "finishedAt": "2026-10-31T11:42:17.596Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#250",
+          "#257",
+          "#262",
+          "#263",
+          "#271",
+          "#272",
+          "#276",
+          "#283",
+          "#304",
+          "#375",
+          "#299",
+          "#394",
+          "#398",
+          "#405",
+          "#409",
+          "#413",
+          "#418",
+          "#419",
+          "#420",
+          "#421",
+          "#422",
+          "#423",
+          "#424",
+          "#427",
+          "#426",
+          "#447",
+          "#451",
+          "#449",
+          "#470",
+          "#471",
+          "#472",
+          "#473",
+          "#474",
+          "#475",
+          "#476",
+          "#477",
+          "#479",
+          "#480",
+          "#478",
+          "#481",
+          "#482"
+        ],
+        "gaps": "Run had under 20 minutes before its deadline. Review comment and review bodies were read truncated (first 300/400 characters each); PR diffs were not read beyond file lists, except the Duck Dash river bank code on main for #471. CI run list hit its 100-run limit and only reached back to 2026-10-30T14:45Z, conclusions only. Tests and live-play notes were not read. No new proposal: the findings read (#471 bank waterline, #474 CSS specificity, #481 caption overlap, #426 native recovery) were caught by existing lenses; #471 merged 28 seconds after its advisory finding with the right-bank waterline bug still on main (src/games/duck-dash/game.ts:457), which is a merge-gate matter for run-learning rather than a lens miss.",
+        "sources": [
+          {
+            "source": "pull-requests",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "gh pr list --state all updated since 2026-10-29T17:40Z sort:updated-asc, 41 PRs (under the 100 limit); number, state, title, branch and file list read, bodies not read",
+            "gaps": "PR bodies not read"
+          },
+          {
+            "source": "pr-diffs",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "changed-file lists for all 41 PRs; diff content read only for the Duck Dash bank loop from #471 on main",
+            "gaps": "diff contents of the other PRs not read"
+          },
+          {
+            "source": "review-comments",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "pulls/<n>/comments for all 41 PRs, 87 comments, each body cut to 300 characters",
+            "gaps": "comment bodies beyond 300 characters not read"
+          },
+          {
+            "source": "review-bodies",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "pulls/<n>/reviews for all 41 PRs, each body cut to 400 characters",
+            "gaps": "review bodies beyond 400 characters not read"
+          },
+          {
+            "source": "visual-repair",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "commit headlines on factory-state/visual-repair since 2026-10-29T17:40Z and visual repair PRs #394 #398 #413 #427 file lists",
+            "gaps": "ledger contents not read"
+          },
+          {
+            "source": "ci-runs",
+            "enumeration": "capped",
+            "read": "truncated",
+            "scope": "gh run list --limit 100 created since 2026-10-29T17:40Z; status and conclusion only; all 100 succeeded",
+            "gaps": "runs before 2026-10-30T14:45Z not listed; logs not read"
+          },
+          {
+            "source": "tests",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "out of time"
+          },
+          {
+            "source": "live-play",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "not read",
+            "gaps": "out of time"
+          }
+        ]
+      },
+      "fingerprints": []
     }
   ],
   "proposals": [
