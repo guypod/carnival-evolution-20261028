@@ -30,7 +30,7 @@
 // helper and is not used or changed here.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 export const REPOSITORY = 'guypod/carnival-evolution-20261028';
 export const REPOSITORY_ID = 1437265009;
@@ -1106,6 +1106,484 @@ export function provenance(pr, issue) {
   return [];
 }
 
+// ---------- browser-flow evidence ----------
+
+/** The check run, created by the factory app on the head, that carries browser evidence. */
+export const BROWSER_CHECK = 'browser-flow';
+/** Where captured screenshots are retained, one commit per capture. */
+export const EVIDENCE_BRANCH = 'factory-state/browser-evidence';
+const EVIDENCE_RE = /<!-- carnival-browser-flow:v1 (\{.*?\}) -->/s;
+// Files no screen draws with and no player runs. Anything else is an app change.
+// The flow scripts that produce browser evidence are not exempt: a change to
+// them must be played too, or it could weaken every later flow unseen.
+const INFRA_ONLY = [
+  /^scripts\/(?!visual\/)/,
+  /^docs\/.*\.md$/,
+  /^tessl-factory\//,
+  /^skills\//,
+  /^[^/]+\.md$/,
+];
+
+export const evidenceMarker = (record) =>
+  `<!-- carnival-browser-flow:v1 ${JSON.stringify(record)} -->`;
+
+/** Every path a changed file touches: its new name and, for a rename, its old one. */
+const pathsOf = (f) => [f?.filename, f?.previous_filename].filter((p) => typeof p === 'string');
+
+/**
+ * Whether the pull request's changed files need browser evidence. Only a
+ * complete listing in which every path, old and new, is infrastructure skips
+ * it: app source renamed to docs, or deleted, still needs it.
+ */
+export function needsBrowserEvidence(files) {
+  if (!files?.complete || !files.items.length) return true;
+  return files.items.some((f) => {
+    const paths = pathsOf(f);
+    return !paths.length || paths.some((p) => !INFRA_ONLY.some((re) => re.test(p)));
+  });
+}
+
+/**
+ * The flows flow.mjs can play, by the game folder they cover. A game without
+ * an entry has no automated flow: a change to it is owed one, never waved
+ * through on another game's evidence.
+ */
+export const GAME_FLOWS = { 'mini-putt': ['mini-putt-hole-next'] };
+/** Every flow flow.mjs implements. A required flow outside it is missing. */
+export const KNOWN_FLOWS = ['mini-putt-hole-next'];
+// The flow scripts themselves: a change to them must replay every flow.
+const FLOW_TOOLING = /^scripts\/visual\//;
+
+/**
+ * What a shared path reaches, as a finite registry: `games` means every game
+ * folder, `flows` names extra flows (such as the midway) that must exist and
+ * pass. A shared path clears once every flow it requires is known and passes;
+ * a path in no entry stays owed. The repair for an owed entry is to add the
+ * missing flow to flow.mjs, KNOWN_FLOWS and GAME_FLOWS in the same PR.
+ */
+export const SHARED_COVERAGE = [
+  { match: /^src\/carnival\//, games: true, flows: [] },
+  { match: /^src\/games\/[^/]+\.ts$/, games: true, flows: [] },
+  { match: /^(src\/main\.ts|src\/midway\/|index\.html)/, games: false, flows: ['midway-booth'] },
+  {
+    match: /^(package\.json|vite\.config\.ts|tsconfig\.json|public\/)/,
+    games: true,
+    flows: ['midway-booth'],
+  },
+];
+
+/** The game folders under src/games, read from this checkout. */
+function gameIds() {
+  try {
+    const dir = new URL('../../src/games/', import.meta.url);
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The flows the changed files need, and what no registered flow covers:
+ * { flows, owed }. Every path, old and new, counts. An incomplete listing
+ * owes everything. `owed` is the repair list.
+ */
+export function requiredFlows(
+  files,
+  reg = { gameFlows: GAME_FLOWS, known: KNOWN_FLOWS, games: gameIds() },
+) {
+  const all = [...new Set(Object.values(reg.gameFlows).flat())].sort();
+  if (!files?.complete || !files.items.length)
+    return { flows: all, owed: ['changed-file listing incomplete'] };
+  const flows = new Set();
+  const owed = new Set();
+  const need = (flow, why) => {
+    if (reg.known.includes(flow)) flows.add(flow);
+    else owed.add(`missing browser flow ${flow} for ${why}`);
+  };
+  const game = (g, why) => {
+    if (Object.hasOwn(reg.gameFlows, g)) reg.gameFlows[g].forEach((x) => need(x, why));
+    else owed.add(`no browser flow for src/games/${g}/${why === g ? '' : ` (reached by ${why})`}`);
+  };
+  for (const f of files.items)
+    for (const p of pathsOf(f)) {
+      if (INFRA_ONLY.some((re) => re.test(p))) continue;
+      const own = /^src\/games\/([^/]+)\//.exec(p)?.[1];
+      if (own) {
+        game(own, own);
+        continue;
+      }
+      if (FLOW_TOOLING.test(p)) {
+        all.forEach((x) => flows.add(x));
+        continue;
+      }
+      const entry = SHARED_COVERAGE.find((e) => e.match.test(p));
+      if (!entry) {
+        owed.add(`no browser coverage registered for ${p}`);
+        continue;
+      }
+      if (entry.games) {
+        if (!reg.games?.length) owed.add(`game folders not read for ${p}`);
+        else reg.games.forEach((g) => game(g, p));
+      }
+      entry.flows.forEach((x) => need(x, p));
+    }
+  return { flows: [...flows].sort(), owed: [...owed].sort() };
+}
+
+/**
+ * A pull request's file listing, complete only when it holds every file the
+ * pull request reports: GitHub stops the listing at 3000 files.
+ */
+export function changedFiles(listing, count) {
+  const items = (listing?.items ?? []).flat();
+  return { complete: !!listing?.complete && items.length === count, items };
+}
+
+// ---------- operator browser authority ----------
+//
+// Premerge browser evidence counts only under an operator-approved authority
+// record. The record is AUTHORITY_PATH read through the GitHub API at one
+// exact immutable commit, the anchor, never at a branch tip or from any
+// checkout. The same App that uploads evidence can move the evidence branch,
+// so the tip proves nothing; the anchor is CARNIVAL_AUTHORITY_COMMIT, a plain
+// value an admin saves on the Carnival environment. A missing or invalid
+// anchor, or a record not at that commit, fails closed. Nothing in a
+// candidate, INPUTS or the command line selects the anchor.
+//
+// The anchor is only as good as the run that reads it: a raw launch or resume
+// can upload its own environment. So the gate and the publisher also check
+// this run through the authenticated Tessl run API (runProvenanceProblems)
+// and accept only the native scheduled dispatch or the owner's shepherd
+// action bootstrap of PR 449, in the Carnival project and environment. The
+// trusted controller itself is still a trust assumption: this does not
+// protect against a compromised controller credential.
+
+/** The environment value that names the immutable authority commit. */
+export const AUTHORITY_ANCHOR_ENV = 'CARNIVAL_AUTHORITY_COMMIT';
+/** The reserved control record on the evidence branch. Uploads never touch control/. */
+export const AUTHORITY_PATH = 'control/operator-browser-authority.json';
+export const AUTHORITY_SCHEMA = 'carnival-browser-authority';
+/** The independently reviewed capture-primitives commit. */
+export const CAPTURE_PIN = '6ae738884f7d2007f88917b32062d3b276815a09';
+export const NODE_IMAGE =
+  'node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da';
+export const PLAYWRIGHT_IMAGE =
+  'mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48';
+export const BOUNDARY = {
+  network: 'none',
+  chromiumSandbox: false,
+  dependencies: 'runner-snapshot',
+};
+/** The only pull request whose head may also be the wrapper, and only when the record names it. */
+export const BOOTSTRAP_PR = 449;
+
+const isSha = (v) => typeof v === 'string' && /^[0-9a-f]{40}$/.test(v);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Why an authority record is not usable, as a list. Empty means it is well formed and approved. */
+export function authorityProblems(a) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return ['authority record missing'];
+  const p = [];
+  if (a.schema !== AUTHORITY_SCHEMA || a.version !== 1) p.push('authority record schema unknown');
+  if (a.approved !== true || typeof a.approvedBy !== 'string' || !a.approvedBy)
+    p.push('authority record is not operator-approved');
+  if (a.repository !== REPOSITORY) p.push('authority record is for another repository');
+  if (!isSha(a.wrapper)) p.push('authority record names no wrapper commit');
+  if (a.captureRunner !== CAPTURE_PIN)
+    p.push('authority record capture pin is not the reviewed one');
+  if (!same(a.images, { node: NODE_IMAGE, playwright: PLAYWRIGHT_IMAGE }))
+    p.push('authority record images are not the pinned digests');
+  if (!same(a.boundary, BOUNDARY)) p.push('authority record boundary is not the isolated one');
+  const flows = a.flows && typeof a.flows === 'object' && !Array.isArray(a.flows) ? a.flows : {};
+  if (!Object.keys(flows).length) p.push('authority record registers no flow');
+  for (const [f, spec] of Object.entries(flows))
+    if (
+      !Array.isArray(spec?.checks) ||
+      !spec.checks.length ||
+      !Array.isArray(spec?.states) ||
+      !spec.states.length
+    )
+      p.push(`authority record spec for ${f} is malformed`);
+  if (a.bootstrap != null) {
+    if (a.bootstrap.pr !== BOOTSTRAP_PR || !isSha(a.bootstrap.head))
+      p.push(`authority record bootstrap may only name pull request ${BOOTSTRAP_PR} and a head`);
+    else if (a.bootstrap.head !== a.wrapper)
+      p.push('authority record bootstrap head is not the wrapper');
+  }
+  return p;
+}
+
+/**
+ * Whether the authority lets wrapper W capture `candidate` for pull request
+ * `pr`. Ordinary runs need W to differ from the candidate. W may equal the
+ * candidate only for the record's own bootstrap: pull request BOOTSTRAP_PR at
+ * exactly that head.
+ */
+export function wrapperProblems(a, pr, candidate, wrapper) {
+  if (wrapper !== a?.wrapper) return [`wrapper ${wrapper} is not the approved ${a?.wrapper}`];
+  if (wrapper !== candidate) return [];
+  const b = a?.bootstrap;
+  if (b && b.pr === BOOTSTRAP_PR && Number(pr) === BOOTSTRAP_PR && b.head === candidate) return [];
+  return ['the wrapper is the candidate without an exact bootstrap authorization'];
+}
+
+/** The anchor commit from the environment, or problems; never from INPUTS or a candidate. */
+export function authorityAnchor(env = process.env) {
+  const v = env?.[AUTHORITY_ANCHOR_ENV];
+  if (!isSha(v))
+    return { problems: [`authority anchor ${AUTHORITY_ANCHOR_ENV} missing or invalid`] };
+  return { anchor: v, problems: [] };
+}
+
+/**
+ * The authority, as { complete, anchor, record } for the gate. `fetch(path,
+ * commit)` must read the file at exactly that commit and return null when it
+ * is absent there. Anything unread or invalid is problems.
+ */
+export function readAuthority(fetch, anchor) {
+  if (!isSha(anchor))
+    return {
+      complete: true,
+      record: undefined,
+      problems: [`authority anchor ${AUTHORITY_ANCHOR_ENV} missing or invalid`],
+    };
+  try {
+    const bytes = fetch(AUTHORITY_PATH, anchor);
+    if (bytes == null)
+      return {
+        complete: true,
+        anchor,
+        record: undefined,
+        problems: [`authority record missing at ${anchor}`],
+      };
+    const record = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    return { complete: true, anchor, record, problems: authorityProblems(record) };
+  } catch {
+    return { complete: false, anchor, problems: ['authority record not read'] };
+  }
+}
+
+// ---------- run provenance ----------
+
+/** The Carnival project automation and environment that may act on authority. */
+export const CARNIVAL_PROJECT = '01a1831d-52c0-76ed-8f37-31683acd362e';
+export const CARNIVAL_ENVIRONMENT = '01a18320-2e95-770e-b77f-a791adc369b5';
+/** The shepherd action in that project, the only route for the owner's bootstrap. */
+export const SHEPHERD_ACTION = '01a18325-cf7e-71dd-8364-07c007d53ae4';
+/** Run config keys the API exposes today; any other key is an unknown overlay. */
+const RUN_CONFIG_KEYS = new Set([
+  'skillRef',
+  'repoUrl',
+  'agent',
+  'model',
+  'triggerSource',
+  'skillVersion',
+  'baseBranch',
+  'effort',
+]);
+/** Override keys a trigger may carry visibly; any other is an overlay and refuses. */
+const TRIGGER_OVERRIDE_KEYS = new Set(['timeout', 'instructions']);
+
+/**
+ * Why this run may not use the authority, as a list. `run` is the
+ * `data.attributes` of `tessl api /experimental/launch-runs/<id>` for this
+ * run, read by the controller; `events` are the trigger events, which can
+ * only add refusals, never grant. Accepted routes: `scheduled`, the native
+ * dispatch schedule; `owner-action`, the owner's shepherd action, only for
+ * pull request BOOTSTRAP_PR. Empty means accepted.
+ */
+export function runProvenanceProblems(run, { pr, events = [] } = {}) {
+  if (!run || typeof run !== 'object') return ['run provenance not read'];
+  const p = [];
+  const c = run.config ?? {};
+  if (c.repoUrl?.replace(/\.git$/, '') !== `https://github.com/${REPOSITORY}`)
+    p.push('run is for another repository');
+  if (run.environment?.id !== CARNIVAL_ENVIRONMENT)
+    p.push('run is not in the Carnival environment');
+  for (const k of Object.keys(c))
+    if (!RUN_CONFIG_KEYS.has(k)) p.push(`run config carries unknown key ${k}`);
+  for (const k of Object.keys(run))
+    if (/resum|overlay|override|encrypt|envUpload|envMap/i.test(k)) p.push(`run carries ${k}`);
+  for (const e of Array.isArray(events) ? events : [])
+    for (const k of Object.keys(e?.payload?.overrides ?? {}))
+      if (!TRIGGER_OVERRIDE_KEYS.has(k)) p.push(`trigger carries overlay ${k}`);
+  const route = runRoute(run, pr);
+  if (!route) p.push('run is not the native scheduled dispatch or the owner bootstrap action');
+  return p;
+}
+
+/** Which supported route the run took, or undefined. */
+export function runRoute(run, pr) {
+  const c = run?.config ?? {};
+  const by = run?.requestedBy ?? {};
+  if (
+    c.triggerSource === 'scheduled' &&
+    by.kind === 'schedule' &&
+    c.skillRef === 'file:tessl-factory#native-intake' &&
+    run.createdByProjectAutomation?.id === CARNIVAL_PROJECT
+  )
+    return 'scheduled';
+  if (
+    Number(pr) === BOOTSTRAP_PR &&
+    c.triggerSource === 'webhook' &&
+    by.kind === 'user' &&
+    run.scheduledRunId === SHEPHERD_ACTION &&
+    same(run.triggerEvents, ['tessl:trigger']) &&
+    /^tessl-labs\/factory@[^#]+#shepherd$/.test(c.skillRef ?? '') &&
+    (run.links ?? []).some(
+      (l) =>
+        l.linkType === 'github_pr' && l.value === `https://github.com/${REPOSITORY}/pull/${pr}`,
+    )
+  )
+    return 'owner-action';
+  return undefined;
+}
+
+/** The run provenance to bind into evidence: id, route and the anchor read. */
+export const runBinding = (id, run, pr, anchor) => ({
+  id,
+  route: runRoute(run, pr),
+  environment: run?.environment?.id,
+  authorityCommit: anchor,
+});
+
+/** Why a passing run's retained provenance does not bind it to the authority. */
+function provenanceReasons(head, flow, pr, record, shots, authority) {
+  const r = [];
+  if (!authority?.complete || authority.problems?.length)
+    return [...(authority?.problems ?? ['authority record not read']).map((x) => `${flow}: ${x}`)];
+  const a = authority.record;
+  const spec = a.flows?.[flow];
+  if (!spec) return [`flow ${flow} is not in the operator-approved registry: owed`];
+  const prov = record.provenance;
+  if (!prov || !/^[0-9a-f]{64}$/.test(record.provenanceSha256 ?? ''))
+    return [`browser-flow evidence for ${flow} carries no provenance (legacy record)`];
+  const kept = shots?.provenance;
+  if (!kept) r.push(`provenance for ${flow} is not retained`);
+  else {
+    if (kept.sha256 !== record.provenanceSha256)
+      r.push(`retained provenance for ${flow} does not match its sha256`);
+    if (!same(kept.content, prov))
+      r.push(`retained provenance for ${flow} differs from the record`);
+  }
+  if (prov.flow !== flow || prov.candidate !== head)
+    r.push(`provenance for ${flow} names another flow or candidate`);
+  if (prov.repository !== REPOSITORY) r.push(`provenance for ${flow} is for another repository`);
+  if (prov.authorityCommit !== authority.anchor)
+    r.push(`provenance for ${flow} names another authority commit`);
+  if (!['scheduled', 'owner-action'].includes(prov.run?.route) || !prov.run?.id)
+    r.push(`provenance for ${flow} names no supported run`);
+  if (prov.captureRunner !== a.captureRunner)
+    r.push(`provenance for ${flow} has the wrong capture pin`);
+  r.push(...wrapperProblems(a, pr, head, prov.wrapper).map((x) => `provenance for ${flow}: ${x}`));
+  const imgs =
+    prov.images && typeof prov.images === 'object' ? Object.keys(prov.images).sort() : [];
+  if (!same(imgs, Object.values(a.images).sort()))
+    r.push(`provenance for ${flow} has the wrong images`);
+  if (!same(prov.boundary, a.boundary)) r.push(`provenance for ${flow} has the wrong boundary`);
+  if (!same(prov.spec, spec)) r.push(`provenance for ${flow} has the wrong flow spec`);
+  const names = (Array.isArray(record.flows) ? record.flows : []).map((f) => f?.name);
+  if (
+    !same(
+      names,
+      spec.checks.map((c) => `${flow}: ${c}`),
+    )
+  )
+    r.push(`browser-flow evidence for ${flow} does not run the approved checks`);
+  return r;
+}
+
+/** The check run external_id that ties a browser-flow attempt to its flow. */
+export const flowExternalId = (flow) => `${BROWSER_CHECK}:${flow}`;
+
+function readRecord(run) {
+  const m = EVIDENCE_RE.exec(run?.output?.text ?? '');
+  try {
+    return m ? JSON.parse(m[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Why the browser evidence for `head` does not hold, as a list. Each required
+ * flow needs the factory app's own browser-flow check run on the head for that
+ * flow (external_id browser-flow:<flow>), and the newest such attempt decides:
+ * a newer failed or unfinished attempt is never masked by an older pass. Its
+ * record must name the head and the flow, every check as passed, and
+ * screenshots whose retained bytes hash to the recorded digests. A factory
+ * attempt on the head with no known flow that did not succeed also refuses.
+ * Reviews and comments never count. With no `required` flows and nothing
+ * owed, it refuses: there is nothing to accept.
+ */
+export function browserEvidence(head, checks, shots, required = { flows: [], owed: [] }, ctx = {}) {
+  const reasons = [...(required.owed ?? [])];
+  const mine = (checks ?? [])
+    .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
+    .sort((a, b) => a.id - b.id);
+  const known = new Set(KNOWN_FLOWS.map(flowExternalId));
+  for (const c of mine)
+    if (!known.has(c.external_id) && (c.status !== 'completed' || c.conclusion !== 'success'))
+      reasons.push(`browser-flow attempt ${c.id} for an unknown flow did not pass`);
+  const flows = required.flows ?? [];
+  if (!flows.length && !reasons.length) reasons.push('no required browser flow');
+  for (const flow of flows) {
+    const run = mine.filter((c) => c.external_id === flowExternalId(flow)).at(-1);
+    if (!run) {
+      reasons.push(`no browser-flow evidence on the head for ${flow}`);
+      continue;
+    }
+    if (run.status !== 'completed') {
+      reasons.push(`browser-flow evidence for ${flow} still running`);
+      continue;
+    }
+    if (run.conclusion !== 'success') {
+      reasons.push(`browser-flow evidence for ${flow} ${run.conclusion}`);
+      continue;
+    }
+    const record = readRecord(run);
+    const own = recordReasons(head, flow, record, shots?.[run.id], `evidence/${head}/${flow}/`);
+    reasons.push(...own);
+    if (record)
+      reasons.push(
+        ...provenanceReasons(head, flow, ctx.pr, record, shots?.[run.id], ctx.authority),
+      );
+  }
+  return reasons;
+}
+
+function recordReasons(head, flow, record, shots, dir) {
+  if (!record) return [`browser-flow evidence for ${flow} has no record`];
+  const reasons = [];
+  if (record.head !== head) reasons.push(`browser-flow evidence for ${flow} is for another head`);
+  if (record.flow !== flow) reasons.push(`browser-flow evidence is not for ${flow}`);
+  const checks = Array.isArray(record.flows) ? record.flows : [];
+  if (!checks.length) reasons.push(`browser-flow evidence for ${flow} names no check`);
+  for (const f of checks)
+    if (f?.result !== 'pass') reasons.push(`browser flow ${f?.name ?? '?'} did not pass`);
+  const list = Array.isArray(record.screenshots) ? record.screenshots : [];
+  if (!list.length) reasons.push(`browser-flow evidence for ${flow} has no screenshots`);
+  if (!/^[0-9a-f]{40}$/.test(record.evidenceCommit ?? ''))
+    reasons.push(`browser-flow evidence for ${flow} names no retained commit`);
+  if (!shots?.complete) reasons.push(`retained screenshots for ${flow} not read`);
+  else if (!shots.onEvidenceBranch)
+    reasons.push(`browser-flow evidence commit for ${flow} is not on ${EVIDENCE_BRANCH}`);
+  else
+    for (const sh of list) {
+      if (!String(sh?.path ?? '').startsWith(dir) || /[?#]|\.\./.test(sh.path)) {
+        reasons.push(`screenshot ${sh?.path} is not under ${dir}`);
+        continue;
+      }
+      const got = shots.digests?.[sh?.path];
+      if (!got) reasons.push(`screenshot ${sh?.path} is not retained`);
+      else if (got !== sh.sha256) reasons.push(`screenshot ${sh.path} does not match its digest`);
+    }
+  return reasons;
+}
+
 /**
  * Whether a pull request may be merged now, from a snapshot of its
  * current state. Every listing must be complete. Returns { merge, reasons }.
@@ -1218,6 +1696,14 @@ export function mergeGate(s) {
     else if (!['success', 'neutral', 'skipped'].includes(c.conclusion))
       reasons.push(`${c.name} ${c.conclusion}`);
   }
+  // An app change also needs the factory's own browser-flow evidence for this head.
+  if (needsBrowserEvidence(s.files))
+    reasons.push(
+      ...browserEvidence(head, s.checks.items, s.browserShots, requiredFlows(s.files), {
+        pr: pr?.number,
+        authority: s.browserAuthority,
+      }),
+    );
   if (s.combinedStatus && !['success', 'pending'].includes(s.combinedStatus.state))
     reasons.push(`commit status ${s.combinedStatus.state}`);
   if (s.combinedStatus?.state === 'pending' && s.combinedStatus.total_count > 0)
@@ -1260,12 +1746,257 @@ export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
   const run = pagesRuns.find((r) => r.head_sha === mergeSha);
   if (!run) return 'merged-not-deployed';
   if (run.status !== 'completed') return 'deploying';
-  if (run.conclusion !== 'success') return 'deploy-failed';
+  // A failed rerun does not undo an earlier attempt's deploy, so the jobs of
+  // every attempt decide; rerunFailure reports the failed rerun separately.
   const jobs = jobsOf(run);
-  if (!jobs) return 'deploy-unknown';
-  const job = jobs.find((j) => j.name === 'deploy');
-  return job?.conclusion === 'success' ? 'deployed-needs-sanity' : 'merged-not-deployed';
+  if (!jobs) return run.conclusion === 'success' ? 'deploy-unknown' : 'deploy-failed';
+  // Jobs span every attempt: any deploy job that succeeded deployed.
+  if (jobs.some((j) => j?.name === 'deploy' && j?.conclusion === 'success'))
+    return 'deployed-needs-sanity';
+  return run.conclusion === 'success' ? 'merged-not-deployed' : 'deploy-failed';
 }
+
+/**
+ * The failed latest attempt of a merge's Pages run that an earlier attempt
+ * had already deployed: { attempt, conclusion }, or undefined. It never
+ * clears or replaces that deploy, but it is always reported.
+ */
+export function rerunFailure(mergeSha, pagesRuns, jobsOf = () => undefined) {
+  const run = pagesRuns.find((r) => r.head_sha === mergeSha);
+  if (run?.status !== 'completed' || run.conclusion === 'success') return undefined;
+  if (deployState(mergeSha, pagesRuns, jobsOf) !== 'deployed-needs-sanity') return undefined;
+  return { attempt: run.run_attempt ?? 1, conclusion: run.conclusion };
+}
+
+/** The check run, on the merge commit, that records a flow played on the live site. */
+export const LIVE_CHECK = 'browser-flow-live';
+
+/** Where the live check runs' screenshots are retained, per merge and flow. */
+export const liveDir = (mergeSha, flow) => `evidence/live/${mergeSha}/${flow}/`;
+/** The Pages site a live run must have played. */
+export const LIVE_URL = 'https://guypod.github.io/carnival-evolution-20261028/';
+/** The stable key of one merged-but-unverified obligation. */
+export const obligationKey = (mergeSha, flow) => `${mergeSha}:${flow}`;
+
+/**
+ * Why a live record does not prove `flow` was played on the deployment of
+ * `mergeSha`. Beyond the premerge checks (head, flow, passes, retained
+ * screenshots under evidence/live/<merge>/<flow>/ with matching digests) it
+ * must name the merge as deployed, show that the served index.html and assets
+ * matched a local build of the merge byte for byte both before and after the
+ * flow, and have been captured after the deploy finished.
+ */
+function liveReasons(mergeSha, flow, record, shots, deployedAt) {
+  const reasons = recordReasons(mergeSha, flow, record, shots, liveDir(mergeSha, flow));
+  if (!record) return reasons;
+  const dir = liveDir(mergeSha, flow);
+  if (record.mergeSha !== mergeSha || record.deployedSha !== mergeSha)
+    reasons.push(`live evidence for ${flow} does not name ${mergeSha} as deployed`);
+  if (record.url !== LIVE_URL) reasons.push(`live evidence for ${flow} is not for ${LIVE_URL}`);
+  const list = Array.isArray(record.screenshots) ? record.screenshots : [];
+  for (const n of ['identity.json', 'before.json', 'after.json', 'requests.json'])
+    if (!list.some((sh) => sh?.path === `${dir}${n}`))
+      reasons.push(`live evidence for ${flow} does not retain ${dir}${n}`);
+  const id = record.identity;
+  const digest = id?.buildDigest;
+  if (!/^[0-9a-f]{64}$/.test(digest ?? ''))
+    reasons.push(`live evidence for ${flow} does not show the served build is ${mergeSha}`);
+  // The retained broker receipts decide, not the inline claim: the identity
+  // report must equal the record, name each receipt by its retained digest,
+  // and both receipts must be this merge's full matching scan, in order.
+  if (shots?.complete && shots.onEvidenceBranch) {
+    const kept = shots.identity;
+    const r = shots.receipts ?? {};
+    const ok =
+      kept &&
+      JSON.stringify(kept) === JSON.stringify(id) &&
+      kept.mergeSha === mergeSha &&
+      kept.flow === flow &&
+      ['before.json', 'after.json', 'requests.json'].every(
+        (n) =>
+          /^[0-9a-f]{64}$/.test(kept.receipts?.[n] ?? '') &&
+          shots.digests?.[`${dir}${n}`] === kept.receipts[n],
+      );
+    if (!ok) reasons.push(`retained identity report for ${flow} does not match the record`);
+    const scan = (x, label) =>
+      x?.label === label &&
+      x.mergeSha === mergeSha &&
+      x.matched === true &&
+      x.buildDigest === digest &&
+      x.startedAt === kept?.[label]?.startedAt &&
+      x.finishedAt === kept?.[label]?.finishedAt;
+    if (!scan(r['before.json'], 'before') || !scan(r['after.json'], 'after'))
+      reasons.push(
+        `retained broker receipts for ${flow} do not show the merge build before and after`,
+      );
+    const b = Date.parse(r['before.json']?.startedAt ?? '');
+    const bf = Date.parse(r['before.json']?.finishedAt ?? '');
+    const a = Date.parse(r['after.json']?.startedAt ?? '');
+    if (!(b <= bf && bf <= a)) reasons.push(`broker receipt times for ${flow} are out of order`);
+    const since = Date.parse(deployedAt ?? '');
+    if (!Number.isNaN(since) && !(b > since))
+      reasons.push(`live evidence for ${flow} was scanned before the deploy`);
+  }
+  const at = Date.parse(record.capturedAt ?? '');
+  const since = Date.parse(deployedAt ?? '');
+  if (Number.isNaN(since)) reasons.push(`deploy time for ${mergeSha} unknown`);
+  else if (Number.isNaN(at) || at <= since)
+    reasons.push(`live evidence for ${flow} was captured before the deploy`);
+  return reasons;
+}
+
+/**
+ * Whether a merge has shipped: { state, owed }. A deploy alone is never
+ * shipped, and neither is premerge evidence or a bare successful live run.
+ * Every flow the merge's changed files need must have the factory's own
+ * newest browser-flow-live run on the merge commit, concluded success, whose
+ * retained record passes liveReasons. Until then each is owed, keyed by
+ * obligationKey. A merge whose deployment a newer one replaced before it was
+ * verified is `superseded-verification-owed`: never shipped, and its owed
+ * flows stay listed. `ctx` is { deployedAt, supersededBy, shots }.
+ */
+export function shipState(mergeSha, deploy, files, checks, ctx = {}) {
+  if (deploy !== 'deployed-needs-sanity') return { state: deploy, owed: [] };
+  const required = needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] };
+  const owed = [...required.owed];
+  if (ctx.incomplete) owed.push(`deploy job history for ${mergeSha} incomplete`);
+  const mine = (checks ?? [])
+    .filter((c) => c.name === LIVE_CHECK && c.head_sha === mergeSha && c.app?.id === BOT_APP_ID)
+    .sort((a, b) => a.id - b.id);
+  for (const flow of required.flows) {
+    const run = mine.filter((c) => c.external_id === `${LIVE_CHECK}:${flow}`).at(-1);
+    if (!run) owed.push(`live flow ${flow} not played`);
+    else if (run.status !== 'completed') owed.push(`live flow ${flow} still running`);
+    else if (run.conclusion !== 'success') owed.push(`live flow ${flow} ${run.conclusion}`);
+    else
+      owed.push(
+        ...liveReasons(mergeSha, flow, readRecord(run), ctx.shots?.[run.id], ctx.deployedAt),
+      );
+  }
+  if (!owed.length) return { state: 'shipped', owed };
+  return {
+    state: ctx.supersededBy ? 'superseded-verification-owed' : 'deployed-verification-owed',
+    ...(ctx.supersededBy ? { supersededBy: ctx.supersededBy } : {}),
+    owed,
+    keys: required.flows.map((f) => obligationKey(mergeSha, f)),
+  };
+}
+
+/**
+ * When the merge's deploy finished, and the newest later commit whose Pages
+ * run also deployed: { deployedAt, supersededBy }. `jobsOf(run)` returns the
+ * jobs of every attempt of that run (a rerun replaces the run's listing entry
+ * but each attempt keeps its own jobs). Only a deploy job that itself
+ * succeeded counts, timed by its own completed_at, so the first successful
+ * deploy survives later reruns and a failed or skipped deploy never counts.
+ * A run whose job history could not be read leaves the history incomplete:
+ * { incomplete: true }, and the merge stays owed.
+ */
+export function deployContext(mergeSha, pagesRuns, jobsOf = () => undefined) {
+  // A rerun can end in failure after an earlier attempt deployed.
+  const ran = (pagesRuns ?? []).filter(
+    (r) => r.status === 'completed' && (r.conclusion === 'success' || r.run_attempt > 1),
+  );
+  const done = [];
+  for (const r of ran) {
+    const jobs = jobsOf(r);
+    if (!Array.isArray(jobs)) return { incomplete: true };
+    for (const j of jobs)
+      if (
+        j?.name === 'deploy' &&
+        j?.conclusion === 'success' &&
+        !Number.isNaN(Date.parse(j.completed_at))
+      )
+        done.push({ sha: r.head_sha, at: j.completed_at });
+  }
+  const t = (d) => Date.parse(d.at);
+  const own = done.filter((d) => d.sha === mergeSha).sort((a, b) => t(a) - t(b))[0];
+  if (!own) return {};
+  const later = done
+    .filter((d) => d.sha !== mergeSha && t(d) > t(own))
+    .sort((a, b) => t(b) - t(a))[0];
+  return { deployedAt: own.at, supersededBy: later?.sha };
+}
+
+/**
+ * The commit-files listing as { complete, items }: every page of
+ * GET /commits/<sha>, never the first alone. GitHub stops at 3000 files, so
+ * a listing that reaches that cap, or any unread page, is incomplete and owes
+ * every flow.
+ */
+export function commitFiles(listing) {
+  if (!listing?.complete) return { complete: false, items: [] };
+  const items = (listing.items ?? []).flatMap((c) => c?.files ?? []);
+  return { complete: items.length < 3000, items };
+}
+
+/** Most merges a single owed sweep reconciles; older ones stay listed as unread. */
+export const OWED_BUDGET = 60;
+
+/**
+ * Reconciles merges against the deploy history: [{ sha, deploy, state, owed }].
+ * `read` is { runs(), jobs(run), files(sha), checks(sha), shots(items, sha) }.
+ * The Pages history is listed once and each run's jobs are read once, however
+ * many merges are reconciled, so a sweep costs O(merges + runs), never
+ * O(merges x runs). Merges past `budget` are not read this sweep and stay
+ * owed as `verification-unread`, so no obligation is dropped and dispatch is
+ * never held behind an unbounded history.
+ */
+export function reconcile(shas, read, budget = Infinity) {
+  const runs = read.runs();
+  if (!runs.complete)
+    return shas.map((sha) => ({ sha, state: 'unknown', owed: ['runs listing incomplete'] }));
+  const list = runs.items.flatMap((p) => p.workflow_runs ?? p);
+  const jobCache = new Map();
+  const jobsOf = (run) => {
+    if (!jobCache.has(run.id)) jobCache.set(run.id, read.jobs(run));
+    return jobCache.get(run.id);
+  };
+  return shas.map((sha, i) => {
+    if (i >= budget)
+      return { sha, state: 'verification-unread', owed: ['not reconciled this sweep'] };
+    const deploy = deployState(sha, list, jobsOf);
+    const files = commitFiles(read.files(sha));
+    const checks = read.checks(sha);
+    const items = checks.items.flatMap((p) => p.check_runs ?? p);
+    if (!checks.complete)
+      return {
+        sha,
+        deploy,
+        state: deploy === 'deployed-needs-sanity' ? 'deployed-verification-owed' : deploy,
+        owed: ['check listing incomplete'],
+      };
+    const ctx = { ...deployContext(sha, list, jobsOf), shots: read.shots(items, sha) };
+    const rerun = rerunFailure(sha, list, jobsOf);
+    return {
+      sha,
+      deploy,
+      ...shipState(sha, deploy, files, items, ctx),
+      ...(rerun ? { rerun } : {}),
+    };
+  });
+}
+
+/**
+ * Every merge on main since the gate began that is not shipped, oldest
+ * first: [{ sha, state, owed, keys }]. Main's own history is the persistent
+ * ledger, so an obligation is never forgotten when its PR leaves the open
+ * list, and a newer deployment never discharges an older one.
+ */
+export function owedMerges(merges) {
+  return merges
+    .filter((m) => m.state !== 'shipped')
+    .map((m) => ({
+      sha: m.sha,
+      state: m.state,
+      owed: m.owed ?? [],
+      keys: m.keys ?? [],
+      ...(m.rerun ? { rerun: m.rerun } : {}),
+    }));
+}
+
+/** When the browser gate began: merges before it are not owed live flows. */
+export const LIVE_GATE_SINCE = '2026-10-31T00:00:00Z';
 
 // ---------- gh and tessl adapter ----------
 
@@ -1286,6 +2017,189 @@ function pages(path) {
     return { items: JSON.parse(out).flat(), complete: true };
   } catch {
     return { items: [], complete: false };
+  }
+}
+
+/** The GitHub reads `reconcile` needs. Jobs are read for every attempt of a run. */
+function liveReader() {
+  return {
+    runs: () => pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`),
+    jobs: (run) => {
+      const out = [];
+      for (let n = 1; n <= Math.max(1, Number(run.run_attempt) || 1); n++) {
+        const jobs = pages(
+          `repos/${REPOSITORY}/actions/runs/${run.id}/attempts/${n}/jobs?per_page=100`,
+        );
+        if (!jobs.complete) return undefined;
+        out.push(...jobs.items.flatMap((p) => p.jobs ?? p));
+      }
+      return out;
+    },
+    files: (sha) => pages(`repos/${REPOSITORY}/commits/${sha}?per_page=100`),
+    checks: (sha) => pages(`repos/${REPOSITORY}/commits/${sha}/check-runs?filter=all&per_page=100`),
+    shots: (items, sha) => retainedShots(items, sha, LIVE_CHECK),
+  };
+}
+
+/**
+ * The sha256 of each screenshot the newest successful factory browser-flow
+ * run of each flow on `head` names, read from its retained evidence commit,
+ * by check run id. Any failed read is incomplete.
+ */
+function retainedShots(checks, head, name = BROWSER_CHECK) {
+  const newest = new Map();
+  for (const c of checks)
+    if (c.name === name && c.head_sha === head && c.app?.id === BOT_APP_ID)
+      if (!newest.has(c.external_id) || c.id > newest.get(c.external_id).id)
+        newest.set(c.external_id, c);
+  const out = {};
+  for (const run of newest.values()) {
+    if (run.conclusion !== 'success') continue;
+    const record = readRecord(run);
+    if (!/^[0-9a-f]{40}$/.test(record?.evidenceCommit ?? '')) continue;
+    try {
+      // The commit must be on the evidence branch: identical to or behind its tip.
+      const cmp = JSON.parse(
+        gh(['api', `repos/${REPOSITORY}/compare/${record.evidenceCommit}...${EVIDENCE_BRANCH}`]),
+      );
+      if (!['identical', 'ahead'].includes(cmp.status)) {
+        out[run.id] = { complete: true, onEvidenceBranch: false, digests: {} };
+        continue;
+      }
+      const digests = {};
+      let identity;
+      let receipts;
+      for (const sh of Array.isArray(record.screenshots) ? record.screenshots : []) {
+        const bytes = execFileSync(
+          'gh',
+          [
+            'api',
+            '-H',
+            'Accept: application/vnd.github.raw',
+            `repos/${REPOSITORY}/contents/${encodeURI(sh.path)}?ref=${record.evidenceCommit}`,
+          ],
+          { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
+        );
+        digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
+        const leaf = String(sh.path).split('/').at(-1);
+        if (['identity.json', 'before.json', 'after.json'].includes(leaf)) {
+          let parsed;
+          try {
+            parsed = JSON.parse(bytes.toString('utf8'));
+          } catch {
+            parsed = null;
+          }
+          if (leaf === 'identity.json') identity = parsed;
+          else (receipts ??= {})[leaf] = parsed;
+        }
+      }
+      let provenance;
+      if (name === BROWSER_CHECK && record.provenance) {
+        const dir = `evidence/${head}/${run.external_id.slice(BROWSER_CHECK.length + 1)}`;
+        const bytes = rawAt(`${dir}/provenance.json`, record.evidenceCommit);
+        provenance = {
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          content: JSON.parse(bytes.toString('utf8')),
+        };
+      }
+      out[run.id] = {
+        complete: true,
+        onEvidenceBranch: true,
+        digests,
+        identity,
+        receipts,
+        provenance,
+      };
+    } catch {
+      out[run.id] = { complete: false, digests: {} };
+    }
+  }
+  return out;
+}
+
+/** Raw bytes of `path` at `ref`, read through the GitHub API. */
+function rawAt(path, ref) {
+  return execFileSync(
+    'gh',
+    [
+      'api',
+      '-H',
+      'Accept: application/vnd.github.raw',
+      `repos/${REPOSITORY}/contents/${encodeURI(path)}?ref=${encodeURIComponent(ref)}`,
+    ],
+    { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
+  );
+}
+
+/**
+ * `path` at exactly commit `sha`, through git objects only: a branch or tag
+ * that happens to be named like the sha can never stand in for it.
+ */
+export function rawAtCommit(path, sha, api = (p) => JSON.parse(gh(['api', p]))) {
+  let commit;
+  try {
+    commit = api(`repos/${REPOSITORY}/git/commits/${sha}`);
+  } catch {
+    commit = undefined;
+  }
+  // An anchor that names no commit here is unreadable, never "absent".
+  if (commit?.sha !== sha) throw new Error('authority commit not read');
+  const tree = api(`repos/${REPOSITORY}/git/trees/${commit.tree.sha}?recursive=1`);
+  if (tree?.truncated) throw new Error('authority tree truncated');
+  const entry = (tree?.tree ?? []).find((e) => e.path === path && e.type === 'blob');
+  if (!entry) return null;
+  const blob = api(`repos/${REPOSITORY}/git/blobs/${entry.sha}`);
+  return Buffer.from(blob.content, 'base64');
+}
+
+/**
+ * The authority for this run: the record at the anchor commit through the
+ * GitHub API, refused unless this run's own provenance, read from the Tessl
+ * run API, is a supported route. A 404 at the anchor is missing.
+ */
+export function trustedAuthority({
+  env = process.env,
+  pr,
+  events = [],
+  readRun = launchRun,
+  raw = rawAtCommit,
+} = {}) {
+  const { anchor } = authorityAnchor(env);
+  const a = readAuthority((path, commit) => {
+    try {
+      return raw(path, commit);
+    } catch (e) {
+      if (/HTTP 404|Not Found/.test(String(e.stderr ?? e.message))) return null;
+      throw e;
+    }
+  }, anchor);
+  const id = env?.TESSL_LAUNCH_RUN_ID;
+  const run = id ? readRun(id) : undefined;
+  const runProblems = runProvenanceProblems(run, { pr, events });
+  return {
+    ...a,
+    run: runProblems.length ? undefined : runBinding(id, run, pr, anchor),
+    problems: [...a.problems, ...runProblems],
+  };
+}
+
+/** The trigger events of this run; they can only add refusals. Unreadable is an overlay. */
+export function triggerEvents(env = process.env) {
+  try {
+    return env.TRIGGER_EVENTS ? JSON.parse(readFileSync(env.TRIGGER_EVENTS, 'utf8')) : [];
+  } catch {
+    return [{ payload: { overrides: { unreadable: true } } }];
+  }
+}
+
+/** This run's attributes from the authenticated Tessl run API, or undefined. */
+export function launchRun(id, call = tesslApi) {
+  if (!/^[0-9a-f-]{36}$/.test(id ?? '')) return undefined;
+  try {
+    const body = JSON.parse(call(`/experimental/launch-runs/${id}`));
+    return body?.data?.id === id ? body.data.attributes : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -1453,6 +2367,12 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
           return { ...r, items: r.items.flatMap((p) => p.workflow_runs ?? p) };
         })(),
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
+        files: changedFiles(pages(`${base}/pulls/${n}/files?per_page=100`), pr.changed_files),
+        browserAuthority: trustedAuthority({ pr: n, events: triggerEvents() }),
+        browserShots: retainedShots(
+          checks.items.flatMap((p) => p.check_runs ?? p),
+          sha,
+        ),
       };
     },
     repoSettings: async () => JSON.parse(gh(['api', base])),
@@ -1486,7 +2406,9 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
 //   node scripts/native/native.mjs dispatch                 label one issue as the bot
 //   node scripts/native/native.mjs admit <trigger-events>   admit a bot-labelled issue
 //   node scripts/native/native.mjs merge                    gate and merge open tessl PRs
-//   node scripts/native/native.mjs deploy <sha>             merged or live
+//   node scripts/native/native.mjs flows <pr>               the browser flows a PR owes
+//   node scripts/native/native.mjs deploy <sha>             merged, deployed or shipped
+//   node scripts/native/native.mjs owed                     merges still owed live flows
 //
 // backlog, dispatch and merge write to GitHub. Run them only inside the
 // native-intake action, which holds the carnival-app-writer key.
@@ -1499,7 +2421,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const adapter = ghAdapter({ writerKeyHeld: held });
   if (command === 'slot') {
     print({ backlog: backlogSlot(now), dispatch: dispatchSlot(now), london: londonParts(now) });
-  } else if (!held && command !== 'deploy') {
+  } else if (!held && !['deploy', 'flows', 'owed', 'authority'].includes(command)) {
     console.error('refusing: set CARNIVAL_APP_WRITER_HELD=1 only inside the native-intake action');
     process.exit(3);
   } else if (command === 'backlog') {
@@ -1532,24 +2454,36 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       }
       print(results);
     }
+  } else if (command === 'authority') {
+    // Read-only: whether the operator's authority record is installed and valid.
+    // `authority <pr>` evaluates the same PR-specific route the publisher uses.
+    const a = trustedAuthority({ pr: arg, events: triggerEvents() });
+    print({ path: `${a.anchor ?? '<no anchor>'}:${AUTHORITY_PATH}`, ...a });
+  } else if (command === 'flows') {
+    // The flows a pull request's head needs, and what no flow covers yet.
+    const pr = JSON.parse(gh(['api', `repos/${REPOSITORY}/pulls/${arg}`]));
+    const files = changedFiles(
+      pages(`repos/${REPOSITORY}/pulls/${arg}/files?per_page=100`),
+      pr.changed_files,
+    );
+    print(needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] });
+  } else if (command === 'owed') {
+    // Every merge on main since the live gate began that is not shipped.
+    const commits = pages(
+      `repos/${REPOSITORY}/commits?sha=main&since=${LIVE_GATE_SINCE}&per_page=100`,
+    );
+    if (!commits.complete) print({ status: 'unknown', reason: 'commit listing incomplete' });
+    else {
+      // Newest first, so the budget reaches recent merges; older ones stay owed.
+      const shas = commits.items.flat().map((c) => c.sha);
+      print(owedMerges(reconcile(shas, liveReader(), OWED_BUDGET)).reverse());
+    }
   } else if (command === 'deploy') {
-    const runs = pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`);
-    if (!runs.complete) print({ status: 'unknown', reason: 'runs listing incomplete' });
-    else
-      print({
-        sha: arg,
-        state: deployState(
-          arg,
-          runs.items.flatMap((p) => p.workflow_runs ?? p),
-          (run) => {
-            const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
-            return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
-          },
-        ),
-      });
+    const [r] = reconcile([arg], liveReader());
+    print(r);
   } else {
     console.error(
-      'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | deploy <sha>',
+      'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | flows <pr> | deploy <sha> | owed',
     );
     process.exit(2);
   }

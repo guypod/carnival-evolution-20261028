@@ -2,7 +2,13 @@
 // GitHub and tessl that records every call, so these tests show which writes
 // each decision makes. They are not a test of the live platform.
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { liveIdentity } from '../visual/live-identity.mjs';
 import {
   BACKLOG_LABEL,
   BATCH_SIZE,
@@ -20,6 +26,32 @@ import {
   dispatchSlot,
   itemMarker,
   mergeGate,
+  browserEvidence,
+  needsBrowserEvidence,
+  requiredFlows,
+  changedFiles,
+  shipState,
+  deployContext,
+  commitFiles,
+  reconcile,
+  liveDir,
+  LIVE_URL,
+  owedMerges,
+  evidenceMarker,
+  AUTHORITY_PATH,
+  REPOSITORY,
+  AUTHORITY_SCHEMA,
+  BOUNDARY,
+  CAPTURE_PIN,
+  NODE_IMAGE,
+  PLAYWRIGHT_IMAGE,
+  readAuthority,
+  trustedAuthority,
+  rawAtCommit,
+  runProvenanceProblems,
+  CARNIVAL_ENVIRONMENT,
+  CARNIVAL_PROJECT,
+  SHEPHERD_ACTION,
   mergeOne,
   produceBacklog,
   readBatch,
@@ -580,6 +612,94 @@ const reviewerRun = (extra = {}) => ({
   conclusion: 'neutral',
   ...extra,
 });
+const SHOT = 'c'.repeat(64);
+const RUN_ID = '01a19267-0000-7000-8000-000000000001';
+const EVIDENCE = 'd'.repeat(40);
+const FLOW = 'mini-putt-hole-next';
+const WRAPPER = 'e'.repeat(40);
+const SPEC = { checks: ['hole done then Next'], states: ['hole-done'] };
+/** The operator's authority record, as installed on the evidence branch. */
+const authorityRecord = (extra = {}) => ({
+  schema: AUTHORITY_SCHEMA,
+  version: 1,
+  approved: true,
+  approvedBy: 'operator',
+  repository: REPOSITORY,
+  wrapper: WRAPPER,
+  captureRunner: CAPTURE_PIN,
+  images: { node: NODE_IMAGE, playwright: PLAYWRIGHT_IMAGE },
+  boundary: BOUNDARY,
+  flows: { [FLOW]: SPEC },
+  bootstrap: null,
+  ...extra,
+});
+/** The immutable authority commit an admin saves as CARNIVAL_AUTHORITY_COMMIT. */
+const ANCHOR = 'a1'.repeat(20);
+const authorityOf = (rec, anchor = ANCHOR) =>
+  readAuthority(
+    (path, commit) =>
+      path === AUTHORITY_PATH && commit === ANCHOR && rec !== undefined
+        ? Buffer.from(JSON.stringify(rec))
+        : null,
+    anchor,
+  );
+const AUTH = authorityOf(authorityRecord());
+const prov = (extra = {}) => ({
+  repository: REPOSITORY,
+  pr: 30,
+  flow: FLOW,
+  candidate: HEAD,
+  captureRunner: CAPTURE_PIN,
+  wrapper: WRAPPER,
+  images: { [NODE_IMAGE]: 'sha256:1', [PLAYWRIGHT_IMAGE]: 'sha256:2' },
+  boundary: BOUNDARY,
+  spec: SPEC,
+  kind: 'premerge-loopback-capture',
+  authorityCommit: ANCHOR,
+  run: {
+    id: RUN_ID,
+    route: 'scheduled',
+    environment: CARNIVAL_ENVIRONMENT,
+    authorityCommit: ANCHOR,
+  },
+  ...extra,
+});
+const provSha = (p) =>
+  createHash('sha256')
+    .update(JSON.stringify(p, null, 2))
+    .digest('hex');
+const record = (extra = {}) => ({
+  head: HEAD,
+  flow: FLOW,
+  evidenceCommit: EVIDENCE,
+  flows: [{ name: `${FLOW}: hole done then Next`, result: 'pass' }],
+  screenshots: [{ path: `evidence/${HEAD}/${FLOW}/hole-done.png`, sha256: SHOT }],
+  provenance: prov(),
+  provenanceSha256: provSha(prov()),
+  ...extra,
+});
+const browserRun = (extra = {}) => ({
+  id: 50,
+  name: 'browser-flow',
+  external_id: `browser-flow:${FLOW}`,
+  app: { id: BOT_APP_ID },
+  head_sha: HEAD,
+  status: 'completed',
+  conclusion: 'success',
+  output: { text: evidenceMarker(record()) },
+  ...extra,
+});
+const shotsOf = (one, id = 50) => ({ [id]: one });
+const RETAINED = { sha256: provSha(prov()), content: prov() };
+const shots = shotsOf({
+  complete: true,
+  onEvidenceBranch: true,
+  digests: { [`evidence/${HEAD}/${FLOW}/hole-done.png`]: SHOT },
+  provenance: RETAINED,
+});
+const CTX = { pr: 30, authority: AUTH };
+const REQ = { flows: [FLOW], owed: [] };
+const appFiles = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
 const snapshot = (extra = {}) => ({
   writerKeyHeld: true,
   pr: {
@@ -596,8 +716,11 @@ const snapshot = (extra = {}) => ({
   reviews: { complete: true, items: [review()] },
   checks: {
     complete: true,
-    items: [ci(), reviewerRun()],
+    items: [ci(), reviewerRun(), browserRun()],
   },
+  files: appFiles,
+  browserShots: shots,
+  browserAuthority: AUTH,
   ciRuns: {
     complete: true,
     items: [{ path: '.github/workflows/ci.yml', head_sha: HEAD, check_suite_id: CI_SUITE }],
@@ -2034,4 +2157,1283 @@ test('an admission whose handoff was interrupted is replayed under the same requ
   gh.state.runs.push(implRun('own-1', 'pending', { label: runLabel(OWN), issue: 40 }));
   await dispatch(gh, LSLOT, LATER);
   assert.equal(handoffs(gh).length, 1);
+});
+
+// ---------- browser-flow evidence ----------
+
+const withRun = (run) => ({
+  complete: true,
+  items: [ci(), reviewerRun(), ...(run ? [run] : [])],
+});
+refuses(
+  'app change with no browser-flow evidence',
+  snapshot({ checks: withRun() }),
+  /no browser-flow evidence on the head/,
+);
+refuses(
+  'browser-flow evidence for an older head',
+  snapshot({ checks: withRun(browserRun({ head_sha: OLD })) }),
+  /no browser-flow evidence on the head/,
+);
+refuses(
+  'browser-flow record naming another head',
+  snapshot({
+    checks: withRun(browserRun({ output: { text: evidenceMarker(record({ head: OLD })) } })),
+  }),
+  /for another head/,
+);
+refuses(
+  'failed browser-flow run',
+  snapshot({ checks: withRun(browserRun({ conclusion: 'failure' })) }),
+  /browser-flow evidence for mini-putt-hole-next failure/,
+);
+refuses(
+  'browser-flow run still running',
+  snapshot({ checks: withRun(browserRun({ status: 'in_progress', conclusion: null })) }),
+  /still running/,
+);
+refuses(
+  'a flow that did not pass',
+  snapshot({
+    checks: withRun(
+      browserRun({
+        output: { text: evidenceMarker(record({ flows: [{ name: 'next', result: 'fail' }] })) },
+      }),
+    ),
+  }),
+  /browser flow next did not pass/,
+);
+refuses(
+  'a record with no flows',
+  snapshot({
+    checks: withRun(browserRun({ output: { text: evidenceMarker(record({ flows: [] })) } })),
+  }),
+  /names no check/,
+);
+refuses(
+  'a record with no screenshots',
+  snapshot({
+    checks: withRun(browserRun({ output: { text: evidenceMarker(record({ screenshots: [] })) } })),
+  }),
+  /no screenshots/,
+);
+refuses(
+  'forged browser-flow run from another app',
+  snapshot({ checks: withRun(browserRun({ app: { id: 1 } })) }),
+  /no browser-flow evidence on the head/,
+);
+refuses(
+  'screenshot bytes that do not match the record',
+  snapshot({
+    browserShots: shotsOf({
+      complete: true,
+      onEvidenceBranch: true,
+      digests: { [`evidence/${HEAD}/${FLOW}/hole-done.png`]: 'e'.repeat(64) },
+    }),
+  }),
+  /does not match its digest/,
+);
+refuses(
+  'screenshot not retained',
+  snapshot({ browserShots: shotsOf({ complete: true, onEvidenceBranch: true, digests: {} }) }),
+  /is not retained/,
+);
+refuses(
+  'retained screenshots unread',
+  snapshot({ browserShots: shotsOf({ complete: false }) }),
+  /retained screenshots for mini-putt-hole-next not read/,
+);
+refuses(
+  'a newer failed browser-flow run replaces an older pass',
+  snapshot({
+    checks: withRun(browserRun({ id: 51, conclusion: 'failure' })),
+    // the older pass is still listed
+  }),
+  /browser-flow evidence for mini-putt-hole-next failure/,
+);
+refuses(
+  'unreadable changed-file listing counts as an app change',
+  snapshot({ checks: withRun(), files: { complete: false, items: [] } }),
+  /no browser-flow evidence/,
+);
+
+test('browser evidence: an approving review or a PR comment is never evidence', () => {
+  // The trusted review approves and a comment carries a valid-looking record,
+  // but no factory browser-flow check run exists on the head.
+  const s = snapshot({ checks: withRun(), comments: [{ body: evidenceMarker(record()) }] });
+  const g = mergeGate(s);
+  assert.equal(g.merge, false);
+  assert.ok(g.reasons.includes(`no browser-flow evidence on the head for ${FLOW}`));
+});
+
+test('browser evidence: only a complete, all-infrastructure file list skips it', () => {
+  const infra = (...f) => ({ complete: true, items: f.map((filename) => ({ filename })) });
+  assert.equal(
+    needsBrowserEvidence(infra('scripts/native/native.mjs', 'docs/x.md', 'README.md')),
+    false,
+  );
+  assert.equal(needsBrowserEvidence(infra('scripts/native/native.mjs', 'src/main.ts')), true);
+  assert.equal(needsBrowserEvidence(infra('index.html')), true);
+  assert.equal(needsBrowserEvidence(infra('src/games/mini-putt/README.md')), true);
+  assert.equal(needsBrowserEvidence(infra('package.json')), true);
+  assert.equal(needsBrowserEvidence(infra()), true);
+  assert.equal(needsBrowserEvidence(undefined), true);
+  const g = mergeGate(snapshot({ checks: withRun(), files: infra('scripts/native/native.mjs') }));
+  assert.deepEqual(g.reasons, []);
+});
+
+test('browser evidence: an exact-head pass with retained, matching screenshots holds', () => {
+  assert.deepEqual(browserEvidence(HEAD, [browserRun()], shots, REQ, CTX), []);
+  assert.deepEqual(
+    browserEvidence(HEAD, [browserRun({ output: { text: 'trust me' } })], shots, REQ, CTX),
+    [`browser-flow evidence for ${FLOW} has no record`],
+  );
+});
+
+test('browser evidence: a published flow report round-trips through the gate', async () => {
+  const { flowCheckRun } = await import('../visual/flow-check.mjs');
+  const report = {
+    flow: 'mini-putt-hole-next',
+    result: 'pass',
+    errors: [],
+    checks: [{ check: 'hole done then Next', result: 'pass' }],
+    screenshots: [{ file: 'hole-done.png', sha256: SHOT }],
+  };
+  const body = flowCheckRun(report, HEAD, EVIDENCE, `evidence/${HEAD}/${FLOW}`, 0, {
+    provenance: prov(),
+    provenanceSha256: provSha(prov()),
+  });
+  const run = { ...body, id: 9, app: { id: BOT_APP_ID } };
+  assert.deepEqual(browserEvidence(HEAD, [run], shotsOf(shots[50], 9), REQ, CTX), []);
+  const failed = flowCheckRun(
+    { ...report, result: 'fail', checks: [{ check: 'x', result: 'fail' }] },
+    HEAD,
+    EVIDENCE,
+    `evidence/${HEAD}/${FLOW}`,
+  );
+  assert.equal(failed.conclusion, 'failure');
+  assert.match(
+    browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots, REQ, CTX).join(),
+    /failure/,
+  );
+});
+
+refuses(
+  'evidence commit not on the evidence branch',
+  snapshot({ browserShots: shotsOf({ complete: true, onEvidenceBranch: false, digests: {} }) }),
+  /not on factory-state\/browser-evidence/,
+);
+refuses(
+  'screenshot outside the head evidence folder',
+  snapshot({
+    checks: withRun(
+      browserRun({
+        output: {
+          text: evidenceMarker(
+            record({ screenshots: [{ path: `evidence/${OLD}/x.png`, sha256: SHOT }] }),
+          ),
+        },
+      }),
+    ),
+    browserShots: shotsOf({
+      complete: true,
+      onEvidenceBranch: true,
+      digests: { [`evidence/${OLD}/x.png`]: SHOT },
+    }),
+  }),
+  /is not under evidence\//,
+);
+
+test('browser evidence: flow scripts and non-markdown docs are app changes', () => {
+  const list = (...f) => ({ complete: true, items: f.map((filename) => ({ filename })) });
+  assert.equal(needsBrowserEvidence(list('scripts/visual/flow.mjs')), true);
+  assert.equal(needsBrowserEvidence(list('docs/social-preview.jpg')), true);
+  assert.equal(needsBrowserEvidence(list('docs/midway.md', 'scripts/native/native.mjs')), false);
+});
+
+// ---------- required-flow coverage ----------
+
+const changed = (...items) => ({
+  complete: true,
+  items: items.map((f) => (typeof f === 'string' ? { filename: f } : f)),
+});
+
+test('coverage: a Mini Putt pass never satisfies a Skee Ball change', () => {
+  // The Skee Ball fixture: a game with no registered flow.
+  const files = changed('src/games/skee-ball/game.ts', 'src/games/skee-ball/README.md');
+  assert.deepEqual(requiredFlows(files), {
+    flows: [],
+    owed: ['no browser flow for src/games/skee-ball/'],
+  });
+  const g = mergeGate(snapshot({ files }));
+  assert.equal(g.merge, false);
+  assert.ok(g.reasons.includes('no browser flow for src/games/skee-ball/'));
+});
+
+test('coverage: every changed game needs its own flow', () => {
+  const files = changed('src/games/mini-putt/game.ts', 'src/games/skee-ball/game.ts');
+  const g = mergeGate(snapshot({ files }));
+  assert.deepEqual(g.reasons, ['no browser flow for src/games/skee-ball/']);
+  assert.deepEqual(
+    mergeGate(snapshot({ files: changed('src/games/mini-putt/game.ts') })).reasons,
+    [],
+  );
+});
+
+test('coverage: shared paths follow the registry, and only registered coverage clears', () => {
+  const reg = (gameFlows, known, games = ['mini-putt']) => ({ gameFlows, known, games });
+  const one = reg({ 'mini-putt': [FLOW] }, [FLOW]);
+  // A theme change reaches every game: it clears once every game has a flow.
+  assert.deepEqual(requiredFlows(changed('src/carnival/theme.ts'), one), {
+    flows: [FLOW],
+    owed: [],
+  });
+  // With a game that has no flow, a MiniPutt pass never clears it.
+  const two = reg({ 'mini-putt': [FLOW] }, [FLOW], ['mini-putt', 'skee-ball']);
+  assert.deepEqual(requiredFlows(changed('src/carnival/theme.ts'), two).owed, [
+    'no browser flow for src/games/skee-ball/ (reached by src/carnival/theme.ts)',
+  ]);
+  // The midway needs its own flow; adding it to the registry clears it.
+  assert.deepEqual(requiredFlows(changed('src/main.ts'), one).owed, [
+    'missing browser flow midway-booth for src/main.ts',
+  ]);
+  assert.deepEqual(requiredFlows(changed('src/main.ts'), reg({}, [FLOW, 'midway-booth'])), {
+    flows: ['midway-booth'],
+    owed: [],
+  });
+  // A path in no registry entry stays owed; unread game folders owe too.
+  assert.deepEqual(requiredFlows(changed('src/unknown.ts'), one).owed, [
+    'no browser coverage registered for src/unknown.ts',
+  ]);
+  assert.deepEqual(requiredFlows(changed('src/carnival/x.ts'), reg({}, [], [])).owed, [
+    'game folders not read for src/carnival/x.ts',
+  ]);
+  // On this checkout every game but Mini Putt is still owed for a shared change.
+  for (const p of ['src/main.ts', 'src/carnival/theme.ts', 'index.html', 'package.json']) {
+    assert.ok(requiredFlows(changed(p)).owed.length > 0, p);
+    assert.equal(mergeGate(snapshot({ files: changed(p) })).merge, false, p);
+  }
+  // The flow scripts replay every flow but owe nothing more.
+  assert.deepEqual(requiredFlows(changed('scripts/visual/flow.mjs')), { flows: [FLOW], owed: [] });
+  assert.deepEqual(requiredFlows({ complete: false, items: [] }).owed, [
+    'changed-file listing incomplete',
+  ]);
+});
+
+test('coverage: a flow record for another flow does not count', () => {
+  const run = browserRun({ output: { text: evidenceMarker(record({ flow: 'other' })) } });
+  assert.match(
+    browserEvidence(HEAD, [run], shots, REQ, CTX).join(),
+    /is not for mini-putt-hole-next/,
+  );
+  const untagged = browserRun({ external_id: undefined });
+  assert.match(
+    browserEvidence(HEAD, [untagged], shots, REQ, CTX).join(),
+    /no browser-flow evidence on the head for mini-putt-hole-next/,
+  );
+});
+
+// ---------- renames and deletions ----------
+
+test('scope: app source renamed or deleted into docs still needs evidence', () => {
+  const renamed = changed({
+    filename: 'docs/old-game.md',
+    previous_filename: 'src/games/skee-ball/game.ts',
+    status: 'renamed',
+  });
+  assert.equal(needsBrowserEvidence(renamed), true);
+  assert.deepEqual(requiredFlows(renamed).owed, ['no browser flow for src/games/skee-ball/']);
+  const removed = changed({ filename: 'src/games/mini-putt/game.ts', status: 'removed' });
+  assert.equal(needsBrowserEvidence(removed), true);
+  // A rename between infrastructure paths stays infrastructure.
+  const infraMove = changed({ filename: 'docs/b.md', previous_filename: 'scripts/native/a.md' });
+  assert.equal(needsBrowserEvidence(infraMove), false);
+});
+
+// ---------- attempts ----------
+
+test('attempts: a newer in-progress or failed attempt masks no older pass', () => {
+  const pass = browserRun();
+  const running = browserRun({ id: 60, status: 'in_progress', conclusion: null, output: {} });
+  assert.deepEqual(browserEvidence(HEAD, [pass, running], shots, REQ, CTX), [
+    `browser-flow evidence for ${FLOW} still running`,
+  ]);
+  const failed = browserRun({ id: 61, conclusion: 'failure', output: {} });
+  assert.deepEqual(browserEvidence(HEAD, [running, failed, pass], shots, REQ, CTX), [
+    `browser-flow evidence for ${FLOW} failure`,
+  ]);
+  // An older failure does not undo a newer pass.
+  assert.deepEqual(
+    browserEvidence(HEAD, [browserRun({ id: 40, conclusion: 'failure' }), pass], shots, REQ, CTX),
+    [],
+  );
+});
+
+test('attempts: an attempt that failed before naming its flow refuses', () => {
+  const unknown = browserRun({
+    id: 70,
+    external_id: 'browser-flow:skee-ball-roll',
+    conclusion: 'failure',
+  });
+  assert.deepEqual(browserEvidence(HEAD, [browserRun(), unknown], shots, REQ, CTX), [
+    'browser-flow attempt 70 for an unknown flow did not pass',
+  ]);
+});
+
+test('attempts: an opened attempt refuses until it concludes, and a setup failure stays a failure', async () => {
+  const { startCheckRun, failCheckRun } = await import('../visual/flow-check.mjs');
+  const start = startCheckRun(FLOW, HEAD);
+  assert.equal(start.status, 'in_progress');
+  assert.equal(start.external_id, `browser-flow:${FLOW}`);
+  const opened = { ...start, id: 80, app: { id: BOT_APP_ID } };
+  assert.deepEqual(browserEvidence(HEAD, [browserRun(), opened], shots, REQ, CTX), [
+    `browser-flow evidence for ${FLOW} still running`,
+  ]);
+  for (const step of ['browser-setup', 'flow', 'evidence-upload']) {
+    const failed = { ...opened, ...failCheckRun(FLOW, step, 1) };
+    assert.equal(failed.conclusion, 'failure');
+    assert.deepEqual(browserEvidence(HEAD, [browserRun(), failed], shots, REQ, CTX), [
+      `browser-flow evidence for ${FLOW} failure`,
+    ]);
+  }
+});
+
+// ---------- shipped ----------
+
+/** A live record and its retained evidence in the shape live-capture.mjs writes. */
+function liveEvidence(merge, digest, at = '2026-10-31T09:30:00Z') {
+  const dir = liveDir(merge, FLOW);
+  const later = (s) => new Date(Date.parse(at) + s * 1000).toISOString();
+  const scan = (label, a, b) => ({
+    label,
+    mergeSha: merge,
+    matched: true,
+    buildDigest: digest,
+    startedAt: a,
+    finishedAt: b,
+  });
+  const receipts = {
+    'before.json': scan('before', at, later(1)),
+    'after.json': scan('after', later(5), later(6)),
+  };
+  const digests = {
+    [`${dir}a.png`]: 'f'.repeat(64),
+    [`${dir}identity.json`]: '1'.repeat(64),
+    [`${dir}before.json`]: '2'.repeat(64),
+    [`${dir}after.json`]: '3'.repeat(64),
+    [`${dir}requests.json`]: '4'.repeat(64),
+  };
+  const identity = {
+    mergeSha: merge,
+    flow: FLOW,
+    buildDigest: digest,
+    before: { startedAt: at, finishedAt: later(1) },
+    after: { startedAt: later(5), finishedAt: later(6) },
+    receipts: {
+      'before.json': '2'.repeat(64),
+      'after.json': '3'.repeat(64),
+      'requests.json': '4'.repeat(64),
+    },
+  };
+  return {
+    screenshots: Object.entries(digests).map(([path, sha256]) => ({ path, sha256 })),
+    identity,
+    retained: { complete: true, onEvidenceBranch: true, digests, identity, receipts },
+  };
+}
+
+test('shipped: a deploy alone, premerge evidence or a bare live pass never ships', () => {
+  const MERGE = 'c'.repeat(40);
+  const EV = 'e'.repeat(40);
+  const files = changed('src/games/mini-putt/game.ts');
+  const ev = liveEvidence(MERGE, 'd'.repeat(64));
+  const good = {
+    head: MERGE,
+    flow: FLOW,
+    evidenceCommit: EV,
+    flows: [{ name: `${FLOW}: x`, result: 'pass' }],
+    screenshots: ev.screenshots,
+    mergeSha: MERGE,
+    deployedSha: MERGE,
+    url: LIVE_URL,
+    capturedAt: '2026-10-31T10:00:00Z',
+    identity: ev.identity,
+  };
+  const live = (rec = {}, extra = {}) => ({
+    id: 90,
+    name: 'browser-flow-live',
+    external_id: `browser-flow-live:${FLOW}`,
+    app: { id: BOT_APP_ID },
+    head_sha: MERGE,
+    status: 'completed',
+    conclusion: 'success',
+    output: { text: evidenceMarker({ ...good, ...rec }) },
+    ...extra,
+  });
+  const retained = ev.retained;
+  const ctx = { deployedAt: '2026-10-31T09:00:00Z', shots: { 90: retained } };
+  const ship = (checks, c = ctx, f = files) =>
+    shipState(MERGE, 'deployed-needs-sanity', f, checks, c);
+  assert.deepEqual(shipState(MERGE, 'deploying', files, []), { state: 'deploying', owed: [] });
+  assert.deepEqual(ship([]).owed, [`live flow ${FLOW} not played`]);
+  assert.deepEqual(ship([]).keys, [`${MERGE}:${FLOW}`]);
+  assert.equal(ship([browserRun({ head_sha: MERGE })]).state, 'deployed-verification-owed');
+  assert.deepEqual(ship([live()]), { state: 'shipped', owed: [] });
+  const owedBy = (checks, c) => ship(checks, c).owed.join('|');
+  // A bare success with no record, as the previous gate accepted, is owed.
+  assert.match(owedBy([live({}, { output: { text: '' } })]), /has no record/);
+  assert.match(
+    owedBy([live()], { deployedAt: ctx.deployedAt }),
+    /retained screenshots .* not read/,
+  );
+  assert.match(owedBy([live({ head: 'b'.repeat(40) })]), /another head/);
+  assert.match(owedBy([live({ flow: 'other' })]), /is not for/);
+  assert.match(owedBy([live({ deployedSha: 'b'.repeat(40) })]), /does not name .* as deployed/);
+  assert.match(owedBy([live({ identity: undefined })]), /served build/);
+  assert.match(
+    owedBy([live({ identity: { ...good.identity, buildDigest: '9'.repeat(64) } })]),
+    /retained identity report .* does not match/,
+  );
+  assert.match(owedBy([live({ url: 'https://elsewhere.example/' })]), /is not for https/);
+  assert.match(owedBy([live({ screenshots: [good.screenshots[0]] })]), /does not retain/);
+  assert.match(owedBy([live({ capturedAt: '2026-10-31T08:00:00Z' })]), /before the deploy/);
+  assert.match(owedBy([live()], { ...ctx, deployedAt: undefined }), /deploy time .* unknown/);
+  assert.match(
+    owedBy([live({ screenshots: [{ path: `evidence/${MERGE}/${FLOW}/a.png`, sha256: 'f' }] })]),
+    /is not under evidence\/live\//,
+  );
+  assert.match(
+    owedBy([live()], { ...ctx, shots: { 90: { ...retained, digests: {} } } }),
+    /not retained/,
+  );
+  assert.deepEqual(ship([live(), live({}, { id: 91, conclusion: 'failure' })]).owed, [
+    `live flow ${FLOW} failure`,
+  ]);
+  assert.equal(ship([live({}, { app: { id: 1 } })]).state, 'deployed-verification-owed');
+  // A newer deployment never discharges an older unverified merge.
+  const old = ship([], { ...ctx, supersededBy: 'b'.repeat(40) });
+  assert.equal(old.state, 'superseded-verification-owed');
+  assert.deepEqual(old.keys, [`${MERGE}:${FLOW}`]);
+  assert.deepEqual(ship([live()], { ...ctx, supersededBy: 'b'.repeat(40) }).state, 'shipped');
+  // The retained identity report and broker receipts decide, not the inline claim.
+  const withReport = (identity) => ({ ...ctx, shots: { 90: { ...retained, identity } } });
+  for (const bad of [
+    { ...ev.identity, buildDigest: '2'.repeat(64) },
+    { ...ev.identity, receipts: { ...ev.identity.receipts, 'after.json': '5'.repeat(64) } },
+    { ...ev.identity, mergeSha: 'b'.repeat(40) },
+    undefined,
+    null,
+  ])
+    assert.match(owedBy([live()], withReport(bad)), /retained identity report .* does not match/);
+  const withReceipts = (r) => ({
+    ...ctx,
+    shots: { 90: { ...retained, receipts: { ...retained.receipts, ...r } } },
+  });
+  const b = retained.receipts['before.json'];
+  const a = retained.receipts['after.json'];
+  for (const bad of [
+    { 'before.json': { ...b, matched: false } },
+    { 'after.json': { ...a, buildDigest: '7'.repeat(64) } },
+    { 'after.json': { ...a, mergeSha: 'b'.repeat(40) } },
+    { 'before.json': { ...b, label: 'after' } },
+    { 'after.json': { ...a, startedAt: '2026-10-31T09:40:00Z' } },
+    { 'before.json': null },
+  ])
+    assert.match(owedBy([live()], withReceipts(bad)), /broker receipts .* do not show/);
+  // Receipts scanned before the deploy are stale, whatever capturedAt says.
+  assert.match(
+    owedBy([live()], { ...ctx, deployedAt: '2026-10-31T09:45:00Z' }),
+    /scanned before the deploy/,
+  );
+  assert.match(
+    owedBy([
+      live({ screenshots: good.screenshots.filter((x) => !x.path.endsWith('requests.json')) }),
+    ]),
+    /does not retain .*requests.json/,
+  );
+  // A malformed screenshots field is a reason, never an exception.
+  for (const screenshots of [{}, 'a.png', null, 7, [null, 'x']]) {
+    const r = ship([live({ screenshots })]);
+    assert.equal(r.state, 'deployed-verification-owed');
+    assert.match(r.owed.join('|'), /does not retain|no screenshots|is not under/);
+  }
+  // An incomplete deploy job history keeps the merge owed.
+  assert.match(owedBy([live()], { ...ctx, incomplete: true }), /deploy job history .* incomplete/);
+  assert.deepEqual(ship([live()], ctx, changed('src/games/skee-ball/game.ts')).owed, [
+    'no browser flow for src/games/skee-ball/',
+  ]);
+  assert.deepEqual(ship([], ctx, changed('scripts/native/x.mjs')), { state: 'shipped', owed: [] });
+});
+
+test('shipped: deploy context times the first successful deploy job across reruns', () => {
+  const job = (conclusion, completed_at) => ({ name: 'deploy', conclusion, completed_at });
+  // One workflow run per commit. b's run 2 was rerun: GitHub replaced its
+  // listing entry (updated_at 05:00, run_attempt 2); attempt 1 had deployed at 02:00.
+  const runs = [
+    { id: 1, head_sha: 'a', status: 'completed', conclusion: 'success', run_attempt: 1 },
+    {
+      id: 2,
+      head_sha: 'b',
+      status: 'completed',
+      conclusion: 'success',
+      run_attempt: 2,
+      updated_at: '2026-10-31T05:00:00Z',
+    },
+    { id: 3, head_sha: 'c', status: 'completed', conclusion: 'failure', run_attempt: 1 },
+  ];
+  const attempts = {
+    1: [job('success', '2026-10-31T01:00:00Z')],
+    2: [job('success', '2026-10-31T02:00:00Z'), job('success', '2026-10-31T05:00:00Z')],
+    3: [job('failure', '2026-10-31T06:00:00Z')],
+  };
+  const jobsOf = (r) => attempts[r.id];
+  // Before: the listing's updated_at (05:00) was taken as b's deploy time, so
+  // a valid capture at 03:00 was rejected. After: the first deploy job, 02:00.
+  assert.deepEqual(deployContext('b', runs, jobsOf), {
+    deployedAt: '2026-10-31T02:00:00Z',
+    supersededBy: undefined,
+  });
+  assert.deepEqual(deployContext('a', runs, jobsOf), {
+    deployedAt: '2026-10-31T01:00:00Z',
+    supersededBy: 'b',
+  });
+  // A failed deploy never counts, not even as a superseding deploy.
+  assert.deepEqual(deployContext('c', runs, jobsOf), {});
+  // Skipped first attempt, real deploy on the rerun: the rerun's job time.
+  const skipFirst = {
+    ...attempts,
+    2: [job('skipped', '2026-10-31T02:00:00Z'), job('success', '2026-10-31T05:00:00Z')],
+  };
+  assert.equal(deployContext('b', runs, (r) => skipFirst[r.id]).deployedAt, '2026-10-31T05:00:00Z');
+  // A failed rerun after a real deploy keeps the deploy time from attempt 1.
+  const failedRerun = [runs[0], { ...runs[1], conclusion: 'failure' }];
+  const fr = {
+    1: attempts[1],
+    2: [job('success', '2026-10-31T02:00:00Z'), job('failure', '2026-10-31T05:00:00Z')],
+  };
+  assert.equal(deployContext('b', failedRerun, (r) => fr[r.id]).deployedAt, '2026-10-31T02:00:00Z');
+  // A skipped-only history deploys nothing.
+  assert.deepEqual(
+    deployContext('a', [runs[0]], () => [job('skipped', '2026-10-31T01:00:00Z')]),
+    {},
+  );
+  // Unread job history stays owed.
+  assert.deepEqual(deployContext('a', runs), { incomplete: true });
+  assert.deepEqual(
+    deployContext('a', runs, (r) => (r.id === 2 ? undefined : attempts[r.id])),
+    {
+      incomplete: true,
+    },
+  );
+  const merges = [
+    { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
+    { sha: 'b', state: 'shipped', owed: [] },
+    { sha: 'c', state: 'deploy-failed', owed: [] },
+  ];
+  assert.deepEqual(owedMerges(merges), [
+    { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
+    { sha: 'c', state: 'deploy-failed', owed: [], keys: [] },
+  ]);
+});
+
+test('shipped: a failed rerun of the same Pages run keeps the verified deploy and is reported', () => {
+  const MERGE = 'c'.repeat(40);
+  const digest = 'd'.repeat(64);
+  const ev = liveEvidence(MERGE, digest, '2026-10-31T02:30:00Z');
+  const rec = {
+    head: MERGE,
+    flow: FLOW,
+    evidenceCommit: 'e'.repeat(40),
+    flows: [{ name: `${FLOW}: x`, result: 'pass' }],
+    screenshots: ev.screenshots,
+    mergeSha: MERGE,
+    deployedSha: MERGE,
+    url: LIVE_URL,
+    capturedAt: '2026-10-31T03:00:00Z',
+    identity: ev.identity,
+  };
+  const live = {
+    id: 90,
+    name: 'browser-flow-live',
+    external_id: `browser-flow-live:${FLOW}`,
+    app: { id: BOT_APP_ID },
+    head_sha: MERGE,
+    status: 'completed',
+    conclusion: 'success',
+    output: { text: evidenceMarker(rec) },
+  };
+  const retained = ev.retained;
+  // One workflow run id: attempt 1 deployed at 02:00, attempt 2 failed at 05:00
+  // and now owns the listing entry.
+  const run = {
+    id: 7,
+    head_sha: MERGE,
+    status: 'completed',
+    conclusion: 'failure',
+    run_attempt: 2,
+  };
+  const jobs = [
+    { name: 'deploy', conclusion: 'success', completed_at: '2026-10-31T02:00:00Z' },
+    { name: 'deploy', conclusion: 'failure', completed_at: '2026-10-31T05:00:00Z' },
+  ];
+  const read = (checks, attemptJobs = jobs) => ({
+    runs: () => ({ complete: true, items: [{ workflow_runs: [run] }] }),
+    jobs: (r) => (r.id === 7 ? attemptJobs : undefined),
+    files: () => ({
+      complete: true,
+      items: [{ files: [{ filename: 'src/games/mini-putt/game.ts' }] }],
+    }),
+    checks: () => ({ complete: true, items: [{ check_runs: checks }] }),
+    shots: () => ({ 90: retained }),
+  });
+  // Before: deployState said deploy-failed before reading jobs, so the valid
+  // live evidence was never examined. After: shipped, with the rerun reported.
+  assert.equal(
+    deployState(MERGE, [run], () => jobs),
+    'deployed-needs-sanity',
+  );
+  const [shipped] = reconcile([MERGE], read([live]));
+  assert.equal(shipped.state, 'shipped');
+  assert.deepEqual(shipped.rerun, { attempt: 2, conclusion: 'failure' });
+  // No evidence yet: still owed, never clean, rerun still reported.
+  const [owed] = reconcile([MERGE], read([]));
+  assert.equal(owed.state, 'deployed-verification-owed');
+  assert.deepEqual(owed.rerun, { attempt: 2, conclusion: 'failure' });
+  assert.deepEqual(owedMerges([owed])[0].rerun, { attempt: 2, conclusion: 'failure' });
+  // No attempt ever deployed: the failure stands.
+  const never = [{ name: 'deploy', conclusion: 'failure', completed_at: '2026-10-31T05:00:00Z' }];
+  const [failed] = reconcile([MERGE], read([live], never));
+  assert.equal(failed.state, 'deploy-failed');
+  assert.equal(failed.rerun, undefined);
+  // Unread jobs on a failed run never pass as deployed.
+  assert.equal(deployState(MERGE, [run]), 'deploy-failed');
+});
+
+test('shipped: every commit-files page counts, and an unread page owes every flow', () => {
+  const infra = Array.from({ length: 300 }, (_, i) => ({ filename: `scripts/native/f${i}.mjs` }));
+  const game = { filename: 'src/games/mini-putt/game.ts' };
+  // Before: only page one (300 infra paths) was read and called complete when
+  // under 300, so a default 30-file page of infra alone looked exempt.
+  const firstOnly = { complete: true, items: [{ files: infra.slice(0, 30) }] };
+  assert.equal(needsBrowserEvidence(commitFiles(firstOnly)), false);
+  // After: the later page's game is seen and its flow is required.
+  const all = commitFiles({ complete: true, items: [{ files: infra }, { files: [game] }] });
+  assert.equal(all.complete, true);
+  assert.equal(needsBrowserEvidence(all), true);
+  assert.deepEqual(requiredFlows(all).flows, ['mini-putt-hole-next']);
+  // An unread page, or the 3000-file cap, owes everything.
+  assert.equal(commitFiles({ complete: false, items: [{ files: infra }] }).complete, false);
+  assert.equal(needsBrowserEvidence(commitFiles({ complete: false, items: [] })), true);
+  const cap = Array.from({ length: 3000 }, (_, i) => ({ filename: `docs/f${i}.md` }));
+  assert.equal(commitFiles({ complete: true, items: [{ files: cap }] }).complete, false);
+});
+
+test('owed: one deploy-history read per sweep, jobs cached per run, bounded merges', () => {
+  const C = 100;
+  const R = 100;
+  const shas = Array.from({ length: C }, (_, i) => `m${i}`);
+  const runs = shas.slice(0, R).map((sha, i) => ({
+    id: i,
+    head_sha: sha,
+    status: 'completed',
+    conclusion: 'success',
+    run_attempt: 1,
+  }));
+  const calls = { runs: 0, jobs: 0, files: 0, checks: 0 };
+  const read = {
+    runs: () => (calls.runs++, { complete: true, items: [{ workflow_runs: runs }] }),
+    jobs: (r) => (
+      calls.jobs++,
+      [
+        {
+          name: 'deploy',
+          conclusion: 'success',
+          completed_at: `2026-10-31T01:${String(r.id % 60).padStart(2, '0')}:00Z`,
+        },
+      ]
+    ),
+    files: () => (
+      calls.files++,
+      { complete: true, items: [{ files: [{ filename: 'src/games/mini-putt/game.ts' }] }] }
+    ),
+    checks: () => (calls.checks++, { complete: true, items: [] }),
+    shots: () => ({}),
+  };
+  const out = reconcile(shas, read);
+  // Before: each merge listed the history and reread every run's jobs, C x R = 10,000.
+  assert.equal(calls.runs, 1);
+  assert.equal(calls.jobs, R);
+  assert.equal(calls.files + calls.checks, 2 * C);
+  assert.equal(out.length, C);
+  assert.ok(out.every((m) => m.state !== 'shipped'));
+  // A budget bounds the work without dropping any obligation.
+  for (const k of Object.keys(calls)) calls[k] = 0;
+  const bounded = reconcile(shas, read, 10);
+  assert.equal(bounded.length, C);
+  assert.equal(calls.files, 10);
+  assert.equal(bounded.filter((m) => m.state === 'verification-unread').length, C - 10);
+  assert.equal(owedMerges(bounded).length, C);
+  // Unread deploy history keeps every merge owed.
+  const unread = reconcile(shas, { ...read, runs: () => ({ complete: false, items: [] }) });
+  assert.ok(unread.every((m) => m.state === 'unknown' && m.owed.length));
+  assert.equal(owedMerges(unread).length, C);
+});
+
+test('live identity: only a byte-for-byte match of the merge build counts', async () => {
+  const dist = mkdtempSync(join(tmpdir(), 'dist-'));
+  mkdirSync(join(dist, 'assets'));
+  writeFileSync(join(dist, 'index.html'), 'index-v2');
+  writeFileSync(join(dist, 'assets', 'app-abc.js'), 'code-v2');
+  const serve = (map) => async (u) => {
+    const body = map[new URL(u).pathname];
+    return body === undefined
+      ? { ok: false, status: 404 }
+      : { ok: true, arrayBuffer: async () => new TextEncoder().encode(body) };
+  };
+  const same = { '/c/': 'index-v2', '/c/assets/app-abc.js': 'code-v2' };
+  const r = await liveIdentity(dist, 'https://x.io/c/', serve(same));
+  assert.equal(r.matched, true);
+  assert.match(r.buildDigest, /^[0-9a-f]{64}$/);
+  // An older deployment, even one that answers 200 with the same title, misses.
+  const stale = await liveIdentity(
+    dist,
+    'https://x.io/c/',
+    serve({ ...same, '/c/assets/app-abc.js': 'code-v1' }),
+  );
+  assert.deepEqual(stale.mismatches, ['assets/app-abc.js']);
+  const gone = await liveIdentity(dist, 'https://x.io/c/', serve({ '/c/': 'index-v2' }));
+  assert.equal(gone.matched, false);
+});
+
+test('live attempts carry the live check name', () => {
+  const out = execFileSync('node', ['scripts/visual/flow-check.mjs', '--start', FLOW, HEAD], {
+    encoding: 'utf8',
+    env: { ...process.env, FLOW_CHECK_NAME: 'browser-flow-live' },
+  });
+  assert.deepEqual(JSON.parse(out).external_id, `browser-flow-live:${FLOW}`);
+});
+
+test('live capture never runs merged code on the writer host', () => {
+  // Before: dispatch ran run-flow.sh --live from the merge checkout, which ran
+  // the merge's Vite build and scripts with the writer key. After: --live
+  // refuses before any build, network read or check run, and dispatch only
+  // reports live flows as owed.
+  const out = mkdtempSync(join(tmpdir(), 'live-'));
+  let status = 0;
+  let stderr = '';
+  try {
+    execFileSync('bash', ['scripts/visual/run-flow.sh', out, FLOW, '--live', HEAD], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: { PATH: process.env.PATH },
+    });
+  } catch (e) {
+    status = e.status;
+    stderr = String(e.stderr);
+  }
+  assert.equal(status, 3);
+  assert.match(stderr, /--live is disabled/);
+  const skill = readFileSync('tessl-factory/skills/native-intake/SKILL.md', 'utf8');
+  assert.doesNotMatch(skill, /run-flow\.sh <dir> <flow> --live/);
+  assert.match(skill, /browser-flow-live-owed/);
+});
+
+test('advisory: a cut-short file listing, and inherited names, fail closed', () => {
+  const two = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
+  assert.equal(changedFiles(two, 3001).complete, false);
+  assert.equal(changedFiles(two, 1).complete, true);
+  assert.deepEqual(requiredFlows(changed('src/games/constructor/game.ts')).owed, [
+    'no browser flow for src/games/constructor/',
+  ]);
+});
+
+test('advisory: a flow that exited non-zero never publishes a pass', async () => {
+  const { flowCheckRun } = await import('../visual/flow-check.mjs');
+  const report = {
+    flow: FLOW,
+    result: 'pass',
+    errors: [],
+    checks: [{ check: 'x', result: 'pass' }],
+    screenshots: [{ file: 'a.png', sha256: SHOT }],
+  };
+  assert.equal(flowCheckRun(report, HEAD, EVIDENCE, 'd', 0).conclusion, 'success');
+  assert.equal(flowCheckRun(report, HEAD, EVIDENCE, 'd', 1).conclusion, 'failure');
+  assert.equal(
+    flowCheckRun({ ...report, checks: [] }, HEAD, EVIDENCE, 'd', 0).conclusion,
+    'failure',
+  );
+});
+
+test('run-flow: any uncommitted input, such as the lockfile or tsconfig, refuses', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'run-flow-'));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  mkdirSync(join(repo, 'scripts/visual'), { recursive: true });
+  const here = new URL('../visual/', import.meta.url).pathname;
+  for (const f of ['run-flow.sh', 'flow-check.mjs'])
+    writeFileSync(join(repo, 'scripts/visual', f), execFileSync('cat', [join(here, f)]));
+  for (const f of ['package-lock.json', 'tsconfig.json', '.npmrc'])
+    writeFileSync(join(repo, f), '{}\n');
+  git('add', '-A');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x');
+  const run = (out = join(repo, '.out')) => {
+    try {
+      execFileSync('bash', [join(repo, 'scripts/visual/run-flow.sh'), out, 'x'], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        env: { ...process.env, CARNIVAL_BROWSER_DIR: join(repo, '.browser') },
+      });
+      return '';
+    } catch (e) {
+      return String(e.stderr);
+    }
+  };
+  // A clean tree gets past the check (and stops later, with no browser here).
+  assert.doesNotMatch(run(), /uncommitted/);
+  assert.doesNotMatch(run(mkdtempSync(join(tmpdir(), 'run-flow-out-'))), /uncommitted/);
+  // A file left in an earlier attempt's directory is still a change.
+  writeFileSync(join(repo, '.out', 'stale.json'), '{}');
+  assert.match(run(), /uncommitted/);
+  git('clean', '-qfdx');
+  for (const f of ['package-lock.json', 'tsconfig.json', '.npmrc', 'src/new.ts']) {
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    writeFileSync(join(repo, f), '{"changed":true}\n');
+    assert.match(run(), /uncommitted/, f);
+    git('checkout', '-q', '--', '.');
+    git('clean', '-qfdx');
+  }
+});
+
+test('dispatch never runs PR code while it holds the writer key', async () => {
+  const { readFileSync } = await import('node:fs');
+  const skill = readFileSync(
+    new URL('../../tessl-factory/skills/native-intake/SKILL.md', import.meta.url),
+    'utf8',
+  );
+  const start = skill.indexOf('## MODE=dispatch');
+  const step1 = skill.slice(start, skill.indexOf('\n2. ', start));
+  assert.ok(start >= 0 && step1.includes('browser-flow-owed: <pr>:<flow>'));
+  // No instruction to check out, install or publish from the candidate head.
+  assert.doesNotMatch(step1, /run `npm ci`|run-flow\.sh[^\n]*--publish|check out the PR's/);
+  // Publishing goes only through the operator's record and a clean checkout of its W.
+  assert.match(step1, /native\.mjs authority/);
+  assert.match(step1, /separate, clean checkout of exactly `W`/);
+  assert.match(step1, /never infer approval from\s+`main`'s `HEAD`/);
+  assert.match(step1, /Never write, edit or update the\s+authority record/);
+  // A PR can never qualify its own head by adding a flow.
+  assert.doesNotMatch(step1, /may add the missing\s+flow/);
+  assert.match(step1, /cannot\s+qualify its own head by adding a flow/);
+});
+
+// ---------- operator browser authority, through the merge gate ----------
+
+const gateWith = (extra) => mergeGate(snapshot(extra));
+const reasonsOf = (extra) => gateWith(extra).reasons.join('\n');
+
+test('authority: a valid record and retained provenance let the gate merge', () => {
+  assert.deepEqual(gateWith({}).reasons, []);
+});
+
+test('authority: a missing, unread, malformed or unapproved record fails closed', () => {
+  assert.match(reasonsOf({ browserAuthority: authorityOf(undefined) }), /authority record missing/);
+  assert.match(
+    reasonsOf({ browserAuthority: { complete: false, problems: ['authority record not read'] } }),
+    /not read/,
+  );
+  assert.match(
+    reasonsOf({ browserAuthority: readAuthority(() => Buffer.from('{nope'), ANCHOR) }),
+    /not read/,
+  );
+  assert.match(reasonsOf({ browserAuthority: undefined }), /authority record not read/);
+  for (const [extra, re] of [
+    [{ approved: false }, /not operator-approved/],
+    [{ schema: 'x' }, /schema unknown/],
+    [{ repository: 'someone/else' }, /another repository/],
+    [{ captureRunner: OLD }, /capture pin/],
+    [{ images: { node: 'node:22', playwright: PLAYWRIGHT_IMAGE } }, /pinned digests/],
+    [{ boundary: { network: 'bridge' } }, /boundary/],
+    [{ flows: {} }, /registers no flow/],
+    [{ bootstrap: { pr: 30, head: WRAPPER } }, /may only name pull request 449/],
+  ])
+    assert.match(reasonsOf({ browserAuthority: authorityOf(authorityRecord(extra)) }), re);
+});
+
+test('authority: a candidate-local forged record is never read', () => {
+  // The gate reads only s.browserAuthority, which the adapter fetches from the
+  // evidence branch. A forged record in the PR files or comments changes nothing.
+  const forged = authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } });
+  const files = {
+    complete: true,
+    items: [{ filename: 'src/games/mini-putt/game.ts' }, { filename: AUTHORITY_PATH }],
+  };
+  const g = gateWith({
+    files,
+    comments: [{ body: JSON.stringify(forged) }],
+    browserAuthority: authorityOf(undefined),
+  });
+  assert.equal(g.merge, false);
+  assert.match(g.reasons.join(), /authority record missing/);
+});
+
+test('authority: wrong wrapper, capture pin, images, boundary or spec in provenance refuse', () => {
+  for (const [extra, re] of [
+    [{ wrapper: OLD }, /not the approved/],
+    [{ captureRunner: OLD }, /wrong capture pin/],
+    [{ images: { 'node:22': 'sha256:1', [PLAYWRIGHT_IMAGE]: 'sha256:2' } }, /wrong images/],
+    [{ boundary: { ...BOUNDARY, network: 'bridge' } }, /wrong boundary/],
+    [{ spec: { checks: ['x'], states: ['y'] } }, /wrong flow spec/],
+    [{ repository: 'someone/else' }, /another repository/],
+    [{ candidate: OLD }, /another flow or candidate/],
+  ]) {
+    const p = prov(extra);
+    const r = reasonsOf({
+      checks: {
+        complete: true,
+        items: [
+          ci(),
+          reviewerRun(),
+          browserRun({
+            output: {
+              text: evidenceMarker(record({ provenance: p, provenanceSha256: provSha(p) })),
+            },
+          }),
+        ],
+      },
+      browserShots: shotsOf({ ...shots[50], provenance: { sha256: provSha(p), content: p } }),
+    });
+    assert.match(r, re, JSON.stringify(extra));
+  }
+});
+
+test('authority: retained provenance that is missing, changed or hashed differently refuses', () => {
+  assert.match(
+    reasonsOf({ browserShots: shotsOf({ ...shots[50], provenance: undefined }) }),
+    /not retained/,
+  );
+  assert.match(
+    reasonsOf({
+      browserShots: shotsOf({ ...shots[50], provenance: { ...RETAINED, sha256: '0'.repeat(64) } }),
+    }),
+    /does not match its sha256/,
+  );
+  assert.match(
+    reasonsOf({
+      browserShots: shotsOf({
+        ...shots[50],
+        provenance: { ...RETAINED, content: prov({ wrapper: OLD }) },
+      }),
+    }),
+    /differs from the record/,
+  );
+});
+
+test('authority: a legacy app success without provenance never qualifies', () => {
+  const legacy = record();
+  delete legacy.provenance;
+  delete legacy.provenanceSha256;
+  const r = reasonsOf({
+    checks: {
+      complete: true,
+      items: [ci(), reviewerRun(), browserRun({ output: { text: evidenceMarker(legacy) } })],
+    },
+  });
+  assert.match(r, /carries no provenance \(legacy record\)/);
+});
+
+test('authority: a flow the record does not register stays owed, even with the candidate adding it', () => {
+  const r = reasonsOf({
+    browserAuthority: authorityOf(authorityRecord({ flows: { other: SPEC } })),
+  });
+  assert.match(r, /not in the operator-approved registry: owed/);
+  const p = prov();
+  const r2 = reasonsOf({
+    checks: {
+      complete: true,
+      items: [
+        ci(),
+        reviewerRun(),
+        browserRun({
+          output: {
+            text: evidenceMarker(
+              record({ flows: [{ name: `${FLOW}: candidate check`, result: 'pass' }] }),
+            ),
+          },
+        }),
+      ],
+    },
+  });
+  assert.match(r2, /does not run the approved checks/);
+  assert.ok(p);
+});
+
+test('authority: the wrapper equal to the head needs the exact 449 bootstrap', () => {
+  const p = prov({ wrapper: HEAD, pr: 449 });
+  const pr449 = { ...snapshot().pr, number: 449 };
+  const base = {
+    pr: pr449,
+    checks: {
+      complete: true,
+      items: [
+        ci(),
+        reviewerRun(),
+        browserRun({
+          output: { text: evidenceMarker(record({ provenance: p, provenanceSha256: provSha(p) })) },
+        }),
+      ],
+    },
+    browserShots: shotsOf({ ...shots[50], provenance: { sha256: provSha(p), content: p } }),
+  };
+  assert.match(
+    reasonsOf({ ...base, browserAuthority: authorityOf(authorityRecord({ wrapper: HEAD })) }),
+    /without an exact bootstrap authorization/,
+  );
+  assert.deepEqual(
+    gateWith({
+      ...base,
+      browserAuthority: authorityOf(
+        authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } }),
+      ),
+    }).reasons,
+    [],
+  );
+  // The same record does not let another pull request qualify its own head.
+  assert.match(
+    reasonsOf({
+      ...base,
+      pr: { ...pr449, number: 30 },
+      browserAuthority: authorityOf(
+        authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } }),
+      ),
+    }),
+    /bootstrap/,
+  );
+});
+
+test('authority: later main commits do not invalidate the approved wrapper', () => {
+  // The gate never compares the wrapper with main: only the record names it.
+  for (const mainHead of ['1'.repeat(40), '2'.repeat(40)])
+    assert.deepEqual(gateWith({ mainHead }).reasons, []);
+});
+
+test('authority: a fresh failed attempt still supersedes an authorized pass', () => {
+  const failed = browserRun({ id: 60, conclusion: 'failure', output: { text: '' } });
+  const r = reasonsOf({
+    checks: { complete: true, items: [ci(), reviewerRun(), browserRun(), failed] },
+  });
+  assert.match(r, /browser-flow evidence for mini-putt-hole-next failure/);
+});
+
+// ---------- immutable authority anchor and run provenance ----------
+
+/** Gate inputs whose passing run and retained file both carry provenance `p`. */
+const withProv = (p) => ({
+  checks: {
+    complete: true,
+    items: [
+      ci(),
+      reviewerRun(),
+      browserRun({
+        output: { text: evidenceMarker(record({ provenance: p, provenanceSha256: provSha(p) })) },
+      }),
+    ],
+  },
+  browserShots: shotsOf({ ...shots[50], provenance: { sha256: provSha(p), content: p } }),
+});
+
+const SCHEDULED_RUN = {
+  config: {
+    skillRef: 'file:tessl-factory#native-intake',
+    repoUrl: `https://github.com/${REPOSITORY}`,
+    agent: 'claude',
+    model: 'claude-opus-5-5',
+    triggerSource: 'scheduled',
+    baseBranch: 'main',
+  },
+  requestedBy: { kind: 'schedule', triggerName: 'native-dispatch-twenty-minutes' },
+  createdByProjectAutomation: { id: CARNIVAL_PROJECT, name: 'carnival-evolution-20261028' },
+  environment: { id: CARNIVAL_ENVIRONMENT, name: 'carnival-evolution-20261028-factory' },
+  scheduledRunId: '01a19020-373c-704d-aede-93bab62019e9',
+  triggerEvents: ['cron:tick'],
+  links: [],
+};
+const OWNER_RUN = {
+  config: {
+    skillRef: 'tessl-labs/factory@0.6.0#shepherd',
+    repoUrl: `https://github.com/${REPOSITORY}`,
+    agent: 'claude',
+    model: 'claude-opus-5-5',
+    triggerSource: 'webhook',
+    skillVersion: '0.6.0',
+    baseBranch: 'main',
+  },
+  requestedBy: { kind: 'user', id: 'u1', username: 'owner' },
+  createdByProjectAutomation: null,
+  environment: { id: CARNIVAL_ENVIRONMENT, name: 'carnival-evolution-20261028-factory' },
+  scheduledRunId: SHEPHERD_ACTION,
+  triggerEvents: ['tessl:trigger'],
+  links: [{ linkType: 'github_pr', value: `https://github.com/${REPOSITORY}/pull/449` }],
+};
+
+/** A GitHub that holds `records` per commit; `branchTip` is never consulted by the reader. */
+const githubWith = (records) => (path) => {
+  let m = /git\/commits\/([0-9a-f]{40})$/.exec(path);
+  if (m) {
+    if (!(m[1] in records)) throw new Error('HTTP 404');
+    return { sha: m[1], tree: { sha: `t${m[1]}` } };
+  }
+  m = /git\/trees\/t([0-9a-f]{40})\?recursive=1$/.exec(path);
+  if (m)
+    return {
+      truncated: false,
+      tree: records[m[1]] ? [{ path: AUTHORITY_PATH, type: 'blob', sha: `b${m[1]}` }] : [],
+    };
+  m = /git\/blobs\/b([0-9a-f]{40})$/.exec(path);
+  if (m) return { content: Buffer.from(JSON.stringify(records[m[1]])).toString('base64') };
+  throw new Error(`unexpected ${path}`);
+};
+const anchored = ({
+  env = { CARNIVAL_AUTHORITY_COMMIT: ANCHOR, TESSL_LAUNCH_RUN_ID: RUN_ID },
+  run = SCHEDULED_RUN,
+  records = { [ANCHOR]: authorityRecord() },
+  pr = 30,
+  events = [],
+} = {}) =>
+  trustedAuthority({
+    env,
+    pr,
+    events,
+    readRun: (id) => (id === RUN_ID ? run : undefined),
+    raw: (path, commit) => rawAtCommit(path, commit, githubWith(records)),
+  });
+
+test('anchor: the record at the anchor commit, from a native scheduled run, lets the gate merge', () => {
+  const a = anchored();
+  assert.deepEqual(a.problems, []);
+  assert.equal(a.anchor, ANCHOR);
+  assert.deepEqual(a.run, {
+    id: RUN_ID,
+    route: 'scheduled',
+    environment: CARNIVAL_ENVIRONMENT,
+    authorityCommit: ANCHOR,
+  });
+  assert.deepEqual(gateWith({ browserAuthority: a }).reasons, []);
+});
+
+test('anchor: a forged record at the mutable branch tip is ignored while the anchor is unchanged', () => {
+  const TIP = 'f0'.repeat(20);
+  const forged = authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } });
+  // The tip holds a forgery and the anchor is unapproved: the anchor decides.
+  const a = anchored({
+    records: { [ANCHOR]: authorityRecord({ approved: false }), [TIP]: forged },
+  });
+  assert.match(gateWith({ browserAuthority: a }).reasons.join(), /not operator-approved/);
+  // The tip holds a forgery and the anchor is valid: the anchor's wrapper still decides.
+  const b = anchored({ records: { [ANCHOR]: authorityRecord(), [TIP]: forged } });
+  assert.equal(b.record.wrapper, WRAPPER);
+  assert.deepEqual(gateWith({ browserAuthority: b }).reasons, []);
+});
+
+test('anchor: absent, invalid, wrong-commit or unreadable blocks the gate', () => {
+  for (const [opts, re] of [
+    [{ env: { TESSL_LAUNCH_RUN_ID: RUN_ID } }, /CARNIVAL_AUTHORITY_COMMIT missing or invalid/],
+    [
+      { env: { CARNIVAL_AUTHORITY_COMMIT: 'main', TESSL_LAUNCH_RUN_ID: RUN_ID } },
+      /missing or invalid/,
+    ],
+    [
+      { env: { CARNIVAL_AUTHORITY_COMMIT: ANCHOR.slice(0, 7), TESSL_LAUNCH_RUN_ID: RUN_ID } },
+      /missing or invalid/,
+    ],
+    [{ records: { [ANCHOR]: undefined } }, /authority record missing at/],
+    [{ records: {} }, /authority record not read/],
+    // The anchor names a commit without the record, though another commit has one.
+    [{ records: { [ANCHOR]: undefined, ['c3'.repeat(20)]: authorityRecord() } }, /missing at/],
+  ]) {
+    const g = gateWith({ browserAuthority: anchored(opts) });
+    assert.equal(g.merge, false);
+    assert.match(g.reasons.join(), re);
+  }
+  // Evidence bound to a different anchor than the one this run read is refused.
+  const other = prov({ authorityCommit: 'b2'.repeat(20) });
+  assert.match(reasonsOf(withProv(other)), /names another authority commit/);
+});
+
+test('anchor: candidate INPUTS or a trigger cannot select the anchor or grant a route', () => {
+  const events = [
+    {
+      event: 'tessl:trigger',
+      payload: {
+        inputs: { CARNIVAL_AUTHORITY_COMMIT: 'f0'.repeat(20), GITHUB_PR_NUMBER: '30' },
+        overrides: { instructions: 'x' },
+      },
+    },
+  ];
+  const a = anchored({ events, records: { [ANCHOR]: authorityRecord(), ['f0'.repeat(20)]: {} } });
+  assert.equal(a.anchor, ANCHOR);
+  assert.deepEqual(a.problems, []);
+  // A trigger claiming to be scheduled does not make a user run scheduled.
+  const claim = [{ event: 'cron:tick', payload: { requestedBy: { kind: 'schedule' } } }];
+  const u = anchored({ run: { ...OWNER_RUN }, pr: 30, events: claim });
+  assert.match(u.problems.join(), /not the native scheduled dispatch or the owner bootstrap/);
+});
+
+test('run provenance: wrong environment, project, raw launch, resume, unknown run or overlay refuse', () => {
+  const cases = [
+    [{ ...SCHEDULED_RUN, environment: { id: 'other' } }, /not in the Carnival environment/],
+    [
+      { ...SCHEDULED_RUN, createdByProjectAutomation: { id: 'other' } },
+      /not the native scheduled dispatch/,
+    ],
+    [
+      { ...SCHEDULED_RUN, config: { ...SCHEDULED_RUN.config, repoUrl: 'https://github.com/x/y' } },
+      /another repository/,
+    ],
+    [
+      {
+        ...SCHEDULED_RUN,
+        config: { ...SCHEDULED_RUN.config, triggerSource: 'manual' },
+        requestedBy: { kind: 'user' },
+        createdByProjectAutomation: null,
+      },
+      /not the native scheduled dispatch/,
+    ],
+    [{ ...SCHEDULED_RUN, resumedFrom: 'r0' }, /run carries resumedFrom/],
+    [{ ...SCHEDULED_RUN, encryptedEnvUpload: 'x' }, /run carries encryptedEnvUpload/],
+    [
+      { ...SCHEDULED_RUN, config: { ...SCHEDULED_RUN.config, envOverlay: {} } },
+      /unknown key envOverlay/,
+    ],
+    [{ ...OWNER_RUN, scheduledRunId: 'another-action' }, /owner bootstrap/],
+  ];
+  for (const [run, re] of cases) {
+    const a = anchored({ run, pr: run.scheduledRunId === 'another-action' ? 449 : 30 });
+    assert.match(a.problems.join(), re);
+    assert.equal(a.run, undefined);
+    assert.equal(gateWith({ browserAuthority: a }).merge, false);
+  }
+  const unknown = anchored({
+    env: { CARNIVAL_AUTHORITY_COMMIT: ANCHOR, TESSL_LAUNCH_RUN_ID: 'nope' },
+  });
+  assert.match(unknown.problems.join(), /run provenance not read/);
+  const noId = anchored({ env: { CARNIVAL_AUTHORITY_COMMIT: ANCHOR } });
+  assert.match(noId.problems.join(), /run provenance not read/);
+  const overlay = anchored({ events: [{ payload: { overrides: { env: { X: '1' } } } }] });
+  assert.match(overlay.problems.join(), /trigger carries overlay env/);
+  assert.match(runProvenanceProblems(undefined).join(), /not read/);
+});
+
+test('run provenance: the owner shepherd action is accepted only for the 449 bootstrap', () => {
+  const ok = anchored({ run: OWNER_RUN, pr: 449 });
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.run.route, 'owner-action');
+  const other = anchored({ run: OWNER_RUN, pr: 30 });
+  assert.match(other.problems.join(), /owner bootstrap/);
+});
+
+test('run provenance: evidence without a supported run binding is refused', () => {
+  assert.match(reasonsOf(withProv(prov({ run: null }))), /names no supported run/);
+  assert.match(
+    reasonsOf(withProv(prov({ run: { id: RUN_ID, route: 'raw' } }))),
+    /names no supported run/,
+  );
 });

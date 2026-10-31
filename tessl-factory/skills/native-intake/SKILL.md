@@ -58,21 +58,86 @@ credentials or anything from outside this repository's public record.
 
 ## MODE=dispatch (every 20 minutes Europe/London)
 
-1. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs merge`. For an
+1. Browser evidence first. For each open, non-draft Tessl PR on a
+   same-repository `tessl/issue-<n>` branch, run
+   `node scripts/native/native.mjs flows <pr>`. It derives the flows from
+   every changed path, old and new, and lists in `owed` whatever no flow
+   covers. Report each `owed` entry as owed: the PR cannot merge. A PR cannot
+   qualify its own head by adding a flow. New coverage needs a separate,
+   operator-reviewed update to the wrapper, the capture pin and the flow
+   registry, then a new authority record. Do not substitute another game's
+   flow or claim the change was played. Games with no registered flow and PRs
+   that change dependencies stay owed. Coverage is not universal.
+
+   Then run `node scripts/native/native.mjs authority`. It reads the
+   operator's record `control/operator-browser-authority.json` at exactly
+   the commit in the environment value `CARNIVAL_AUTHORITY_COMMIT`, through
+   the GitHub API, never at a branch tip or from any checkout, and checks
+   this run's provenance through the Tessl run API. Never set, guess or
+   replace that anchor. If it reports any problem, report every listed flow as
+   `browser-flow-owed: <pr>:<flow>` with the reason "no operator browser
+   authority" and stop this step. Otherwise the record names the wrapper
+   commit `W`. Use a separate, clean checkout of exactly `W` (not dispatch's
+   own checkout and not `main`'s `HEAD`, which moves) and a clean checkout of
+   the record's `captureRunner`. For each flow the record registers, run from
+   `W`:
+   `node scripts/visual/trusted-publish.mjs --pr <pr> --candidate <head sha>
+--flow <flow> --runner <clean checkout of captureRunner> --publish`,
+   one PR at a time. The wrapper reads the same anchored record again and refuses
+   unless its own clean `HEAD` is `W`, the pins and the flow spec match, and
+   `W` differs from the candidate (the record's `bootstrap` entry may allow
+   only PR 449 at that exact head). Report a non-zero exit as
+   `browser-flow-owed: <pr>:<flow>` with its last error line. A flow the
+   record does not register stays owed. Never write, edit or update the
+   authority record, its pins or its registry, and never infer approval from
+   `main`'s `HEAD`: only the operator installs it, after reviewing `W`.
+   Dispatch holds the writer key, so it never checks out, installs, builds,
+   serves or runs anything from a PR's head: not `npm ci`, not the PR's
+   `scripts/visual/run-flow.sh`, Vite config, npm lifecycle scripts or any
+   module they import. Clearing token variables or using a detached worktree
+   does not change that. Never edit or push the PR branch here. Trust model:
+   the operator and the approved factory App, which can write the evidence
+   branch, are trusted. This does not protect against a compromised controller
+   credential.
+
+2. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs merge`. For an
    open Tessl PR whose source issue, branch and single `Closes` line agree,
    whose newest `tessl-reviewer[bot]` review on the exact head carries
    `approved=true` (advisory findings allowed) and matches the reviewer's own
-   check run on that head, with green `check` CI and no request for changes
+   check run on that head, with green `check` CI, the newest `browser-flow`
+   attempt for every required flow passing under the operator's authority
+   record with matching retained `provenance.json` and no request for changes
    still standing, it gates again and merges atomically with that head as the
    expected SHA. It never arms GitHub auto-merge, never submits a review,
    never relaxes a required check, and never merges another way.
-2. A PR counts as shipped only after it merged, `node scripts/native/native.mjs
-deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
-   has been checked in a browser on the live site or that exact commit
-   (`VISUAL_REV=<sha> scripts/visual/run-capture.sh <dir> <route>`), with the
-   screenshots looked at. A 200 response or the page title alone is not app
-   QA. Otherwise report the QA still owed. Never say merged means live.
-3. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs dispatch`.
+3. A PR counts as shipped only when `node scripts/native/native.mjs deploy
+<merge sha>` reports `state: shipped`. `deployed-verification-owed` lists
+   what is still owed. For each listed live flow, use the same anchored
+   authority check as step 1. If it reports any problem, report the flow as
+   `browser-flow-live-owed: <merge sha>:<flow>` with the reason "no operator
+   browser authority". Otherwise, from the same separate clean checkout of
+   the record's wrapper `W`, with a clean checkout of the record's
+   `captureRunner`, run
+   `node scripts/visual/live-capture.mjs --merge <merge sha> --flow <flow>
+--runner <clean checkout of captureRunner> --publish`, one merge at a time.
+   It builds the exact merge with the pinned network-none primitives, takes
+   the manifest from that build, and plays the flow in a network-none browser
+   through the host broker, which fetches only manifest keys from the fixed
+   Pages origin. It publishes `browser-flow-live` only after both broker
+   receipts match, the report validates, the merge is still the current
+   deployment and the evidence reads back. Exit 3 is owed (no anchor, a
+   different wrapper, an unregistered flow, or a merge that is not the
+   current deployment); report it and any other non-zero exit as
+   `browser-flow-live-owed: <merge sha>:<flow>` with its last error line.
+   Never run `scripts/visual/run-flow.sh`, Vite, `npm` or any other script
+   from a merge checkout: merged code would run on this host with the writer
+   key. A merge whose `package.json` or lock differs from the capture pin
+   stays owed. Also run
+   `node scripts/native/native.mjs owed` and report every merge it lists,
+   including `superseded-verification-owed` ones, as browser QA still owed:
+   never as shipped. A 200 response, the page title or premerge evidence is
+   never app QA. Never say merged means live.
+4. `CARNIVAL_APP_WRITER_HELD=1 node scripts/native/native.mjs dispatch`.
    It claims one eligible backlog issue for the slot and adds `tessl` as
    `tessl-app[bot]`. That label starts no implementation by itself: it fires
    the `native-bot-backlog-labelled` trigger, which runs MODE=admit. Never
