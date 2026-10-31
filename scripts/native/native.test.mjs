@@ -2449,10 +2449,16 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
     output: { text: evidenceMarker({ ...good, ...rec }) },
     ...extra,
   });
+  const report = (matched = true, digest = good.identity.buildDigest) => ({
+    buildDigest: digest,
+    before: { matched, buildDigest: digest, mismatches: [] },
+    after: { matched, buildDigest: digest, mismatches: [] },
+  });
   const retained = {
     complete: true,
     onEvidenceBranch: true,
     digests: { [`${DIR}a.png`]: 'f'.repeat(64), [`${DIR}identity.json`]: '1'.repeat(64) },
+    identity: report(),
   };
   const ctx = { deployedAt: '2026-10-31T09:00:00Z', shots: { 90: retained } };
   const ship = (checks, c = ctx, f = files) =>
@@ -2498,6 +2504,25 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
   assert.equal(old.state, 'superseded-verification-owed');
   assert.deepEqual(old.keys, [`${MERGE}:${FLOW}`]);
   assert.deepEqual(ship([live()], { ...ctx, supersededBy: 'b'.repeat(40) }).state, 'shipped');
+  // The retained identity report must agree with the inline claim.
+  const withReport = (identity) => ({ ...ctx, shots: { 90: { ...retained, identity } } });
+  for (const bad of [
+    report(false),
+    report(true, '2'.repeat(64)),
+    { ...report(), after: { matched: false, buildDigest: good.identity.buildDigest } },
+    { ...report(), before: { matched: true, buildDigest: '3'.repeat(64) } },
+    undefined,
+    null,
+  ])
+    assert.match(owedBy([live()], withReport(bad)), /retained identity report .* does not match/);
+  // A malformed screenshots field is a reason, never an exception.
+  for (const screenshots of [{}, 'a.png', null, 7, [null, 'x']]) {
+    const r = ship([live({ screenshots })]);
+    assert.equal(r.state, 'deployed-verification-owed');
+    assert.match(r.owed.join('|'), /does not retain|no screenshots|is not under/);
+  }
+  // An incomplete deploy job history keeps the merge owed.
+  assert.match(owedBy([live()], { ...ctx, incomplete: true }), /deploy job history .* incomplete/);
   assert.deepEqual(ship([live()], ctx, changed('src/games/skee-ball/game.ts')).owed, [
     'no browser flow for src/games/skee-ball/',
   ]);
@@ -2525,18 +2550,38 @@ test('shipped: deploy context and the owed ledger keep older gaps', () => {
       updated_at: '2026-10-31T03:00:00Z',
     },
   ];
-  assert.deepEqual(deployContext('a', runs), {
+  const deployed = () => [{ name: 'deploy', conclusion: 'success' }];
+  assert.deepEqual(deployContext('a', runs, deployed), {
     deployedAt: '2026-10-31T01:00:00Z',
     supersededBy: 'b',
   });
-  assert.deepEqual(deployContext('b', runs), {
+  assert.deepEqual(deployContext('b', runs, deployed), {
     deployedAt: '2026-10-31T02:00:00Z',
     supersededBy: undefined,
   });
-  assert.deepEqual(deployContext('z', runs), {});
+  assert.deepEqual(deployContext('z', runs, deployed), {});
   // A rerun of an earlier deploy does not move the deploy time later.
   const rerun = [...runs, { ...runs[1], updated_at: '2026-10-31T05:00:00Z' }];
-  assert.equal(deployContext('b', rerun).deployedAt, '2026-10-31T02:00:00Z');
+  assert.equal(deployContext('b', rerun, deployed).deployedAt, '2026-10-31T02:00:00Z');
+  // A successful workflow whose deploy job was skipped deployed nothing: it
+  // neither starts the merge's deploy time nor supersedes it.
+  const skipped = (r) =>
+    r.updated_at === '2026-10-31T02:00:00Z'
+      ? [{ name: 'deploy', conclusion: 'skipped' }]
+      : deployed();
+  assert.deepEqual(deployContext('a', runs, skipped), {
+    deployedAt: '2026-10-31T01:00:00Z',
+    supersededBy: undefined,
+  });
+  // Mixed history: b skipped at 02:00, then really deployed on a rerun at 05:00.
+  assert.equal(deployContext('b', rerun, skipped).deployedAt, '2026-10-31T05:00:00Z');
+  assert.equal(deployContext('a', rerun, skipped).supersededBy, 'b');
+  // Unknown or unread job history stays owed, never a deploy time.
+  assert.deepEqual(deployContext('a', runs), { incomplete: true });
+  assert.deepEqual(
+    deployContext('a', runs, (r) => (r.head_sha === 'b' ? undefined : deployed())),
+    { incomplete: true },
+  );
   const merges = [
     { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
     { sha: 'b', state: 'shipped', owed: [] },
@@ -2606,4 +2651,44 @@ test('advisory: a flow that exited non-zero never publishes a pass', async () =>
     flowCheckRun({ ...report, checks: [] }, HEAD, EVIDENCE, 'd', 0).conclusion,
     'failure',
   );
+});
+
+test('run-flow: any uncommitted input, such as the lockfile or tsconfig, refuses', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'run-flow-'));
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  mkdirSync(join(repo, 'scripts/visual'), { recursive: true });
+  const here = new URL('../visual/', import.meta.url).pathname;
+  for (const f of ['run-flow.sh', 'flow-check.mjs'])
+    writeFileSync(join(repo, 'scripts/visual', f), execFileSync('cat', [join(here, f)]));
+  for (const f of ['package-lock.json', 'tsconfig.json', '.npmrc'])
+    writeFileSync(join(repo, f), '{}\n');
+  git('add', '-A');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x');
+  const run = (out = join(repo, '.out')) => {
+    try {
+      execFileSync('bash', [join(repo, 'scripts/visual/run-flow.sh'), out, 'x'], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        env: { ...process.env, CARNIVAL_BROWSER_DIR: join(repo, '.browser') },
+      });
+      return '';
+    } catch (e) {
+      return String(e.stderr);
+    }
+  };
+  // A clean tree gets past the check (and stops later, with no browser here).
+  assert.doesNotMatch(run(), /uncommitted/);
+  assert.doesNotMatch(run(mkdtempSync(join(tmpdir(), 'run-flow-out-'))), /uncommitted/);
+  // A file left in an earlier attempt's directory is still a change.
+  writeFileSync(join(repo, '.out', 'stale.json'), '{}');
+  assert.match(run(), /uncommitted/);
+  git('clean', '-qfdx');
+  for (const f of ['package-lock.json', 'tsconfig.json', '.npmrc', 'src/new.ts']) {
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    writeFileSync(join(repo, f), '{"changed":true}\n');
+    assert.match(run(), /uncommitted/, f);
+    git('checkout', '-q', '--', '.');
+    git('clean', '-qfdx');
+  }
 });

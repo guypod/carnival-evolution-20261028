@@ -74,8 +74,15 @@ if [ "$PUBLISH" = --publish ]; then
 fi
 
 STEP=checkout
-# Evidence is for a commit, so the working tree must be that commit.
-if [ -n "$(git -C "$CHECKOUT" status --porcelain -- index.html src public package.json vite.config.ts scripts/visual)" ]; then
+# Evidence is for a commit, so the whole working tree must be that commit:
+# any tracked or untracked change, including package-lock.json, tsconfig.json
+# or a config file, could change what is installed, built or served.
+# Only this attempt's own directory is left out, when it sits in the checkout.
+case "$OUT/" in
+  "$CHECKOUT"/*) MINE=(":(exclude,top)${OUT#"$CHECKOUT"/}") ;;
+  *) MINE=() ;;
+esac
+if [ -n "$(git -C "$CHECKOUT" status --porcelain --untracked-files=all -- . "${MINE[@]}")" ]; then
   echo "uncommitted app changes: evidence would not be for $HEAD" >&2
   exit 1
 fi

@@ -1516,10 +1516,24 @@ function liveReasons(mergeSha, flow, record, shots, deployedAt) {
   const id = record.identity;
   if (!(id?.before?.matched && id?.after?.matched) || !/^[0-9a-f]{64}$/.test(id?.buildDigest ?? ''))
     reasons.push(`live evidence for ${flow} does not show the served build is ${mergeSha}`);
+  // The retained report, not only its digest, must agree with the inline claim.
+  const kept = shots?.identity;
+  if (
+    shots?.complete &&
+    !(
+      kept?.buildDigest === id?.buildDigest &&
+      kept?.before?.matched === true &&
+      kept?.after?.matched === true &&
+      kept?.before?.buildDigest === id?.buildDigest &&
+      kept?.after?.buildDigest === id?.buildDigest
+    )
+  )
+    reasons.push(`retained identity report for ${flow} does not match the record`);
   if (record.url !== LIVE_URL) reasons.push(`live evidence for ${flow} is not for ${LIVE_URL}`);
   // The identity report itself is retained and hashed like a screenshot.
   const idPath = `${liveDir(mergeSha, flow)}identity.json`;
-  if (!(record.screenshots ?? []).some((sh) => sh?.path === idPath))
+  const list = Array.isArray(record.screenshots) ? record.screenshots : [];
+  if (!list.some((sh) => sh?.path === idPath))
     reasons.push(`live evidence for ${flow} does not retain ${idPath}`);
   const at = Date.parse(record.capturedAt ?? '');
   const since = Date.parse(deployedAt ?? '');
@@ -1543,6 +1557,7 @@ export function shipState(mergeSha, deploy, files, checks, ctx = {}) {
   if (deploy !== 'deployed-needs-sanity') return { state: deploy, owed: [] };
   const required = needsBrowserEvidence(files) ? requiredFlows(files) : { flows: [], owed: [] };
   const owed = [...required.owed];
+  if (ctx.incomplete) owed.push(`deploy job history for ${mergeSha} incomplete`);
   const mine = (checks ?? [])
     .filter((c) => c.name === LIVE_CHECK && c.head_sha === mergeSha && c.app?.id === BOT_APP_ID)
     .sort((a, b) => a.id - b.id);
@@ -1567,12 +1582,21 @@ export function shipState(mergeSha, deploy, files, checks, ctx = {}) {
 
 /**
  * When the merge's deploy finished, and the newest later commit whose Pages
- * run also deployed: { deployedAt, supersededBy }.
+ * run also deployed: { deployedAt, supersededBy }. Only a run whose deploy
+ * job itself succeeded counts: a successful workflow with that job skipped
+ * deployed nothing. Any successful run whose jobs could not be read leaves
+ * the history incomplete: { incomplete: true }, and the merge stays owed.
  */
-export function deployContext(mergeSha, pagesRuns) {
-  const done = (pagesRuns ?? []).filter(
+export function deployContext(mergeSha, pagesRuns, jobsOf = () => undefined) {
+  const ok = (pagesRuns ?? []).filter(
     (r) => r.status === 'completed' && r.conclusion === 'success',
   );
+  const done = [];
+  for (const r of ok) {
+    const jobs = jobsOf(r);
+    if (!Array.isArray(jobs)) return { incomplete: true };
+    if (jobs.some((j) => j?.name === 'deploy' && j?.conclusion === 'success')) done.push(r);
+  }
   // The first successful deploy: a rerun must not strand earlier captures.
   const own = done
     .filter((r) => r.head_sha === mergeSha)
@@ -1647,7 +1671,8 @@ function retainedShots(checks, head, name = BROWSER_CHECK) {
         continue;
       }
       const digests = {};
-      for (const sh of record.screenshots ?? []) {
+      let identity;
+      for (const sh of Array.isArray(record.screenshots) ? record.screenshots : []) {
         const bytes = execFileSync(
           'gh',
           [
@@ -1659,8 +1684,15 @@ function retainedShots(checks, head, name = BROWSER_CHECK) {
           { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
         );
         digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
+        if (String(sh.path).endsWith('/identity.json')) {
+          try {
+            identity = JSON.parse(bytes.toString('utf8'));
+          } catch {
+            identity = null;
+          }
+        }
       }
-      out[run.id] = { complete: true, onEvidenceBranch: true, digests };
+      out[run.id] = { complete: true, onEvidenceBranch: true, digests, identity };
     } catch {
       out[run.id] = { complete: false, digests: {} };
     }
@@ -1950,13 +1982,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const runs = pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`);
     if (!runs.complete) print({ status: 'unknown', reason: 'runs listing incomplete' });
     else {
+      const jobsOf = (run) => {
+        const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
+        return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
+      };
       const deploy = deployState(
         arg,
         runs.items.flatMap((p) => p.workflow_runs ?? p),
-        (run) => {
-          const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
-          return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
-        },
+        jobsOf,
       );
       // The merge commit's own file list: the commits API stops at 300 files,
       // so a full page counts as incomplete and owes every flow.
@@ -1973,6 +2006,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         ...deployContext(
           arg,
           runs.items.flatMap((p) => p.workflow_runs ?? p),
+          jobsOf,
         ),
         shots: checks.complete ? retainedShots(items, arg, LIVE_CHECK) : {},
       };
