@@ -224,6 +224,74 @@
         ]
       },
       "fingerprints": []
+    },
+    {
+      "runId": "01a19066-88f3-7326-bdf7-795cfdc846ca",
+      "learner": "run-learning",
+      "trigger": "schedule",
+      "slot": "2026-10-31T05:20 Europe/London",
+      "scheduledFor": "2026-10-31T05:20:00.000Z",
+      "delayMinutes": 1,
+      "since": "2026-10-30T05:20:00.000Z",
+      "startedAt": "2026-10-31T05:21:13.000Z",
+      "finishedAt": "2026-10-31T05:22:21.000Z",
+      "coverage": {
+        "status": "partial",
+        "inspected": [
+          "#375",
+          "#299",
+          "#394",
+          "#398",
+          "#405",
+          "#409",
+          "#413",
+          "#418",
+          "#419",
+          "#420",
+          "#421",
+          "#422",
+          "#423",
+          "#424",
+          "#427",
+          "#426",
+          "#447",
+          "#446",
+          "#428"
+        ],
+        "gaps": "Factory comments were read only as the first 300 characters of each body; Tessl launch run outcomes (not-due and guard stops) are not readable from this repository, so run-outcomes was not read; pull request bodies, diffs and review threads were not read beyond titles, states and timestamps.",
+        "sources": [
+          {
+            "source": "factory-comments",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "all 63 issue and PR comments since 2026-10-30T05:20Z ending <!-- tessl-factory -->, first 300 chars each; full issue #446 body start and #428 comment trail",
+            "gaps": "comment bodies past 300 characters"
+          },
+          {
+            "source": "ci-runs",
+            "enumeration": "complete",
+            "read": "full",
+            "scope": "all 87 GitHub Actions runs created since since: workflow, branch, event, attempt, conclusion (all success, no reruns)"
+          },
+          {
+            "source": "pull-requests",
+            "enumeration": "complete",
+            "read": "truncated",
+            "scope": "all 17 PRs updated since since (sort:updated-asc, under the limit of 100): number, title, state, merge time",
+            "gaps": "PR bodies, diffs and review threads"
+          },
+          {
+            "source": "run-outcomes",
+            "enumeration": "none",
+            "read": "none",
+            "scope": "Tessl launch run reports are not readable from this repository",
+            "gaps": "no-op and guard-stop outcomes of factory runs"
+          }
+        ]
+      },
+      "fingerprints": [
+        "66c170e86fca54f1"
+      ]
     }
   ],
   "proposals": [
@@ -349,6 +417,48 @@
       "firstSeen": "2026-10-30T17:42:57.000Z",
       "seenIn": [
         "01a18de5-aa80-720a-8fb2-54b58fc34259"
+      ],
+      "decisions": []
+    },
+    {
+      "fingerprint": "66c170e86fca54f1",
+      "learner": "run-learning",
+      "kind": "add-check",
+      "target": "scripts/native/native.test.mjs",
+      "title": "Test the native admit handoff against the implementation entry guard",
+      "change": "Add a test that takes the trigger envelope the native admit step hands to implement-github-issue (the tessl:trigger action envelope with key, loop, inputs, overrides and concurrency, plus GITHUB_ISSUE_NUMBER) and passes it to runIssue in scripts/native/entry-guard.mjs, asserting the guard accepts it. A change to either side's envelope shape then fails CI instead of the first live handoff.",
+      "rationale": "The first native handoff (#428, admitted 2026-10-31T04:31Z) stopped in the implementation entry guard with 'trigger events do not name exactly one issue'; no coding began. The cause was that #426 tested the guard only with empty or GitHub issue events, never the envelope the action trigger actually delivers, so the producer and consumer contracts drifted unseen. #446/#447 fixed the parser and added envelope tests to entry-guard.test.mjs, but nothing ties those fixtures to what admit emits.",
+      "weakens": false,
+      "standards": [],
+      "netLines": 0,
+      "check": "scripts/native/native.test.mjs",
+      "evidence": [
+        {
+          "kind": "factory-comment",
+          "ref": "#428 admission",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/issues/428#issuecomment-6539037378"
+        },
+        {
+          "kind": "pr",
+          "ref": "#426",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/426"
+        },
+        {
+          "kind": "pr",
+          "ref": "#447",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/447",
+          "commit": "0e55deb9a9db8016a21a229c545bb6823af7aa3c"
+        },
+        {
+          "kind": "factory-comment",
+          "ref": "#447 guard cause",
+          "url": "https://github.com/guypod/carnival-evolution-20261028/pull/447#issuecomment-6539266937"
+        }
+      ],
+      "status": "open",
+      "firstSeen": "2026-10-31T05:22:21.000Z",
+      "seenIn": [
+        "01a19066-88f3-7326-bdf7-795cfdc846ca"
       ],
       "decisions": []
     }
