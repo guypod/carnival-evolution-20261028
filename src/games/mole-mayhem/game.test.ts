@@ -10,6 +10,7 @@ import {
   POINTS_PER_HIT,
   ROUND_TIME,
   SPAWN_GAP,
+  accuracy,
   createState,
   beginRound,
   frameClock,
@@ -20,6 +21,7 @@ import {
   isStartKey,
   milestoneText,
   multiplier,
+  resultLines,
   saveFinalScore,
   seededRng,
   startRound,
@@ -481,5 +483,27 @@ describe('mole mayhem', () => {
     saveFinalScore(state, (score) => saved.push(score));
     saveFinalScore(state, (score) => saved.push(score));
     expect(saved).toEqual([POINTS_PER_HIT]);
+  });
+
+  it('reports accuracy and best streak from the round on the end screen', () => {
+    const state = playing();
+    const first = upHole(state);
+    expect(whack(state, first)).toBe('hit');
+    expect(whack(state, (first + 1) % HOLES)).toBe('miss');
+    step(state, SPAWN_GAP + 0.01);
+    expect(whack(state, upHole(state))).toBe('hit');
+    step(state, SPAWN_GAP + 0.01);
+    expect(whack(state, upHole(state))).toBe('hit');
+    expect(accuracy(state)).toBe(75);
+    expect(resultLines(state)).toEqual([
+      '3 hits (0 golden), 1 misses.',
+      'Accuracy 75%. Best streak 2.',
+    ]);
+  });
+
+  it('gives 0% accuracy for a round with no whacks', () => {
+    const state = createState(seededRng(1));
+    expect(accuracy(state)).toBe(0);
+    expect(resultLines(state).join(' ')).not.toMatch(/golden and worth|x2, then x3/);
   });
 });

@@ -33,9 +33,10 @@ Whack the moles as they pop out of six numbered holes. You have 30 seconds.
 - Reaching a streak of 3 and of 5 flashes a short message, such as
   **3 in a row! x3**, below the holes for a second.
 
-The end screen shows your score, hits, golden hits, misses and your best
-streak of the round. Your final score is saved to
-the carnival's score board once, when the round ends. If the browser refuses
+The end screen reports the round: your score, hits, golden hits, misses, your
+accuracy (hits as a share of every whack, rounded to a whole percent) and your
+best streak. It hides the holes so the card stays clear of their numbers. Your
+final score is saved to the carnival's score board once, when the round ends. If the browser refuses
 to save it, the error goes to the console and the end screen and **Play again**
 still work.
 
@@ -43,7 +44,7 @@ still work.
 
 - `game.ts`: the game logic (`createState`, `startRound`, `beginRound`, `whack`, `step`,
   `takeFinalScore`, `saveFinalScore`, `frameClock`, `isStartKey`, `seededRng`,
-  `isGoldenSpawn`, `milestoneText`, `holeForKey`, `holeAt`) and the `moleMayhem`
+  `isGoldenSpawn`, `milestoneText`, `accuracy`, `resultLines`, `holeForKey`, `holeAt`) and the `moleMayhem`
   entry the midway registers. `createState` takes an rng so tests can choose
   where moles pop.
 - `game.test.ts`: tests for the game logic.

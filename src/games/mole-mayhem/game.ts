@@ -305,6 +305,20 @@ export function milestoneText(streak: number): string {
   return `${streak} in a row! x${multiplier(streak)}`;
 }
 
+/** Hits as a whole percentage of all whacks this round, or 0 before any whack. */
+export function accuracy(state: MoleState): number {
+  const whacks = state.hits + state.misses;
+  return whacks === 0 ? 0 : Math.round((state.hits / whacks) * 100);
+}
+
+/** The lines the end screen shows under the final score: what happened in the round. */
+export function resultLines(state: MoleState): string[] {
+  return [
+    `${state.hits} hits (${state.goldenHits} golden), ${state.misses} misses.`,
+    `Accuracy ${accuracy(state)}%. Best streak ${state.bestStreak}.`,
+  ];
+}
+
 /** A small crown sitting on a golden mole's head, its base at (x, y). */
 function drawCrown(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fillStyle = theme.colors.text;
@@ -345,7 +359,8 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
   ctx.textAlign = 'right';
   ctx.fillText(`Streak ${state.streak} (x${multiplier(state.streak)})`, WIDTH - 16, 70);
 
-  for (let i = 0; i < HOLES; i++) {
+  // The end screen hides the holes, so its card never sits on their labels.
+  for (let i = 0; i < HOLES && state.phase !== 'over'; i++) {
     const { x, y } = holeCentre(i);
     const hole = state.holes[i];
     ctx.fillStyle = colors.wood;
@@ -414,19 +429,15 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
     ctx.fillText(title, WIDTH / 2, 200);
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('body');
-    ctx.fillText(
+    const lines =
       state.phase === 'ready'
-        ? `Whack moles for ${ROUND_TIME} seconds: click or tap them, or press keys 1 to 6.`
-        : `${state.hits} hits (${state.goldenHits} golden), ${state.misses} misses. Best streak ${state.bestStreak}.`,
-      WIDTH / 2,
-      250,
-    );
-    ctx.fillText('Hits in a row score x2, then x3. Missing resets it.', WIDTH / 2, 284);
-    ctx.fillText(
-      `Every ${GOLDEN_EVERY}th mole is golden and worth ${GOLDEN_POINTS} before the bonus.`,
-      WIDTH / 2,
-      318,
-    );
+        ? [
+            `Whack moles for ${ROUND_TIME} seconds: click or tap them, or press keys 1 to 6.`,
+            'Hits in a row score x2, then x3. Missing resets it.',
+            `Every ${GOLDEN_EVERY}th mole is golden and worth ${GOLDEN_POINTS} before the bonus.`,
+          ]
+        : resultLines(state);
+    lines.forEach((line, i) => ctx.fillText(line, WIDTH / 2, 250 + i * 34));
 
     ctx.fillStyle = colors.stripeA;
     ctx.fillRect(BUTTON.x, BUTTON.y, BUTTON.w, BUTTON.h);
