@@ -24,6 +24,11 @@ ring scores when its centre lands inside the zone. If two zones overlap, the
 closest bottle counts. A ring that lands anywhere else is a miss and scores
 nothing.
 
+Each shelf has a wooden post at both ends. Bottles slide behind a post as they
+leave one end of the shelf and come out from behind the other. A bottle can
+only be rung once it and its whole dashed zone are clear of the posts; a ring
+on a bottle that is still partly behind a post is a miss.
+
 | Shelf  | Speed    | Points |
 | ------ | -------- | ------ |
 | Top    | 150 px/s | 30     |
@@ -44,5 +49,5 @@ final score is saved to the carnival's score board once, when the round ends.
 ## Files
 
 - `game.ts`: the game logic (`createState`, `goldenIndex`, `toss`, `step`,
-  `bottleAt`, `takeFinalScore`, `steerAim`) and the `ringToss` entry the midway registers.
+  `bottleAt`, `isFullyVisible`, `takeFinalScore`, `steerAim`) and the `ringToss` entry the midway registers.
 - `game.test.ts`: tests for the game logic.
