@@ -292,6 +292,8 @@ const CARD_H = 100;
 const GAP = 14;
 const GRID_X = (WIDTH - (COLS * CARD_W + (COLS - 1) * GAP)) / 2;
 const GRID_Y = 84;
+/** The widest the lines under the grid may draw, so they never meet the canvas edge. */
+const FOOTER_WIDTH = WIDTH - 32;
 const BUTTON = { x: WIDTH / 2 - 110, y: HEIGHT - 82, w: 220, h: 52 } as const;
 const PEEK_BUTTON = { x: WIDTH / 2 - 120, y: 46, w: 240, h: 32 } as const;
 
@@ -459,18 +461,23 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
   }
 
   if (state.phase === 'playing') {
+    // The forecast, the last-try tag and the hint below share one centre line.
     ctx.font = canvasFont('small', 'bold');
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'center';
     ctx.fillStyle = colors.accent;
     ctx.fillText(
       `Forecast ${forecastScore(state.moves, state.matches, state.peekUsed)} (not earned yet): if each pair left matches first try`,
-      GRID_X,
-      440,
+      WIDTH / 2,
+      434,
+      FOOTER_WIDTH,
     );
     const feedback = lastTryText(state);
     if (feedback) {
+      const tagW = Math.min(ctx.measureText(feedback).width + 24, FOOTER_WIDTH);
+      ctx.fillStyle = colors.surface;
+      ctx.fillRect(WIDTH / 2 - tagW / 2, 442, tagW, 20);
       ctx.fillStyle = state.lastTry?.result === 'match' ? colors.text : colors.danger;
-      ctx.fillText(feedback, GRID_X, 458);
+      ctx.fillText(feedback, WIDTH / 2, 457, FOOTER_WIDTH - 24);
     }
   }
 
@@ -487,7 +494,8 @@ function draw(ctx: CanvasRenderingContext2D, state: MemoryState) {
             ? 'Click or tap a card, or move with the arrow keys and press Space or Enter'
             : `Flip a card, or press P to peek at every card once for ${PEEK_TIME}s (costs ${PEEK_PENALTY})`,
       WIDTH / 2,
-      HEIGHT - 24,
+      HEIGHT - 22,
+      FOOTER_WIDTH,
     );
   }
 
