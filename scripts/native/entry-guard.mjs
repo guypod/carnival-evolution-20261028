@@ -38,13 +38,24 @@ export const entryRef = (issue, generation) => `refs/tessl-entry/issue-${issue}/
 const isOwner = (u) => u?.id === OWNER_ID && u?.type === 'User';
 const isBotUser = (u) => u?.id === BOT_ID && u?.type === 'Bot';
 
+// `tessl action trigger` starts a run with explicit inputs and one synthetic
+// envelope, `{ event: 'tessl:trigger', payload: {} }`, that names no issue.
+// Only that exact shape is skipped; the issue then must come from the input.
+const isActionTrigger = (e) =>
+  e?.event === 'tessl:trigger' &&
+  e.payload !== null &&
+  typeof e.payload === 'object' &&
+  !Array.isArray(e.payload) &&
+  Object.keys(e.payload).length === 0;
+
 /** The one issue this implementation run is for, from its inputs and events, or why not. */
 export function runIssue(inputs, events) {
   const fromInput = inputs?.GITHUB_ISSUE_NUMBER;
-  const fromEvents = [
-    ...new Set((Array.isArray(events) ? events : []).map((e) => e?.payload?.issue?.number)),
-  ];
+  const issueEvents = (Array.isArray(events) ? events : []).filter((e) => !isActionTrigger(e));
+  const fromEvents = [...new Set(issueEvents.map((e) => e?.payload?.issue?.number))];
   if (events !== undefined && !Array.isArray(events)) return { error: 'trigger events malformed' };
+  if (issueEvents.some((e) => e?.event === 'tessl:trigger'))
+    return { error: 'trigger events do not name exactly one issue' };
   if (fromEvents.some((n) => !Number.isSafeInteger(n)) || fromEvents.length > 1)
     return { error: 'trigger events do not name exactly one issue' };
   const n = fromInput !== undefined && fromInput !== '' ? Number(fromInput) : fromEvents[0];

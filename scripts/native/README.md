@@ -94,7 +94,12 @@ not. `.tessl/cloud-launch-setup.sh` runs before the agent and before the
 skill installs, with the recipe's `SKILL`, `INPUTS`, `TRIGGER_EVENTS` and
 `TESSL_LAUNCH_RUN_ID`. When `SKILL` ends in `#implement-github-issue`, both
 for the owner's label and the native handoff, it runs
-`scripts/native/entry-guard.mjs`. Other actions skip it.
+`scripts/native/entry-guard.mjs`. Other actions skip it. The issue comes
+from `GITHUB_ISSUE_NUMBER` or the GitHub issue event. A run started by
+`tessl action trigger` carries one synthetic `{"event":"tessl:trigger","payload":{}}`
+envelope that names no issue. The guard skips only that exact shape, so the
+issue must then come from the input. Any other envelope, a conflicting or
+second issue, or a missing input refuses.
 
 The guard reads the issue, its events and comments in full and builds one
 key: repository, issue, node, content digest, and generation (the newest

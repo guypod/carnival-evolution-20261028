@@ -216,6 +216,92 @@ test('the run issue comes from inputs and events, and they must agree', () => {
   assert.match(runIssue({}, {}).error, /malformed/);
 });
 
+// The envelope `tessl action trigger` gives an implementation run, as the
+// native handoff for #428 received it.
+const ACTION_TRIGGER = { event: 'tessl:trigger', payload: {} };
+
+test('an action trigger envelope with an explicit issue input names that issue', () => {
+  assert.deepEqual(runIssue({ GITHUB_ISSUE_NUMBER: '428' }, [ACTION_TRIGGER]), { number: 428 });
+  assert.deepEqual(
+    runIssue({ GITHUB_ISSUE_NUMBER: '40', GITHUB_ISSUE_LABEL: 'tessl' }, [ACTION_TRIGGER]),
+    { number: 40 },
+  );
+  assert.deepEqual(
+    runIssue({ GITHUB_ISSUE_NUMBER: '40' }, [
+      ACTION_TRIGGER,
+      { payload: { issue: { number: 40 } } },
+    ]),
+    { number: 40 },
+  );
+});
+
+test('action trigger envelopes still fail closed', () => {
+  const cases = [
+    // No issue input, or an invalid one: the envelope names nothing.
+    [{}, [ACTION_TRIGGER], /no issue/],
+    [{ GITHUB_ISSUE_NUMBER: '' }, [ACTION_TRIGGER], /no issue/],
+    [{ GITHUB_ISSUE_NUMBER: '0' }, [ACTION_TRIGGER], /no issue/],
+    [{ GITHUB_ISSUE_NUMBER: '4x' }, [ACTION_TRIGGER], /no issue/],
+    [{ GITHUB_ISSUE_NUMBER: '-3' }, [ACTION_TRIGGER], /no issue/],
+    // A GitHub issue event that disagrees with the input.
+    [
+      { GITHUB_ISSUE_NUMBER: '40' },
+      [ACTION_TRIGGER, { payload: { issue: { number: 41 } } }],
+      /differs/,
+    ],
+    // Two issue identities.
+    [
+      { GITHUB_ISSUE_NUMBER: '40' },
+      [{ payload: { issue: { number: 40 } } }, { payload: { issue: { number: 41 } } }],
+      /exactly one issue/,
+    ],
+    // Unknown or malformed envelopes.
+    [{ GITHUB_ISSUE_NUMBER: '40' }, [{ event: 'tessl:other', payload: {} }], /exactly one issue/],
+    [{ GITHUB_ISSUE_NUMBER: '40' }, [{ event: 'tessl:trigger' }], /exactly one issue/],
+    [
+      { GITHUB_ISSUE_NUMBER: '40' },
+      [{ event: 'tessl:trigger', payload: null }],
+      /exactly one issue/,
+    ],
+    [{ GITHUB_ISSUE_NUMBER: '40' }, [{ event: 'tessl:trigger', payload: [] }], /exactly one issue/],
+    [
+      { GITHUB_ISSUE_NUMBER: '40' },
+      [{ event: 'tessl:trigger', payload: { issue: { number: 41 } } }],
+      /exactly one issue|differs/,
+    ],
+    [
+      { GITHUB_ISSUE_NUMBER: '40' },
+      [{ event: 'tessl:trigger', payload: { issue: { number: 40 } } }],
+      /exactly one issue/,
+    ],
+    [{ GITHUB_ISSUE_NUMBER: '40' }, [null], /exactly one issue/],
+    [{ GITHUB_ISSUE_NUMBER: '40' }, [ACTION_TRIGGER, {}], /exactly one issue/],
+    [{ GITHUB_ISSUE_NUMBER: '40' }, ACTION_TRIGGER, /malformed/],
+  ];
+  for (const [inputs, events, pattern] of cases)
+    assert.match(runIssue(inputs, events).error ?? '', pattern, JSON.stringify([inputs, events]));
+});
+
+test('the action trigger envelope reaches the same identity checks and claim', async () => {
+  const w = world();
+  const r = await go(w, RUN_A, { GITHUB_ISSUE_NUMBER: '40' }, [ACTION_TRIGGER]);
+  assert.equal(r.status, 'claimed', JSON.stringify(r));
+  assert.equal(w.refs.size, 1);
+  assert.equal(
+    (await go(w, RUN_A, { GITHUB_ISSUE_NUMBER: '40' }, [ACTION_TRIGGER])).status,
+    'resumed',
+  );
+  assert.match(
+    (await go(w, RUN_B, { GITHUB_ISSUE_NUMBER: '40' }, [ACTION_TRIGGER])).reason,
+    /owned by run/,
+  );
+  // Identity checks still apply: a closed issue refuses with no claim.
+  const closed = world({ i: issue({ state: 'closed' }) });
+  const c = await go(closed, RUN_A, { GITHUB_ISSUE_NUMBER: '40' }, [ACTION_TRIGGER]);
+  assert.match(c.reason, /closed/);
+  assert.equal(closed.refs.size, 0);
+});
+
 test('a new label generation is a new key, and an old generation stays claimed', async () => {
   const w = world();
   await go(w, RUN_A);
@@ -410,4 +496,40 @@ test('the setup hook runs the guard only when SKILL ends in #implement-github-is
   );
   for (const skill of ['tessl-labs/factory#shepherd', 'implement-github-issue-x', ''])
     assert.doesNotMatch(run(skill), /entry-guard/, skill);
+});
+
+test('the setup hook passes an action trigger envelope through to the identity reads', () => {
+  // Runs the real hook and the real guard with npm stubbed and gh failing, so
+  // the guard gets past parsing the run's files and stops at the first read.
+  const dir = mkdtempSync(join(tmpdir(), 'hook-'));
+  writeFileSync(join(dir, 'npm'), '#!/bin/sh\necho "npm $*"\n');
+  writeFileSync(join(dir, 'gh'), '#!/bin/sh\necho "HTTP 502" >&2\nexit 1\n');
+  chmodSync(join(dir, 'npm'), 0o755);
+  chmodSync(join(dir, 'gh'), 0o755);
+  const run = (inputs, events) => {
+    writeFileSync(join(dir, 'inputs.json'), JSON.stringify(inputs));
+    writeFileSync(join(dir, 'events.json'), JSON.stringify(events));
+    try {
+      execFileSync('bash', ['.tessl/cloud-launch-setup.sh'], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        env: {
+          PATH: `${dir}:${process.env.PATH}`,
+          SKILL: 'tessl-labs/factory#implement-github-issue',
+          INPUTS: join(dir, 'inputs.json'),
+          TRIGGER_EVENTS: join(dir, 'events.json'),
+          TESSL_LAUNCH_RUN_ID: RUN_A,
+        },
+      });
+      return { code: 0 };
+    } catch (e) {
+      return { code: e.status, out: e.stdout };
+    }
+  };
+  const ok = run({ GITHUB_ISSUE_NUMBER: '428', GITHUB_ISSUE_LABEL: 'tessl' }, [ACTION_TRIGGER]);
+  assert.notEqual(ok.code, 0, 'no claim without fresh reads');
+  assert.match(ok.out, /"reason":"issue not read"/);
+  const bad = run({ GITHUB_ISSUE_NUMBER: '428' }, [{ event: 'tessl:other', payload: {} }]);
+  assert.notEqual(bad.code, 0);
+  assert.match(bad.out, /trigger events do not name exactly one issue/);
 });
