@@ -90,8 +90,9 @@ deploy <merge sha>` reports `deployed-needs-sanity`, and the changed flow
    the label event, then returns without waiting for that run.
 2. `refused` and `blocked` are final for this run: never hand off any other
    way, never relabel, never edit the issue, and never retry with a weaker
-   check. `uncertain` means the handoff call failed without an answer: rerun
-   the same command once; its request id makes a repeat start no second run.
+   check. `uncertain` means the admission write or the handoff call failed
+   without an answer: rerun the same command once. It reads its own record
+   back and reuses the same request id, so a repeat starts no second run.
 3. Write nothing else on the issue. The admission script is the only writer.
 
 Report the script's JSON output, plus the browser checks you actually did (routes captured and what you saw) and any browser QA still owed. Claim nothing neither the script nor your own screenshots show.

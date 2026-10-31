@@ -135,6 +135,7 @@ function fakeGitHub({
     wasLabelledTessl: async (n) => Boolean(state.links[`labelled:${n}`]),
     labelActor: async (n) => state.links[`actor:${n}`],
     linkedPullRequests: async (n) => ({ complete: true, items: state.links[n] ?? [] }),
+    listEvents: async (n) => ({ complete: true, items: state.links[`events:${n}`] ?? [] }),
   };
   if (!ownerRoute) delete adapter.labelAsBot;
   return adapter;
@@ -470,9 +471,10 @@ test('a busy dispatch does not scan comments of the whole backlog', async () => 
   const gh = fakeGitHub({ issues, comments: { 11: [claimed(EARLIER, 11)] } });
   let reads = 0;
   const list = gh.listComments;
-  gh.listComments = async (n) => (reads++, list(n));
+  gh.listComments = async (n) => (reads++, assert.equal(n, 11), list(n));
   assert.equal((await dispatch(gh, DSLOT)).status, 'busy');
-  assert.equal(reads, 0);
+  // Only the waiting issue's own comments, for its admission record.
+  assert.equal(reads, 1);
 });
 
 test('ineligible issues are skipped: tessl, held, assigned, person comment, linked PR, foreign author', async () => {
@@ -1232,7 +1234,7 @@ test('admit: an uncertain record write is read back, and a missing record hands 
     throw new Error('timeout');
   };
   const r = await admit(gh, labelledEvent(), NOW);
-  assert.equal(r.status, 'blocked');
+  assert.equal(r.status, 'uncertain');
   assert.deepEqual(handoffs(gh), []);
 });
 
@@ -1517,4 +1519,87 @@ test('dispatch skips a backlog item with no producer journal, since admission wo
   gh.state.comments[11] = [];
   const r = await dispatch(gh, DSLOT);
   assert.equal(r.issue, 12);
+});
+
+test('a bot-labelled claim never admitted stops holding the queue after the grace, and is not relabelled', async () => {
+  const waiting = backlogIssue(11, { labels: [{ name: BACKLOG_LABEL }, { name: 'tessl' }] });
+  const labelAt = '2026-10-31T00:00:00Z';
+  const world = (extra = {}) => {
+    const gh = fakeGitHub({
+      issues: [waiting, backlogIssue(12)],
+      comments: { 11: [claimed(EARLIER, 11)] },
+    });
+    gh.state.links['events:11'] = [
+      { event: 'labeled', label: { name: 'tessl' }, actor: bot, created_at: labelAt },
+    ];
+    Object.assign(gh.state.links, extra);
+    return gh;
+  };
+  // Inside the grace its admit run may still be queued.
+  let gh = world();
+  let r = await dispatch(gh, DSLOT, new Date('2026-10-31T00:30:00Z'));
+  assert.deepEqual(r, { status: 'busy', waitingOn: 11 });
+  // Admitted: its run is going, so it holds the queue whatever the time.
+  gh = world();
+  gh.state.comments[11].push({
+    user: bot,
+    performed_via_github_app: { id: BOT_APP_ID },
+    body: admissionMarker({
+      issue: 11,
+      node: 'n',
+      slot: EARLIER,
+      digest: 'f'.repeat(64),
+      event: 1,
+      request: 'r',
+    }),
+  });
+  r = await dispatch(gh, DSLOT, new Date('2026-10-31T03:00:00Z'));
+  assert.deepEqual(r, { status: 'busy', waitingOn: 11 });
+  // Past the grace with no admission: refused, so the next issue goes and #11 is left alone.
+  gh = world();
+  r = await dispatch(gh, DSLOT, new Date('2026-10-31T03:00:00Z'));
+  assert.equal(r.status, 'dispatched');
+  assert.equal(r.issue, 12);
+  assert.ok(!writes(gh).some((c) => c[1] === 11));
+  // The owner's own label is the owner trigger's run: it still holds the queue.
+  gh = world({
+    'events:11': [
+      { event: 'labeled', label: { name: 'tessl' }, actor: owner, created_at: labelAt },
+    ],
+  });
+  r = await dispatch(gh, DSLOT, new Date('2026-10-31T03:00:00Z'));
+  assert.deepEqual(r, { status: 'busy', waitingOn: 11 });
+});
+
+test('dispatch skips an item whose content changed since its journal', async () => {
+  const gh = fakeGitHub({ issues: [backlogIssue(11), backlogIssue(12)] });
+  gh.state.issues.find((i) => i.number === 11).title = 'Edited by someone';
+  const r = await dispatch(gh, DSLOT);
+  assert.equal(r.issue, 12);
+});
+
+test('journal recovery certifies only the batch content still on the issue, never an edit', async () => {
+  const gh = fakeGitHub();
+  const file = candidates(18);
+  assert.equal((await produceBacklog(gh, SLOT, file)).status, 'complete');
+  const first = gh.state.issues[0];
+  // Crash before the journal, then someone edits the issue keeping its marker.
+  const comments = { ...gh.state.comments };
+  delete comments[first.number];
+  const edited = structuredClone(gh.state.issues);
+  edited[0].title = 'Quietly edited';
+  let gh2 = fakeGitHub({ issues: edited, comments, autoJournal: false });
+  let r = await produceBacklog(gh2, SLOT, file);
+  assert.equal(r.status, 'partial');
+  assert.match(r.errors.join(), /cannot be confirmed/);
+  assert.deepEqual(writes(gh2), []);
+  // A shortened file cannot vouch for the original content either.
+  gh2 = fakeGitHub({ issues: gh.state.issues, comments, autoJournal: false });
+  r = await produceBacklog(gh2, SLOT, file.slice(0, 3));
+  assert.equal(r.status, 'partial');
+  // The original full file, with the issue unchanged, recovers it.
+  gh2 = fakeGitHub({ issues: gh.state.issues, comments, autoJournal: false });
+  r = await produceBacklog(gh2, SLOT, file);
+  assert.equal(r.status, 'complete');
+  assert.deepEqual(writes(gh2), [['comment', first.number]]);
 });

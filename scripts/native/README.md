@@ -66,8 +66,10 @@ that runs as that app can write these records. Nothing narrower is claimed.
 
 - Journal marker, in an app comment on each filed issue:
   `<!-- carnival-backlog:journal:v1 slot=<slot> index=<i> issue=<n> digest=<sha256> -->`,
-  the digest of the title and body as filed. A rerun of the slot journals
-  any issue a crash left without one. `admit` refuses an issue without it.
+  the digest of the title and body as filed. A rerun of the full 18-item
+  batch file journals an issue a crash left without one, but only when the
+  issue still holds exactly what that file would have filed. Otherwise the
+  slot stays `partial`. `admit` refuses an issue without a journal entry.
 - Admission marker, in an app comment:
   `<!-- carnival-admission:v1 issue=<n> node=<id> slot=<claim slot> digest=<sha256> event=<label event id> request=<request id> -->`.
 - Item marker, in the body of a bot-authored issue:
@@ -85,7 +87,13 @@ that runs as that app can write these records. Nothing narrower is claimed.
   or removing `auto backlog` or `tessl` never hides one:
   - a slot that already has a claim never claims a second issue;
   - an open claimed issue labelled `tessl` with no pull request yet keeps the
-    queue busy, without reading the rest of the backlog;
+    queue busy, without reading the rest of the backlog, while it has an
+    admission record, while its label is the owner's, or for 90 minutes after
+    the bot's label so its `admit` run can come off the writer queue. After
+    that, a bot label with no admission was refused: the queue moves on and
+    that issue is never relabelled;
+  - a backlog item without a journal entry whose digest matches its current
+    content is skipped, since `admit` would refuse it;
   - a claim that never got its label, from any slot, is finished later,
     unless a person has since held, assigned or commented on the issue, in
     which case it is released and the next issue is considered. Before

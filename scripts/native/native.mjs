@@ -267,7 +267,14 @@ export async function produceBacklog(adapter, slot, candidates) {
   const done = slotProgress(slot, listed.items);
   const todo = [];
   for (let i = 0; i < BATCH_SIZE; i++) if (!done.has(i)) todo.push(i);
-  if (!todo.length) return journalAll(adapter, slot, done);
+  const expected = (index) =>
+    Array.isArray(candidates) && candidates.length === BATCH_SIZE && candidates[index]
+      ? {
+          title: String(candidates[index].title ?? '').trim(),
+          body: itemBody(slot, index, candidates[index]),
+        }
+      : undefined;
+  if (!todo.length) return journalAll(adapter, slot, done, expected);
   // A full 18-item file maps item i to index i, so rerunning the original file
   // after a crash files only the missing ones. A shorter file fills the
   // missing indexes in order.
@@ -316,7 +323,7 @@ export async function produceBacklog(adapter, slot, candidates) {
     const journaled = await journal(adapter, slot, index, number, issue);
     if (journaled) return { ...journaled, slot, issues: [...done.values()] };
   }
-  return journalAll(adapter, slot, done);
+  return journalAll(adapter, slot, done, expected);
 }
 
 /**
@@ -324,9 +331,17 @@ export async function produceBacklog(adapter, slot, candidates) {
  * refuses. Every run of the slot journals any such issue from its content as
  * filed, so the slot is complete only when every item is journaled.
  */
-async function journalAll(adapter, slot, done) {
+async function journalAll(adapter, slot, done, expected) {
   for (const [index, number] of done) {
-    const journaled = await journal(adapter, slot, index, number, await adapter.getIssue(number));
+    // Only the content the full batch file would have filed is certified, and
+    // only while the issue still holds exactly that. Never the issue as it is.
+    const want = expected(index);
+    const fresh = await adapter.getIssue(number);
+    const content =
+      want && contentDigest(want.title, want.body) === contentDigest(fresh?.title, fresh?.body)
+        ? want
+        : undefined;
+    const journaled = await journal(adapter, slot, index, number, content);
     if (journaled) return { ...journaled, slot, issues: [...done.values()] };
   }
   return { status: 'complete', slot, issues: [...done.values()], remaining: 0 };
@@ -341,8 +356,14 @@ async function journal(adapter, slot, index, number, content) {
   if (!comments.complete)
     return { status: 'partial', remaining: 0, errors: [`comments of #${number} incomplete`] };
   if (readJournal(comments.items).some((j) => j.issue === number)) return null;
+  if (!content)
+    return {
+      status: 'partial',
+      remaining: 0,
+      errors: [`#${number} has no journal and its filed content cannot be confirmed`],
+    };
   // Only the producer's own bot issue for this slot is journaled. Its digest
-  // is of the content the producer sent, or, on recovery, as filed.
+  // is of the content the producer sent, or, on recovery, the batch's own.
   const fresh = await adapter.getIssue(number);
   if (fresh?.user?.id !== BOT_ID || readItem(fresh)?.slot !== slot)
     return { status: 'partial', remaining: 0, errors: [`#${number} is not this slot's bot issue`] };
@@ -428,7 +449,7 @@ export function claimHistory(comments) {
  * since held or taken the issue back. A claimed issue labelled and still
  * waiting for its pull request keeps the queue busy.
  */
-export async function dispatch(adapter, slot) {
+export async function dispatch(adapter, slot, now = new Date()) {
   if (typeof adapter.labelAsBot !== 'function') {
     return { status: 'blocked', reason: MISSING_LABEL_ROUTE };
   }
@@ -449,8 +470,10 @@ export async function dispatch(adapter, slot) {
       const prs = await adapter.linkedPullRequests(claim.issue);
       if (!prs.complete)
         return { status: 'blocked', reason: `links of #${claim.issue} incomplete` };
-      if (!prs.items.length) return { status: 'busy', waitingOn: claim.issue };
-      continue;
+      if (prs.items.length) continue;
+      const waiting = await awaitingRun(adapter, claim.issue, now);
+      if (waiting) return waiting;
+      continue; // labelled, never admitted, past the grace: refused, not running
     }
     const labelled = await adapter.wasLabelledTessl(claim.issue);
     if (labelled === undefined)
@@ -474,8 +497,11 @@ export async function dispatch(adapter, slot) {
     if (!comments.complete)
       return { status: 'blocked', reason: `comments of #${issue.number} incomplete` };
     if (ineligible(issue, comments.items, [])) continue;
-    // Admission needs the producer's journal; an item without one would only stall.
-    if (!readJournal(comments.items).some((j) => j.issue === issue.number)) continue;
+    // Admission needs the producer's journal with an unchanged digest; an item
+    // without one would only be refused.
+    const digest = contentDigest(issue.title, issue.body);
+    if (!readJournal(comments.items).some((j) => j.issue === issue.number && j.digest === digest))
+      continue;
     const prs = await adapter.linkedPullRequests(issue.number);
     if (!prs.complete) return { status: 'blocked', reason: `links of #${issue.number} incomplete` };
     const fresh = await adapter.getIssue(issue.number);
@@ -485,6 +511,33 @@ export async function dispatch(adapter, slot) {
     return finish(adapter, slot, issue.number, 'claimed');
   }
   return { status: 'idle', reason: 'no eligible backlog issue' };
+}
+
+/** How long a bot label may wait for its admit run before it counts as refused. */
+export const ADMIT_GRACE_MS = 90 * 60_000;
+
+/**
+ * Whether a claimed, labelled issue with no pull request still holds the
+ * queue: it has an admission (its run is going), or its admit run may still
+ * be queued behind the writer key. Returns the busy or blocked result, or
+ * null when admission never happened within the grace, so the issue is not
+ * running and the queue moves on. That issue is never relabelled.
+ */
+async function awaitingRun(adapter, number, now) {
+  const comments = await adapter.listComments(number);
+  if (!comments.complete) return { status: 'blocked', reason: `comments of #${number} incomplete` };
+  if (readAdmissions(comments.items).some((a) => a.issue === number))
+    return { status: 'busy', waitingOn: number };
+  const events = await adapter.listEvents(number);
+  if (!events.complete) return { status: 'blocked', reason: `events of #${number} incomplete` };
+  const at = events.items
+    .filter((e) => e.event === 'labeled' && e.label?.name === TRIGGER_LABEL)
+    .at(-1)?.created_at;
+  // The owner's own label starts work through the owner trigger: still busy.
+  if (!at || now - new Date(at) < ADMIT_GRACE_MS) return { status: 'busy', waitingOn: number };
+  const last = events.items.filter((e) => e.label?.name === TRIGGER_LABEL).at(-1);
+  if (!isBot(last?.actor)) return { status: 'busy', waitingOn: number };
+  return null;
 }
 
 export const MISSING_LABEL_ROUTE =
@@ -740,7 +793,11 @@ export async function admit(adapter, events, now = new Date()) {
     } catch {
       const again = await adapter.listComments(n);
       if (!again.complete || !readAdmissions(again.items).some((a) => a.request === record.request))
-        return { status: 'blocked', issue: n, reasons: ['admission write uncertain; rerun'] };
+        return {
+          status: 'uncertain',
+          issue: n,
+          reasons: ['admission write uncertain; rerun admit'],
+        };
     }
   }
   // Same request id on every retry, so the platform starts at most one run.
@@ -1144,7 +1201,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   } else if (command === 'admit') {
     print(await admit(adapter, JSON.parse(readFileSync(arg, 'utf8')), now));
   } else if (command === 'dispatch') {
-    print(await dispatch(adapter, dispatchSlot(now)));
+    print(await dispatch(adapter, dispatchSlot(now), now));
   } else if (command === 'merge') {
     const open = pages(`repos/${REPOSITORY}/pulls?state=open&per_page=100`);
     if (!open.complete) print({ status: 'blocked', reason: 'pull request listing incomplete' });
