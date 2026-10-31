@@ -23,6 +23,7 @@ import {
   nextSwing,
   press,
   puckHeight,
+  bellLit,
   saveFinalScore,
   scoreFor,
   signedOffset,
@@ -119,16 +120,63 @@ describe('high striker', () => {
     expect(buttonLabel(state)).toBeUndefined();
   });
 
-  it('raises the puck to the bell only on a perfect hit', () => {
+  it("raises the puck to the swing's points, holds, then drops it back", () => {
     const state = aiming();
     state.markerTime = MARKER_PERIOD / 4;
     strike(state);
     expect(puckHeight(state)).toBe(0);
-    step(state, FLIGHT_TIME);
+    step(state, FLIGHT_TIME * 0.2);
+    expect(puckHeight(state)).toBeGreaterThan(0);
+    expect(puckHeight(state)).toBeLessThan(1);
+    step(state, FLIGHT_TIME * 0.3);
     expect(puckHeight(state)).toBe(1);
+    step(state, FLIGHT_TIME * 0.3);
+    expect(puckHeight(state)).toBeGreaterThan(0);
+    expect(puckHeight(state)).toBeLessThan(1);
+    step(state, FLIGHT_TIME);
+    expect(puckHeight(state)).toBe(0);
     nextSwing(state);
-    swingAt(state, 0);
+    state.markerTime = 0;
+    strike(state);
+    step(state, FLIGHT_TIME * 0.5);
     expect(puckHeight(state)).toBeCloseTo(0.1);
+  });
+
+  it('flashes the bell at the top of a 100-point swing only', () => {
+    const state = aiming();
+    state.markerTime = MARKER_PERIOD / 4;
+    strike(state);
+    expect(bellLit(state)).toBe(false);
+    step(state, FLIGHT_TIME * 0.45);
+    expect(bellLit(state)).toBe(true);
+    step(state, FLIGHT_TIME * 0.1);
+    expect(bellLit(state)).toBe(false);
+    step(state, FLIGHT_TIME * 0.1);
+    expect(bellLit(state)).toBe(true);
+    step(state, FLIGHT_TIME);
+    expect(bellLit(state)).toBe(false);
+    nextSwing(state);
+    state.markerTime = MARKER_PERIOD / 8;
+    strike(state);
+    step(state, FLIGHT_TIME * 0.45);
+    expect(bellLit(state)).toBe(false);
+  });
+
+  it('shows the final height and a steady bell in quiet mode', () => {
+    const state = aiming();
+    state.markerTime = MARKER_PERIOD / 4;
+    strike(state);
+    expect(puckHeight(state, true)).toBe(1);
+    expect(bellLit(state, true)).toBe(true);
+    step(state, FLIGHT_TIME);
+    expect(puckHeight(state, true)).toBe(1);
+    expect(bellLit(state, true)).toBe(true);
+    nextSwing(state);
+    expect(puckHeight(state, true)).toBe(0);
+    expect(bellLit(state, true)).toBe(false);
+    swingAt(state, 0);
+    expect(puckHeight(state, true)).toBeCloseTo(0.1);
+    expect(bellLit(state, true)).toBe(false);
   });
 
   it('saves the total once, and a failed save still allows replay', () => {

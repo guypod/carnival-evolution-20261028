@@ -1,4 +1,5 @@
 import { canvasFont, recordScore, theme, type CarnivalGame } from '../../carnival';
+import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../../midway/motion';
 
 const { width: WIDTH, height: HEIGHT } = theme.canvas;
 
@@ -6,7 +7,7 @@ const { width: WIDTH, height: HEIGHT } = theme.canvas;
 export const SWINGS = 3;
 /** Seconds for the power marker to sweep from one end of the meter and back. */
 export const MARKER_PERIOD = 1.6;
-/** Seconds the puck takes to rise to its height and settle. */
+/** Seconds the puck takes to rise to its height and drop back to the base. */
 export const FLIGHT_TIME = 1.2;
 
 /** Precision zones, by distance from the centre of the meter (0 to 1). */
@@ -169,14 +170,39 @@ export function step(state: StrikerState, dt: number): void {
   }
 }
 
-/** How high the puck is, 0 (base) to 1 (bell), for the swing in flight. */
-export function puckHeight(state: StrikerState): number {
+/** Share of the flight spent rising, then holding at the top, before the puck drops back. */
+export const RISE_END = 0.4;
+export const HOLD_END = 0.6;
+
+/**
+ * How high the puck is, 0 (base) to 1 (bell), for the last swing. It rises to
+ * the swing's points over the first part of the flight, holds, then drops back
+ * to the base. In quiet mode it shows the swing's height without moving.
+ */
+export function puckHeight(state: StrikerState, quiet = false): number {
   const last = state.swings[state.swings.length - 1];
   if (last === undefined || state.phase === 'ready' || state.phase === 'aiming') return 0;
   const peak = last / 100;
+  if (quiet) return peak;
+  if (state.phase !== 'flying') return 0;
   const t = state.flyTime / FLIGHT_TIME;
-  // Up for the first 60% of the flight, then back down a little to rest.
-  return t < 0.6 ? peak * Math.sin((t / 0.6) * (Math.PI / 2)) : peak;
+  if (t < RISE_END) return peak * Math.sin((t / RISE_END) * (Math.PI / 2));
+  if (t < HOLD_END) return peak;
+  return peak * Math.cos(((t - HOLD_END) / (1 - HOLD_END)) * (Math.PI / 2));
+}
+
+/**
+ * Whether the bell is lit for a 100-point swing. It flashes, on and off every
+ * tenth of the flight, while the puck holds at the top. In quiet mode it stays
+ * lit, without flashing, until the next swing starts.
+ */
+export function bellLit(state: StrikerState, quiet = false): boolean {
+  const last = state.swings[state.swings.length - 1];
+  if (last !== 100 || state.phase === 'ready' || state.phase === 'aiming') return false;
+  if (quiet) return true;
+  if (state.phase !== 'flying') return false;
+  const t = state.flyTime / FLIGHT_TIME;
+  return t >= RISE_END && t < HOLD_END + 0.2 && Math.floor((t - RISE_END) * 10) % 2 === 0;
 }
 
 /**
@@ -335,7 +361,7 @@ function onButton(x: number, y: number) {
   return x >= BUTTON.x && x <= BUTTON.x + BUTTON.w && y >= BUTTON.y && y <= BUTTON.y + BUTTON.h;
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
+function draw(ctx: CanvasRenderingContext2D, state: StrikerState, quiet: boolean) {
   const { colors } = theme;
 
   ctx.fillStyle = colors.background;
@@ -349,9 +375,8 @@ function draw(ctx: CanvasRenderingContext2D, state: StrikerState) {
   // Tower, bell and puck.
   ctx.fillStyle = colors.wood;
   ctx.fillRect(TOWER.x, TOWER.top, TOWER.w, TOWER.bottom - TOWER.top);
-  const rang = state.phase !== 'aiming' && state.swings[state.swings.length - 1] === 100;
-  const height = puckHeight(state);
-  ctx.fillStyle = rang && height >= 0.99 ? colors.accent : colors.muted;
+  const height = puckHeight(state, quiet);
+  ctx.fillStyle = bellLit(state, quiet) ? colors.accent : colors.muted;
   ctx.beginPath();
   ctx.arc(TOWER.x + TOWER.w / 2, TOWER.top - 10, 28, Math.PI, 0);
   ctx.fill();
@@ -500,12 +525,16 @@ export const highStriker: CarnivalGame = {
       },
     });
 
+    const quiet = isQuiet(
+      motionPreference.load(),
+      window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false,
+    );
     let frame = 0;
     const loop = (time: number) => {
       frame = requestAnimationFrame(loop);
       step(state, clock.tick(time));
       saveFinalScore(state, (score) => recordScore(highStriker.id, score));
-      draw(ctx, state);
+      draw(ctx, state, quiet);
     };
     frame = requestAnimationFrame(loop);
 
