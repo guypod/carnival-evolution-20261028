@@ -18,6 +18,9 @@ import {
   collideEdges,
   collideWall,
   createState,
+  scorecard,
+  scorecardLabel,
+  SCORECARD,
   dropsIn,
   holeScore,
   keyAction,
@@ -373,5 +376,41 @@ describe('controls', () => {
     expect(pointerAction(state, 680, 470)).toEqual({ kind: 'putt' });
     putt(state);
     expect(pointerAction(state, 680, 470)).toBeUndefined();
+  });
+});
+
+describe('scorecard', () => {
+  it('is empty before the round starts', () => {
+    expect(scorecard(createState())).toEqual([]);
+  });
+
+  it('lists finished holes as sunk or out, then the hole in play', () => {
+    const state = createState();
+    startRound(state);
+    state.results = [
+      { strokes: 6, sunk: false },
+      { strokes: 3, sunk: true },
+    ];
+    state.hole = 2;
+    state.strokes = 2;
+    expect(scorecard(state)).toEqual([
+      { hole: 1, strokes: 6, status: 'out' },
+      { hole: 2, strokes: 3, status: 'sunk' },
+      { hole: 3, strokes: 2, status: 'playing' },
+    ]);
+    expect(scorecard(state).map(scorecardLabel)).toEqual(['H1 6 out', 'H2 3 sunk', 'H3 2 playing']);
+  });
+
+  it('does not repeat a hole that has just ended', () => {
+    const state = createState();
+    startRound(state);
+    state.results = [{ strokes: 4, sunk: true }];
+    state.phase = 'holeDone';
+    expect(scorecard(state)).toEqual([{ hole: 1, strokes: 4, status: 'sunk' }]);
+  });
+
+  it('sits above the green, below the stripes', () => {
+    expect(SCORECARD.y).toBeGreaterThanOrEqual(20);
+    expect(SCORECARD.y + SCORECARD.h).toBeLessThan(COURSE.y - 6);
   });
 });

@@ -30,7 +30,9 @@ roll the same way.
 | Not sunk in 6     | 0                         |
 
 The screen shows the hole, strokes on this hole, total strokes and the score so
-far. The final score, the sum of the three holes (0 to 180), is saved once, as
+far. Above that, a scorecard line lists every hole played so far with its
+strokes: "H1 6 out" for a hole that ran out of strokes (red), "H2 3 sunk" for a
+hole sunk in 3 (yellow), and "H3 2 playing" for the hole in play. The final score, the sum of the three holes (0 to 180), is saved once, as
 soon as the third hole ends. If it can't be saved, the result screen says so,
 and it is tried again when you press Play again or leave the booth. If Play
 again can't save it either, the result screen stays up so the score is not lost.

@@ -132,6 +132,35 @@ export function totalStrokes(state: PuttState): number {
   return state.results.length > state.hole ? done : done + state.strokes;
 }
 
+export interface ScorecardEntry {
+  /** The hole number, from 1. */
+  hole: number;
+  strokes: number;
+  status: 'sunk' | 'out' | 'playing';
+}
+
+/** One entry per finished hole, then the hole in play, if any. */
+export function scorecard(state: PuttState): ScorecardEntry[] {
+  const entries: ScorecardEntry[] = state.results.map((result, i) => ({
+    hole: i + 1,
+    strokes: result.strokes,
+    status: result.sunk ? 'sunk' : 'out',
+  }));
+  const playing = state.phase === 'aiming' || state.phase === 'rolling';
+  if (playing && state.results.length === state.hole) {
+    entries.push({ hole: state.hole + 1, strokes: state.strokes, status: 'playing' });
+  }
+  return entries;
+}
+
+/** A short label for one scorecard entry, such as "H1 6 out" or "H2 3 sunk". */
+export function scorecardLabel(entry: ScorecardEntry): string {
+  return `H${entry.hole} ${entry.strokes} ${entry.status}`;
+}
+
+/** The scorecard line, between the stripes and the header, above the green. */
+export const SCORECARD = { x: 40, y: 22, w: 720, h: 16 } as const;
+
 function setUpHole(state: PuttState, hole: number): void {
   state.hole = hole;
   state.ball = { ...HOLES[hole].start };
@@ -427,6 +456,24 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
   ctx.fillText(`Total strokes ${totalStrokes(state)}`, 420, 52);
   ctx.textAlign = 'right';
   ctx.fillText(`Score ${totalScore(state)}`, 760, 52);
+
+  const card = scorecard(state);
+  if (card.length > 0) {
+    ctx.font = canvasFont('small', 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.muted;
+    ctx.fillText('Card', SCORECARD.x, SCORECARD.y + 13);
+    const cell = (SCORECARD.w - 60) / HOLES.length;
+    card.forEach((entry, i) => {
+      ctx.fillStyle =
+        entry.status === 'sunk'
+          ? colors.accent
+          : entry.status === 'out'
+            ? colors.danger
+            : colors.text;
+      ctx.fillText(scorecardLabel(entry), SCORECARD.x + 60 + i * cell, SCORECARD.y + 13, cell - 10);
+    });
+  }
 
   // The green, its walls and bumpers.
   ctx.fillStyle = colors.wood;
