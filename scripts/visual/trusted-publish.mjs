@@ -32,7 +32,7 @@
 //
 //   node scripts/visual/trusted-publish.mjs --pr <n> --candidate <sha> --flow <flow>
 //     --runner <clean checkout of CAPTURE_PIN> [--publish]
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   closeSync,
@@ -299,36 +299,55 @@ function git(dir, args) {
 /** Elapsed-time cap per primitive, and for a whole capture, in seconds. */
 export const DEADLINES = { step: 600, total: 900 };
 
-/** Ids of running containers from the capture images, so a timeout can stop exactly the new ones. */
-function captureContainers(run = spawnSync) {
-  const r = run(
-    'docker',
-    [
-      'ps',
-      '-q',
-      '--no-trunc',
-      '--filter',
-      `ancestor=${NODE_IMAGE}`,
-      '--filter',
-      `ancestor=${PLAYWRIGHT_IMAGE}`,
-    ],
-    { encoding: 'utf8' },
+/** The label every container a primitive starts carries, so only its own are stopped. */
+export const STEP_LABEL = 'carnival.capture-step';
+
+/**
+ * A `docker` first on the primitive's PATH that labels every `docker run`
+ * with this step's random id and passes everything else to the real client.
+ * The pinned primitives are unchanged: they call `docker` by name.
+ */
+function dockerShim(home, real) {
+  const bin = join(home, 'bin');
+  mkdirSync(bin, { mode: 0o700 });
+  writeFileSync(
+    join(bin, 'docker'),
+    `#!/bin/sh\nif [ "$1" = run ]; then shift; exec '${real}' run --label "${STEP_LABEL}=$CARNIVAL_STEP" "$@"; fi\nexec '${real}' "$@"\n`,
+    { mode: 0o700 },
   );
-  return new Set((r.stdout ?? '').split('\n').filter(Boolean));
+  return bin;
+}
+
+/**
+ * Ids of the running containers labelled with this step, or null when Docker
+ * could not be read. Never a global listing: other containers, even from the
+ * same images, are not this step's.
+ */
+export function ownContainers(step, run = spawnSync) {
+  const r = run('docker', ['ps', '-q', '--no-trunc', '--filter', `label=${STEP_LABEL}=${step}`], {
+    encoding: 'utf8',
+  });
+  if (r.status !== 0 || typeof r.stdout !== 'string') return null;
+  return r.stdout.split('\n').filter((id) => /^[0-9a-f]{64}$/.test(id));
 }
 
 /**
  * Runs a pinned primitive with a fixed environment: no image or path override
  * passes in. `timeout` runs it in its own process group and kills the whole
- * group at the deadline; any container it started is then stopped explicitly,
- * because killing the docker client leaves its container running. A timeout
- * is a failure. Its private HOME is removed afterwards.
+ * group at the deadline. Killing the docker client leaves its container
+ * running, so every container still carrying this step's label is then
+ * stopped, and nothing else. A timeout is a failure, and so is a step whose
+ * containers could not be listed or stopped: it never guesses. Its private
+ * HOME is removed afterwards.
  */
 export function primitive(runner, name, args, { seconds = DEADLINES.step, run = spawnSync } = {}) {
   const home = privateDir('carnival-home-');
-  const env = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: home };
-  const before = captureContainers(run);
+  const step = randomUUID();
+  const real = run('sh', ['-c', 'command -v docker'], { encoding: 'utf8' }).stdout?.trim();
   try {
+    if (!real?.startsWith('/')) return 125;
+    const bin = dockerShim(home, real);
+    const env = { PATH: `${bin}:/usr/local/bin:/usr/bin:/bin`, HOME: home, CARNIVAL_STEP: step };
     const r = run(
       'timeout',
       [
@@ -341,12 +360,16 @@ export function primitive(runner, name, args, { seconds = DEADLINES.step, run = 
       ],
       { env, stdio: ['ignore', 'inherit', 'inherit'] },
     );
-    if (r.status === 124 || r.status === 137 || r.status === null) {
-      const left = [...captureContainers(run)].filter((id) => !before.has(id));
-      if (left.length) run('docker', ['kill', ...left], { stdio: 'ignore' });
+    const timedOut = r.status === 124 || r.status === 137 || r.status === null;
+    const left = ownContainers(step, run);
+    if (left === null) return 125;
+    if (left.length) {
+      const k = run('docker', ['kill', ...left], { stdio: 'ignore' });
+      if (k.status !== 0) return 125;
+      // A step that left a container running did not finish cleanly.
       return 124;
     }
-    return r.status;
+    return timedOut ? 124 : r.status;
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

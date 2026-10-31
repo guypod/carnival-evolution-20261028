@@ -1746,13 +1746,26 @@ export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
   const run = pagesRuns.find((r) => r.head_sha === mergeSha);
   if (!run) return 'merged-not-deployed';
   if (run.status !== 'completed') return 'deploying';
-  if (run.conclusion !== 'success') return 'deploy-failed';
+  // A failed rerun does not undo an earlier attempt's deploy, so the jobs of
+  // every attempt decide; rerunFailure reports the failed rerun separately.
   const jobs = jobsOf(run);
-  if (!jobs) return 'deploy-unknown';
+  if (!jobs) return run.conclusion === 'success' ? 'deploy-unknown' : 'deploy-failed';
   // Jobs span every attempt: any deploy job that succeeded deployed.
-  return jobs.some((j) => j?.name === 'deploy' && j?.conclusion === 'success')
-    ? 'deployed-needs-sanity'
-    : 'merged-not-deployed';
+  if (jobs.some((j) => j?.name === 'deploy' && j?.conclusion === 'success'))
+    return 'deployed-needs-sanity';
+  return run.conclusion === 'success' ? 'merged-not-deployed' : 'deploy-failed';
+}
+
+/**
+ * The failed latest attempt of a merge's Pages run that an earlier attempt
+ * had already deployed: { attempt, conclusion }, or undefined. It never
+ * clears or replaces that deploy, but it is always reported.
+ */
+export function rerunFailure(mergeSha, pagesRuns, jobsOf = () => undefined) {
+  const run = pagesRuns.find((r) => r.head_sha === mergeSha);
+  if (run?.status !== 'completed' || run.conclusion === 'success') return undefined;
+  if (deployState(mergeSha, pagesRuns, jobsOf) !== 'deployed-needs-sanity') return undefined;
+  return { attempt: run.run_attempt ?? 1, conclusion: run.conclusion };
 }
 
 /** The check run, on the merge commit, that records a flow played on the live site. */
@@ -1930,7 +1943,13 @@ export function reconcile(shas, read, budget = Infinity) {
         owed: ['check listing incomplete'],
       };
     const ctx = { ...deployContext(sha, list, jobsOf), shots: read.shots(items, sha) };
-    return { sha, deploy, ...shipState(sha, deploy, files, items, ctx) };
+    const rerun = rerunFailure(sha, list, jobsOf);
+    return {
+      sha,
+      deploy,
+      ...shipState(sha, deploy, files, items, ctx),
+      ...(rerun ? { rerun } : {}),
+    };
   });
 }
 
@@ -1943,7 +1962,13 @@ export function reconcile(shas, read, budget = Infinity) {
 export function owedMerges(merges) {
   return merges
     .filter((m) => m.state !== 'shipped')
-    .map((m) => ({ sha: m.sha, state: m.state, owed: m.owed ?? [], keys: m.keys ?? [] }));
+    .map((m) => ({
+      sha: m.sha,
+      state: m.state,
+      owed: m.owed ?? [],
+      keys: m.keys ?? [],
+      ...(m.rerun ? { rerun: m.rerun } : {}),
+    }));
 }
 
 /** When the browser gate began: merges before it are not owed live flows. */

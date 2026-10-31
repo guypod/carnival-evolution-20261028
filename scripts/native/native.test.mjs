@@ -2682,6 +2682,88 @@ test('shipped: deploy context times the first successful deploy job across rerun
   ]);
 });
 
+test('shipped: a failed rerun of the same Pages run keeps the verified deploy and is reported', () => {
+  const MERGE = 'c'.repeat(40);
+  const DIR = liveDir(MERGE, FLOW);
+  const digest = 'd'.repeat(64);
+  const rec = {
+    head: MERGE,
+    flow: FLOW,
+    evidenceCommit: 'e'.repeat(40),
+    flows: [{ name: `${FLOW}: x`, result: 'pass' }],
+    screenshots: [
+      { path: `${DIR}a.png`, sha256: 'f'.repeat(64) },
+      { path: `${DIR}identity.json`, sha256: '1'.repeat(64) },
+    ],
+    mergeSha: MERGE,
+    deployedSha: MERGE,
+    url: LIVE_URL,
+    capturedAt: '2026-10-31T03:00:00Z',
+    identity: { buildDigest: digest, before: { matched: true }, after: { matched: true } },
+  };
+  const live = {
+    id: 90,
+    name: 'browser-flow-live',
+    external_id: `browser-flow-live:${FLOW}`,
+    app: { id: BOT_APP_ID },
+    head_sha: MERGE,
+    status: 'completed',
+    conclusion: 'success',
+    output: { text: evidenceMarker(rec) },
+  };
+  const side = { matched: true, buildDigest: digest, mismatches: [] };
+  const retained = {
+    complete: true,
+    onEvidenceBranch: true,
+    digests: { [`${DIR}a.png`]: 'f'.repeat(64), [`${DIR}identity.json`]: '1'.repeat(64) },
+    identity: { buildDigest: digest, before: side, after: side },
+  };
+  // One workflow run id: attempt 1 deployed at 02:00, attempt 2 failed at 05:00
+  // and now owns the listing entry.
+  const run = {
+    id: 7,
+    head_sha: MERGE,
+    status: 'completed',
+    conclusion: 'failure',
+    run_attempt: 2,
+  };
+  const jobs = [
+    { name: 'deploy', conclusion: 'success', completed_at: '2026-10-31T02:00:00Z' },
+    { name: 'deploy', conclusion: 'failure', completed_at: '2026-10-31T05:00:00Z' },
+  ];
+  const read = (checks, attemptJobs = jobs) => ({
+    runs: () => ({ complete: true, items: [{ workflow_runs: [run] }] }),
+    jobs: (r) => (r.id === 7 ? attemptJobs : undefined),
+    files: () => ({
+      complete: true,
+      items: [{ files: [{ filename: 'src/games/mini-putt/game.ts' }] }],
+    }),
+    checks: () => ({ complete: true, items: [{ check_runs: checks }] }),
+    shots: () => ({ 90: retained }),
+  });
+  // Before: deployState said deploy-failed before reading jobs, so the valid
+  // live evidence was never examined. After: shipped, with the rerun reported.
+  assert.equal(
+    deployState(MERGE, [run], () => jobs),
+    'deployed-needs-sanity',
+  );
+  const [shipped] = reconcile([MERGE], read([live]));
+  assert.equal(shipped.state, 'shipped');
+  assert.deepEqual(shipped.rerun, { attempt: 2, conclusion: 'failure' });
+  // No evidence yet: still owed, never clean, rerun still reported.
+  const [owed] = reconcile([MERGE], read([]));
+  assert.equal(owed.state, 'deployed-verification-owed');
+  assert.deepEqual(owed.rerun, { attempt: 2, conclusion: 'failure' });
+  assert.deepEqual(owedMerges([owed])[0].rerun, { attempt: 2, conclusion: 'failure' });
+  // No attempt ever deployed: the failure stands.
+  const never = [{ name: 'deploy', conclusion: 'failure', completed_at: '2026-10-31T05:00:00Z' }];
+  const [failed] = reconcile([MERGE], read([live], never));
+  assert.equal(failed.state, 'deploy-failed');
+  assert.equal(failed.rerun, undefined);
+  // Unread jobs on a failed run never pass as deployed.
+  assert.equal(deployState(MERGE, [run]), 'deploy-failed');
+});
+
 test('shipped: every commit-files page counts, and an unread page owes every flow', () => {
   const infra = Array.from({ length: 300 }, (_, i) => ({ filename: `scripts/native/f${i}.mjs` }));
   const game = { filename: 'src/games/mini-putt/game.ts' };

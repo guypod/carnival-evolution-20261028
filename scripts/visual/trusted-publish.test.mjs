@@ -22,6 +22,7 @@ import {
   alreadyCaptured,
   capture,
   primitive,
+  STEP_LABEL,
   NODE_IMAGE,
   PLAYWRIGHT_IMAGE,
   checkoutProblems,
@@ -356,37 +357,90 @@ test('publishing refuses an authority without an anchor or a supported run', () 
     );
 });
 
-test('a primitive past its deadline is killed with every container it started', () => {
+const dockerUp = spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0;
+const SMALL = 'busybox:1.36';
+const haveSmall =
+  dockerUp && spawnSync('docker', ['image', 'inspect', SMALL], { stdio: 'ignore' }).status === 0;
+const running = (id) =>
+  spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', id], {
+    encoding: 'utf8',
+  }).stdout.trim();
+
+test(
+  'a hung primitive stops only its own containers; an unrelated sentinel survives',
+  { skip: !haveSmall && 'needs Docker with busybox:1.36' },
+  () => {
+    const runner = mkdtempSync(join(tmpdir(), 'runner-'));
+    mkdirSync(join(runner, 'scripts/visual'), { recursive: true });
+    // Before: every new container from the capture images was killed, so an
+    // operator's container started during the step died too. After: only the
+    // ones carrying this step's label.
+    const sentinel = spawnSync(
+      'docker',
+      ['run', '-d', '--rm', '--network', 'none', SMALL, 'sleep', '120'],
+      { encoding: 'utf8' },
+    ).stdout.trim();
+    try {
+      writeFileSync(
+        join(runner, 'scripts/visual/hang.sh'),
+        `docker run --rm --network none ${SMALL} sleep 600\n`,
+      );
+      const homes = () =>
+        readdirSync(tmpdir()).filter((n) => n.startsWith('carnival-home-')).length;
+      const h0 = homes();
+      const t0 = Date.now();
+      assert.equal(primitive(runner, 'hang.sh', [], { seconds: 3 }), 124);
+      assert.ok(Date.now() - t0 < 30_000);
+      assert.equal(running(sentinel), 'true');
+      const mine = spawnSync('docker', ['ps', '-q', '--filter', `label=${STEP_LABEL}`], {
+        encoding: 'utf8',
+      }).stdout.trim();
+      assert.equal(mine, '');
+      // A clean step succeeds and leaves no HOME behind.
+      writeFileSync(
+        join(runner, 'scripts/visual/ok.sh'),
+        `docker run --rm --network none ${SMALL} true\n`,
+      );
+      assert.equal(primitive(runner, 'ok.sh', [], { seconds: 30 }), 0);
+      assert.equal(homes(), h0);
+      assert.equal(running(sentinel), 'true');
+    } finally {
+      spawnSync('docker', ['kill', sentinel], { stdio: 'ignore' });
+      rmSync(runner, { recursive: true, force: true });
+    }
+  },
+);
+
+test('a step whose own containers cannot be listed or stopped fails closed', () => {
   const runner = mkdtempSync(join(tmpdir(), 'runner-'));
   mkdirSync(join(runner, 'scripts/visual'), { recursive: true });
-  // Before: spawnSync waited with no deadline, so a Vite config that never
-  // resolves held the writer key until the action timed out.
-  writeFileSync(join(runner, 'scripts/visual/hang.sh'), 'sleep 600\n');
-  const homes = () => readdirSync(tmpdir()).filter((n) => n.startsWith('carnival-home-')).length;
-  const h0 = homes();
-  let ps = 0;
-  const killed = [];
-  const run = (cmd, args, opts) => {
-    if (cmd === 'docker' && args[0] === 'ps') return { stdout: ps++ ? 'old\nnew\n' : 'old\n' };
-    if (cmd === 'docker' && args[0] === 'kill')
-      return (killed.push(...args.slice(1)), { status: 0 });
+  writeFileSync(join(runner, 'scripts/visual/ok.sh'), 'exit 0\n');
+  const id = 'a'.repeat(64);
+  const calls = [];
+  const fake = (ps, kill) => (cmd, args, opts) => {
+    if (cmd === 'docker') {
+      calls.push(args);
+      if (args[0] === 'ps') return ps;
+      if (args[0] === 'kill') return kill;
+    }
     return spawnSync(cmd, args, opts);
   };
-  const t0 = Date.now();
-  assert.equal(primitive(runner, 'hang.sh', [], { seconds: 1, run }), 124);
-  assert.ok(Date.now() - t0 < 15_000);
-  // Only the container that appeared during this step is stopped.
-  assert.deepEqual(killed, ['new']);
-  // The private HOME is removed after both a timeout and a success.
-  writeFileSync(join(runner, 'scripts/visual/ok.sh'), 'exit 0\n');
+  // Before: a failed `docker ps` read as "no containers".
+  assert.equal(primitive(runner, 'ok.sh', [], { run: fake({ status: 1, stdout: '' }) }), 125);
   assert.equal(
-    primitive(runner, 'ok.sh', [], {
-      seconds: 5,
-      run: (c, a, o) => (c === 'docker' ? { stdout: '' } : spawnSync(c, a, o)),
-    }),
-    0,
+    primitive(runner, 'ok.sh', [], { run: fake({ status: 0, stdout: `${id}\n` }, { status: 1 }) }),
+    125,
   );
-  assert.equal(homes(), h0);
+  // A step that left its own container running is not a clean pass.
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake({ status: 0, stdout: `${id}\n` }, { status: 0 }) }),
+    124,
+  );
+  // Every listing is scoped to a step label; no image-wide listing.
+  for (const a of calls.filter((a) => a[0] === 'ps')) {
+    assert.ok(a.some((x) => x.startsWith(`label=${STEP_LABEL}=`)));
+    assert.ok(!a.some((x) => x.startsWith('ancestor=')));
+  }
   rmSync(runner, { recursive: true, force: true });
 });
 
