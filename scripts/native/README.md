@@ -402,6 +402,55 @@ replaces a merge, the live site can no longer match that merge's build, so it
 cannot be verified any more. It is reported as `superseded-verification-owed`,
 never `shipped`, and stays listed until a person signs it off.
 
+### Trusted publisher (awaiting independent review)
+
+`scripts/visual/trusted-publish.mjs` is the premerge publisher. One
+invocation captures one registered flow on one exact candidate commit and,
+with `--publish`, reports it as the `browser-flow` check run the gate reads.
+It has no mode that publishes a directory it did not just capture.
+
+- **Pins.** The capture primitives (`isolated-deps.sh`, `isolated-build.sh`,
+  `isolated-browser.sh`, `flow.mjs`, `static-serve.mjs`) run from
+  `--runner`, a separate clean checkout that must be exactly `CAPTURE_PIN`
+  (3dbcc6d, the independently reviewed capture commit), each file matching
+  its pinned blob. The Node and Playwright images are the pinned digests,
+  their image ids are recorded, and the primitives run with a fixed
+  environment, so no `CARNIVAL_*` image override reaches them. It never
+  calls `isolated-flow.sh` or `run-flow.sh`.
+- **Flows.** The expected checks and screenshots of each flow are listed in
+  `FLOWS` in the wrapper. A flow the candidate adds stays owed until a
+  reviewed change to the wrapper registers it.
+- **Validation.** The report directory is fresh, private (0700) and never
+  seen by the build. After the browser container exits, the original
+  directory is checked without following links: only `flow.json` and the
+  expected `<flow>-<state>.png` names, each a regular file with one link,
+  within size limits, read with `O_NOFOLLOW`. The report must name the flow,
+  list exactly the expected checks, all passing, and no errors. Each PNG
+  needs a valid signature, a 1280 pixel width and its recorded sha256. Only
+  those bytes are copied to fresh private staging, which is validated again.
+- **Publishing.** `--publish` needs `--approved-wrapper <sha>` equal to the
+  wrapper checkout's own clean `HEAD`, and that commit may not be the
+  candidate. It opens the check run in progress first, re-reads the PR head,
+  commits the screenshots, `flow.json` and `provenance.json` (candidate,
+  capture runner, wrapper and image ids) to `factory-state/browser-evidence`
+  through the API, reads every file back and compares its sha256, re-reads
+  the head again, and only then concludes the check as a success with the
+  usual record plus `provenance`. Any failure concludes it as a failure, so
+  an older pass is never reused.
+- **Not live QA.** This is a loopback capture of a build. Shipping still
+  needs the separate `browser-flow-live` run on the deployed site.
+- **Status.** This wrapper has had no independent review, so nothing it
+  produced is authoritative yet. The bootstrap is for the coordinator: after
+  reviewing wrapper commit `W`, check out `W` and `CAPTURE_PIN` as two clean
+  worktrees and run, from `W`:
+  `node scripts/visual/trusted-publish.mjs --pr 449 --candidate <head>
+--flow mini-putt-hole-next --runner <CAPTURE_PIN worktree> --publish
+--approved-wrapper W`, with the factory app's token for `gh`.
+- **Limits.** Shared host kernel, Chromium's own sandbox off, and only
+  candidates with the runner's exact `package.json`, lockfile and `.npmrc`
+  (anything else stays owed). The evidence is still reported by the factory
+  app: anything holding its token could post a passing run.
+
 ## Activation and limits
 
 - The merge sweep starts no new pull request after 15 minutes; the rest are

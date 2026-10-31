@@ -69,7 +69,16 @@ credentials or anything from outside this repository's public record.
    that head. Do not substitute another
    game's flow or claim the change was played. Otherwise report every listed
    flow as `browser-flow-owed: <pr>:<flow>` with the reason "no isolated
-   runner". Dispatch holds the writer key, so it never checks out, installs,
+   runner", unless the operator has named an independently reviewed wrapper
+   commit `W` that is dispatch's own `main` checkout. Then, for each flow
+   registered in `FLOWS` in `main`'s `scripts/visual/trusted-publish.mjs`,
+   run that file from dispatch's own checkout (never the PR's) as
+   `node scripts/visual/trusted-publish.mjs --pr <pr> --candidate <head sha>
+--flow <flow> --runner <clean checkout of CAPTURE_PIN> --publish
+--approved-wrapper W`, one PR at a time, and report a non-zero exit as
+   `browser-flow-owed: <pr>:<flow>` with its last error line. A flow that
+   wrapper does not register stays owed: a PR cannot register its own flow
+   there. Dispatch holds the writer key, so it never checks out, installs,
    builds, serves or runs anything from a PR's head: not `npm ci`, not the
    PR's `scripts/visual/run-flow.sh`, Vite config, npm lifecycle scripts or
    any module they import. Clearing token variables or using a detached

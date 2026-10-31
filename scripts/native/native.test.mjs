@@ -2703,5 +2703,9 @@ test('dispatch never runs PR code while it holds the writer key', async () => {
   const step1 = skill.slice(start, skill.indexOf('\n2. ', start));
   assert.ok(start >= 0 && step1.includes('browser-flow-owed: <pr>:<flow>'));
   // No instruction to check out, install or publish from the candidate head.
-  assert.doesNotMatch(step1, /run `npm ci`|--publish|check out the PR's/);
+  assert.doesNotMatch(step1, /run `npm ci`|run-flow\.sh[^\n]*--publish|check out the PR's/);
+  // Publishing goes only through the reviewed wrapper from dispatch's own checkout.
+  for (const m of step1.matchAll(/--publish/g))
+    assert.match(step1.slice(m.index, m.index + 40), /--approved-wrapper W/);
+  assert.match(step1, /from dispatch's own checkout \(never the PR's\)/);
 });
