@@ -1,0 +1,446 @@
+{
+  "name": "ws-01a163fa71c4754eb74e01d925aab797/carnival-evolution-20261028",
+  "mode": "vendored",
+  "dependencies": {},
+  "actions": {
+    "implement-github-issue": {
+      "skill": "tessl-labs/factory@0.6.0#implement-github-issue",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "15m",
+      "instructions": "Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "shepherd": {
+      "skill": "tessl-labs/factory@0.6.0#shepherd",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "10m",
+      "instructions": "Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "follow-ticket-changes": {
+      "skill": "tessl-labs/factory@0.6.0#follow-ticket-changes",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "5m"
+    },
+    "test-health": {
+      "skill": "file:tessl-factory#test-health",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "15m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "visual-repair": {
+      "skill": "file:tessl-factory#visual-repair",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "30m",
+      "instructions": "Before creating or editing a pull request description, read docs/pr-writing.md and apply its cold-reader pass. This changes presentation only; preserve required evidence, markers, scope and all existing checks.",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "review-lens-improvement": {
+      "skill": "file:tessl-factory#review-lens-improvement",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "20m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    },
+    "native-intake": {
+      "skill": "file:tessl-factory#native-intake",
+      "environment": "carnival-evolution-20261028-factory",
+      "agent": "claude-code",
+      "model": "claude-opus-5-5",
+      "timeout": "30m",
+      "concurrency": { "keys": [{ "key": "carnival-app-writer", "limit": 1 }], "mode": "queue" }
+    }
+  },
+  "triggers": {
+    "github-issue-labelled": {
+      "on": [
+        "github:issues.labeled"
+      ],
+      "when": {
+        "event.label.name": "tessl",
+        "event.sender.type": "User",
+        "event.sender.id": 1106394,
+        "event.issue.state": "open",
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "keys": [
+          {
+            "key": "implement:{{ event.repository.id }}#{{ event.issue.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "implement-github-issue"
+    },
+    "native-bot-backlog-labelled": {
+      "description": "The Tessl app's own tessl label on its own open auto backlog issue in this repository runs the deterministic admission check, which alone may hand the issue to implement-github-issue",
+      "on": ["github:issues.labeled"],
+      "when": {
+        "event.label.name": "tessl",
+        "event.sender.type": "Bot",
+        "event.sender.id": 295179765,
+        "event.sender.login": "tessl-app[bot]",
+        "event.issue.user.type": "Bot",
+        "event.issue.user.id": 295179765,
+        "event.issue.state": "open",
+        "event.issue.pull_request": { "exists": false },
+        "event.issue.labels.*.name": { "any": { "equals": "auto backlog" } },
+        "event.repository.id": 1437265009,
+        "event.repository.full_name": "guypod/carnival-evolution-20261028",
+        "event.repository.fork": false
+      },
+      "concurrency": {
+        "keys": [{ "key": "native-admit:{{ event.repository.id }}#{{ event.issue.number }}", "limit": 1 }]
+      },
+      "action": { "use": "native-intake", "inputs": { "MODE": "admit" } }
+    },
+    "shepherd-pr-review": {
+      "on": [
+        "github:pull_request_review.submitted"
+      ],
+      "when": {
+        "event.pull_request.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.pull_request.head.ref": {
+          "matches": "^tessl/"
+        },
+        "event.pull_request.head.repo.id": 1437265009,
+        "event.pull_request.state": "open",
+        "event.sender.id": 1106394,
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "debounce": "90s",
+        "keys": [
+          {
+            "key": "shepherd:{{ event.pull_request.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "shepherd"
+    },
+    "shepherd-pr-review-comment": {
+      "on": [
+        "github:pull_request_review_comment.created"
+      ],
+      "when": {
+        "event.pull_request.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.pull_request.head.ref": {
+          "matches": "^tessl/"
+        },
+        "event.pull_request.head.repo.id": 1437265009,
+        "event.pull_request.state": "open",
+        "event.sender.id": 1106394,
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "debounce": "90s",
+        "keys": [
+          {
+            "key": "shepherd:{{ event.pull_request.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "shepherd"
+    },
+    "shepherd-pr-comment": {
+      "on": [
+        "github:issue_comment.created"
+      ],
+      "when": {
+        "isPullRequest": "true",
+        "event.issue.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.issue.state": "open",
+        "event.sender.id": 1106394,
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "debounce": "90s",
+        "keys": [
+          {
+            "key": "shepherd:{{ event.issue.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "shepherd"
+    },
+    "shepherd-checks-failed": {
+      "on": [
+        "github:check_run.completed"
+      ],
+      "when": {
+        "event.check_run.pull_requests.0.number": {
+          "exists": true
+        },
+        "event.check_run.pull_requests.0.head.repo.id": 1437265009,
+        "event.check_run.check_suite.head_branch": {
+          "matches": "^tessl/"
+        },
+        "event.check_run.conclusion": {
+          "in": [
+            "failure",
+            "timed_out",
+            "startup_failure",
+            "action_required"
+          ]
+        },
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "debounce": "90s",
+        "keys": [
+          {
+            "key": "shepherd:{{ event.check_run.pull_requests.0.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "shepherd"
+    },
+    "shepherd-checks-passed": {
+      "on": [
+        "github:check_suite.completed"
+      ],
+      "when": {
+        "event.check_suite.pull_requests.0.number": {
+          "exists": true
+        },
+        "event.check_suite.pull_requests.0.head.repo.id": 1437265009,
+        "event.check_suite.head_branch": {
+          "matches": "^tessl/"
+        },
+        "event.check_suite.conclusion": "success",
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "debounce": "90s",
+        "keys": [
+          {
+            "key": "shepherd:{{ event.check_suite.pull_requests.0.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "shepherd"
+    },
+    "shepherd-pr-review-by-reviewer": {
+      "on": [
+        "github:pull_request_review.submitted"
+      ],
+      "when": {
+        "event.pull_request.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.pull_request.head.ref": {
+          "matches": "^tessl/"
+        },
+        "event.pull_request.head.repo.id": 1437265009,
+        "event.pull_request.state": "open",
+        "event.sender.id": 325629464,
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "debounce": "90s",
+        "keys": [
+          {
+            "key": "shepherd:{{ event.pull_request.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": "shepherd"
+    },
+    "follow-ticket-changes-pr-closed": {
+      "on": [
+        "github:pull_request.closed"
+      ],
+      "when": {
+        "event.pull_request.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.pull_request.head.ref": {
+          "matches": "^tessl/"
+        },
+        "event.sender.id": 1106394,
+        "event.pull_request.head.repo.id": 1437265009,
+        "event.repository.id": 1437265009,
+        "event.pull_request.state": "closed"
+      },
+      "concurrency": {
+        "keys": [
+          {
+            "key": "follow-ticket-changes:{{ event.repository.id }}#{{ event.pull_request.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": {
+        "use": "follow-ticket-changes",
+        "inputs": {
+          "TICKET_CHANGE": "pr-closed"
+        }
+      }
+    },
+    "follow-ticket-changes-github-taken-back": {
+      "on": [
+        "github:issues.unlabeled"
+      ],
+      "when": {
+        "event.label.name": "tessl",
+        "event.sender.id": 1106394,
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "keys": [
+          {
+            "key": "follow-ticket-changes:{{ event.repository.id }}#{{ event.issue.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": {
+        "use": "follow-ticket-changes",
+        "inputs": {
+          "TICKET_CHANGE": "taken-back"
+        }
+      }
+    },
+    "follow-ticket-changes-github-ended": {
+      "on": [
+        "github:issues.closed"
+      ],
+      "when": {
+        "event.issue.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.sender.id": 1106394,
+        "event.repository.id": 1437265009,
+        "event.issue.state": "closed"
+      },
+      "concurrency": {
+        "keys": [
+          {
+            "key": "follow-ticket-changes:{{ event.repository.id }}#{{ event.issue.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": {
+        "use": "follow-ticket-changes",
+        "inputs": {
+          "TICKET_CHANGE": "issue-ended"
+        }
+      }
+    },
+    "follow-ticket-changes-github-replied": {
+      "on": [
+        "github:issue_comment.created"
+      ],
+      "when": {
+        "isPullRequest": "false",
+        "event.issue.state": "open",
+        "event.issue.labels.*.name": {
+          "any": {
+            "equals": "tessl"
+          }
+        },
+        "event.sender.id": 1106394,
+        "event.repository.id": 1437265009
+      },
+      "concurrency": {
+        "keys": [
+          {
+            "key": "implement:{{ event.repository.id }}#{{ event.issue.number }}",
+            "limit": 1
+          }
+        ]
+      },
+      "action": {
+        "use": "follow-ticket-changes",
+        "inputs": {
+          "TICKET_CHANGE": "replied"
+        }
+      }
+    }
+  },
+  "schedules": {
+    "test-health-weekly": {
+      "cron": "0 9 * * 1",
+      "description": "Weekly test health check: file an issue for each test that cannot fail",
+      "action": "test-health"
+    },
+    "visual-repair-six-hourly": {
+      "cron": "17 */6 * * *",
+      "description": "Every six hours: render screens changed since the last good visual review and repair the worst one in one draft PR",
+      "action": "visual-repair"
+    },
+    "review-lens-improvement-six-hourly": {
+      "cron": "40 5,11,17,23 * * *",
+      "timezone": "Europe/London",
+      "description": "Twenty minutes before each six-hour London block ends: propose evidence-based review lens improvements to the fallback ledger",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "lens-tuning" } }
+    },
+    "review-feedback-learning-daily": {
+      "cron": "10 5 * * *",
+      "timezone": "Europe/London",
+      "description": "Daily at 05:10 London: propose improvements from review feedback that was accepted or declined",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "review-feedback" } }
+    },
+    "run-learning-daily": {
+      "cron": "20 5 * * *",
+      "timezone": "Europe/London",
+      "description": "Daily at 05:20 London: propose improvements from factory run friction, failures and no-op causes",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "run-learning" } }
+    },
+    "instruction-tidy-weekly": {
+      "cron": "30 5 * * 1",
+      "timezone": "Europe/London",
+      "description": "Mondays at 05:30 London: propose replacing AGENTS.md guidance with tests, lint or area-scoped instructions",
+      "action": { "use": "review-lens-improvement", "inputs": { "LEARNER": "instruction-tidy" } }
+    },
+    "native-backlog-six-hourly": {
+      "cron": "0 0,6,12,18 * * *",
+      "timezone": "Europe/London",
+      "description": "At 00:00, 06:00, 12:00 and 18:00 London: file exactly 18 distinct enhancement issues labelled auto backlog, never tessl",
+      "action": { "use": "native-intake", "inputs": { "MODE": "backlog" } }
+    },
+    "native-dispatch-twenty-minutes": {
+      "cron": "*/20 * * * *",
+      "timezone": "Europe/London",
+      "description": "Every 20 minutes London: merge Tessl PRs that pass the evolution gate on their exact head, then hand one eligible backlog issue to Tessl",
+      "action": { "use": "native-intake", "inputs": { "MODE": "dispatch" } }
+    }
+  }
+}
