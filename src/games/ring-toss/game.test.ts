@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AIM_TOP,
+  CONTROLS_HINT,
   FLIGHT_TIME,
   PLAYFIELD_TOP,
   GOLDEN_MULTIPLIER,
@@ -199,5 +200,13 @@ describe('ring toss', () => {
     steerAim(aim, 0, -1, 10);
     expect(aim.y).toBe(AIM_TOP);
     expect(AIM_TOP).toBeLessThanOrEqual(SHELVES[0].y - RINGER_RADIUS);
+  });
+});
+
+describe('controls hint', () => {
+  it('names the pointer, the arrow keys and Space', () => {
+    expect(CONTROLS_HINT).toMatch(/mouse/);
+    expect(CONTROLS_HINT).toMatch(/arrow keys/);
+    expect(CONTROLS_HINT).toMatch(/Click, tap or press Space to throw/);
   });
 });

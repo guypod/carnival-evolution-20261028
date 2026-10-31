@@ -14,6 +14,9 @@ export const AIM_SPEED = 360;
 export const PLAYFIELD_TOP = 72;
 /** The highest a ring can land: a whole ring's width below the playfield's top edge. */
 export const AIM_TOP = PLAYFIELD_TOP + RINGER_RADIUS;
+/** The controls line drawn under the bottom shelf during a round. */
+export const CONTROLS_HINT =
+  'Aim with the mouse or arrow keys. Click, tap or press Space to throw.';
 
 export const SHELVES = [
   { y: 120, speed: 150, points: 30 },
@@ -206,6 +209,10 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
   ctx.fillStyle = colors.text;
   ctx.textAlign = 'center';
   ctx.fillText('Lead moving bottles by half a second. Gold bottles score double.', WIDTH / 2, 62);
+  if (state.phase === 'playing') {
+    // Below the bottom shelf and above the thrower, so it covers no bottle.
+    ctx.fillText(CONTROLS_HINT, WIDTH / 2, THROWER.y - 30);
+  }
 
   for (const bottle of state.bottles) {
     // The scoring zone: land the ring's centre inside it.
