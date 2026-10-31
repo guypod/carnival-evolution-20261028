@@ -986,6 +986,7 @@ test('a batch slot that is malformed, unscheduled or in the future is refused', 
     'backlog-2026-10-31T03',
     'dispatch-2026-10-31T0000',
     'backlog-2026-10-31T12',
+    'backlog-2026-02-30T00',
   ])
     assert.ok(readBatch({ slot, candidates: candidates(18) }, now).error, String(slot));
 });

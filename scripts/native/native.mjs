@@ -185,6 +185,9 @@ export function readBatch(json, now) {
   if (typeof slot !== 'string' || !SLOT_RE.test(slot))
     return { error: 'batch slot is not a scheduled backlog slot' };
   if (slot > current) return { error: `batch slot ${slot} is later than ${current}` };
+  const [, date] = SLOT_RE.exec(slot);
+  if (new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date)
+    return { error: `batch slot ${slot} is not a calendar date` };
   return { slot, candidates: json.candidates };
 }
 
@@ -767,7 +770,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         // The merge may have landed without its response: read the PR back.
         try {
           const pr = JSON.parse(gh(['api', `${base}/pulls/${n}`]));
-          if (pr.merged) return { merged: true, sha: pr.merge_commit_sha };
+          if (pr.merged && pr.head?.sha === sha) return { merged: true, sha: pr.merge_commit_sha };
           if (pr.head?.sha === sha && pr.state === 'open') return { merged: false, message };
         } catch {
           // fall through: unknown
