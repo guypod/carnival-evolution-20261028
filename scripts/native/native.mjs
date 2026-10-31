@@ -1749,8 +1749,10 @@ export function deployState(mergeSha, pagesRuns, jobsOf = () => undefined) {
   if (run.conclusion !== 'success') return 'deploy-failed';
   const jobs = jobsOf(run);
   if (!jobs) return 'deploy-unknown';
-  const job = jobs.find((j) => j.name === 'deploy');
-  return job?.conclusion === 'success' ? 'deployed-needs-sanity' : 'merged-not-deployed';
+  // Jobs span every attempt: any deploy job that succeeded deployed.
+  return jobs.some((j) => j?.name === 'deploy' && j?.conclusion === 'success')
+    ? 'deployed-needs-sanity'
+    : 'merged-not-deployed';
 }
 
 /** The check run, on the merge commit, that records a flow played on the live site. */
@@ -1845,30 +1847,91 @@ export function shipState(mergeSha, deploy, files, checks, ctx = {}) {
 
 /**
  * When the merge's deploy finished, and the newest later commit whose Pages
- * run also deployed: { deployedAt, supersededBy }. Only a run whose deploy
- * job itself succeeded counts: a successful workflow with that job skipped
- * deployed nothing. Any successful run whose jobs could not be read leaves
- * the history incomplete: { incomplete: true }, and the merge stays owed.
+ * run also deployed: { deployedAt, supersededBy }. `jobsOf(run)` returns the
+ * jobs of every attempt of that run (a rerun replaces the run's listing entry
+ * but each attempt keeps its own jobs). Only a deploy job that itself
+ * succeeded counts, timed by its own completed_at, so the first successful
+ * deploy survives later reruns and a failed or skipped deploy never counts.
+ * A run whose job history could not be read leaves the history incomplete:
+ * { incomplete: true }, and the merge stays owed.
  */
 export function deployContext(mergeSha, pagesRuns, jobsOf = () => undefined) {
-  const ok = (pagesRuns ?? []).filter(
-    (r) => r.status === 'completed' && r.conclusion === 'success',
+  // A rerun can end in failure after an earlier attempt deployed.
+  const ran = (pagesRuns ?? []).filter(
+    (r) => r.status === 'completed' && (r.conclusion === 'success' || r.run_attempt > 1),
   );
   const done = [];
-  for (const r of ok) {
+  for (const r of ran) {
     const jobs = jobsOf(r);
     if (!Array.isArray(jobs)) return { incomplete: true };
-    if (jobs.some((j) => j?.name === 'deploy' && j?.conclusion === 'success')) done.push(r);
+    for (const j of jobs)
+      if (
+        j?.name === 'deploy' &&
+        j?.conclusion === 'success' &&
+        !Number.isNaN(Date.parse(j.completed_at))
+      )
+        done.push({ sha: r.head_sha, at: j.completed_at });
   }
-  // The first successful deploy: a rerun must not strand earlier captures.
-  const own = done
-    .filter((r) => r.head_sha === mergeSha)
-    .sort((a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at))[0];
+  const t = (d) => Date.parse(d.at);
+  const own = done.filter((d) => d.sha === mergeSha).sort((a, b) => t(a) - t(b))[0];
   if (!own) return {};
   const later = done
-    .filter((r) => r.head_sha !== mergeSha && Date.parse(r.updated_at) > Date.parse(own.updated_at))
-    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
-  return { deployedAt: own.updated_at, supersededBy: later?.head_sha };
+    .filter((d) => d.sha !== mergeSha && t(d) > t(own))
+    .sort((a, b) => t(b) - t(a))[0];
+  return { deployedAt: own.at, supersededBy: later?.sha };
+}
+
+/**
+ * The commit-files listing as { complete, items }: every page of
+ * GET /commits/<sha>, never the first alone. GitHub stops at 3000 files, so
+ * a listing that reaches that cap, or any unread page, is incomplete and owes
+ * every flow.
+ */
+export function commitFiles(listing) {
+  if (!listing?.complete) return { complete: false, items: [] };
+  const items = (listing.items ?? []).flatMap((c) => c?.files ?? []);
+  return { complete: items.length < 3000, items };
+}
+
+/** Most merges a single owed sweep reconciles; older ones stay listed as unread. */
+export const OWED_BUDGET = 60;
+
+/**
+ * Reconciles merges against the deploy history: [{ sha, deploy, state, owed }].
+ * `read` is { runs(), jobs(run), files(sha), checks(sha), shots(items, sha) }.
+ * The Pages history is listed once and each run's jobs are read once, however
+ * many merges are reconciled, so a sweep costs O(merges + runs), never
+ * O(merges x runs). Merges past `budget` are not read this sweep and stay
+ * owed as `verification-unread`, so no obligation is dropped and dispatch is
+ * never held behind an unbounded history.
+ */
+export function reconcile(shas, read, budget = Infinity) {
+  const runs = read.runs();
+  if (!runs.complete)
+    return shas.map((sha) => ({ sha, state: 'unknown', owed: ['runs listing incomplete'] }));
+  const list = runs.items.flatMap((p) => p.workflow_runs ?? p);
+  const jobCache = new Map();
+  const jobsOf = (run) => {
+    if (!jobCache.has(run.id)) jobCache.set(run.id, read.jobs(run));
+    return jobCache.get(run.id);
+  };
+  return shas.map((sha, i) => {
+    if (i >= budget)
+      return { sha, state: 'verification-unread', owed: ['not reconciled this sweep'] };
+    const deploy = deployState(sha, list, jobsOf);
+    const files = commitFiles(read.files(sha));
+    const checks = read.checks(sha);
+    const items = checks.items.flatMap((p) => p.check_runs ?? p);
+    if (!checks.complete)
+      return {
+        sha,
+        deploy,
+        state: deploy === 'deployed-needs-sanity' ? 'deployed-verification-owed' : deploy,
+        owed: ['check listing incomplete'],
+      };
+    const ctx = { ...deployContext(sha, list, jobsOf), shots: read.shots(items, sha) };
+    return { sha, deploy, ...shipState(sha, deploy, files, items, ctx) };
+  });
 }
 
 /**
@@ -1906,6 +1969,27 @@ function pages(path) {
   } catch {
     return { items: [], complete: false };
   }
+}
+
+/** The GitHub reads `reconcile` needs. Jobs are read for every attempt of a run. */
+function liveReader() {
+  return {
+    runs: () => pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`),
+    jobs: (run) => {
+      const out = [];
+      for (let n = 1; n <= Math.max(1, Number(run.run_attempt) || 1); n++) {
+        const jobs = pages(
+          `repos/${REPOSITORY}/actions/runs/${run.id}/attempts/${n}/jobs?per_page=100`,
+        );
+        if (!jobs.complete) return undefined;
+        out.push(...jobs.items.flatMap((p) => p.jobs ?? p));
+      }
+      return out;
+    },
+    files: (sha) => pages(`repos/${REPOSITORY}/commits/${sha}?per_page=100`),
+    checks: (sha) => pages(`repos/${REPOSITORY}/commits/${sha}/check-runs?filter=all&per_page=100`),
+    shots: (items, sha) => retainedShots(items, sha, LIVE_CHECK),
+  };
 }
 
 /**
@@ -2311,7 +2395,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   } else if (command === 'authority') {
     // Read-only: whether the operator's authority record is installed and valid.
-    const a = trustedAuthority({ events: triggerEvents() });
+    // `authority <pr>` evaluates the same PR-specific route the publisher uses.
+    const a = trustedAuthority({ pr: arg, events: triggerEvents() });
     print({ path: `${a.anchor ?? '<no anchor>'}:${AUTHORITY_PATH}`, ...a });
   } else if (command === 'flows') {
     // The flows a pull request's head needs, and what no flow covers yet.
@@ -2328,59 +2413,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
     if (!commits.complete) print({ status: 'unknown', reason: 'commit listing incomplete' });
     else {
-      const merges = [];
-      for (const c of commits.items.flat().reverse()) {
-        const out = execFileSync(
-          process.execPath,
-          [new URL(import.meta.url).pathname, 'deploy', c.sha],
-          {
-            encoding: 'utf8',
-          },
-        );
-        merges.push({ sha: c.sha, ...JSON.parse(out) });
-      }
-      print(owedMerges(merges));
+      // Newest first, so the budget reaches recent merges; older ones stay owed.
+      const shas = commits.items.flat().map((c) => c.sha);
+      print(owedMerges(reconcile(shas, liveReader(), OWED_BUDGET)).reverse());
     }
   } else if (command === 'deploy') {
-    const runs = pages(`repos/${REPOSITORY}/actions/workflows/pages.yml/runs?per_page=50`);
-    if (!runs.complete) print({ status: 'unknown', reason: 'runs listing incomplete' });
-    else {
-      const jobsOf = (run) => {
-        const jobs = pages(`repos/${REPOSITORY}/actions/runs/${run.id}/jobs?per_page=100`);
-        return jobs.complete ? jobs.items.flatMap((p) => p.jobs ?? p) : undefined;
-      };
-      const deploy = deployState(
-        arg,
-        runs.items.flatMap((p) => p.workflow_runs ?? p),
-        jobsOf,
-      );
-      // The merge commit's own file list: the commits API stops at 300 files,
-      // so a full page counts as incomplete and owes every flow.
-      let files = { complete: false, items: [] };
-      try {
-        const c = JSON.parse(gh(['api', `repos/${REPOSITORY}/commits/${arg}`]));
-        files = { complete: (c.files ?? []).length < 300, items: c.files ?? [] };
-      } catch {
-        // stays incomplete
-      }
-      const checks = pages(`repos/${REPOSITORY}/commits/${arg}/check-runs?filter=all&per_page=100`);
-      const items = checks.items.flatMap((p) => p.check_runs ?? p);
-      const ctx = {
-        ...deployContext(
-          arg,
-          runs.items.flatMap((p) => p.workflow_runs ?? p),
-          jobsOf,
-        ),
-        shots: checks.complete ? retainedShots(items, arg, LIVE_CHECK) : {},
-      };
-      const live = checks.complete
-        ? shipState(arg, deploy, files, items, ctx)
-        : {
-            state: deploy === 'deployed-needs-sanity' ? 'deployed-verification-owed' : deploy,
-            owed: ['check listing incomplete'],
-          };
-      print({ sha: arg, deploy, ...live });
-    }
+    const [r] = reconcile([arg], liveReader());
+    print(r);
   } else {
     console.error(
       'usage: native.mjs slot | backlog <file> | dispatch | admit <events> | merge | flows <pr> | deploy <sha> | owed',

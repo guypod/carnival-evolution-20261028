@@ -32,6 +32,8 @@ import {
   changedFiles,
   shipState,
   deployContext,
+  commitFiles,
+  reconcile,
   liveDir,
   LIVE_URL,
   owedMerges,
@@ -2609,58 +2611,65 @@ test('shipped: a deploy alone, premerge evidence or a bare live pass never ships
   assert.deepEqual(ship([], ctx, changed('scripts/native/x.mjs')), { state: 'shipped', owed: [] });
 });
 
-test('shipped: deploy context and the owed ledger keep older gaps', () => {
+test('shipped: deploy context times the first successful deploy job across reruns', () => {
+  const job = (conclusion, completed_at) => ({ name: 'deploy', conclusion, completed_at });
+  // One workflow run per commit. b's run 2 was rerun: GitHub replaced its
+  // listing entry (updated_at 05:00, run_attempt 2); attempt 1 had deployed at 02:00.
   const runs = [
+    { id: 1, head_sha: 'a', status: 'completed', conclusion: 'success', run_attempt: 1 },
     {
-      head_sha: 'a',
-      status: 'completed',
-      conclusion: 'success',
-      updated_at: '2026-10-31T01:00:00Z',
-    },
-    {
+      id: 2,
       head_sha: 'b',
       status: 'completed',
       conclusion: 'success',
-      updated_at: '2026-10-31T02:00:00Z',
+      run_attempt: 2,
+      updated_at: '2026-10-31T05:00:00Z',
     },
-    {
-      head_sha: 'c',
-      status: 'completed',
-      conclusion: 'failure',
-      updated_at: '2026-10-31T03:00:00Z',
-    },
+    { id: 3, head_sha: 'c', status: 'completed', conclusion: 'failure', run_attempt: 1 },
   ];
-  const deployed = () => [{ name: 'deploy', conclusion: 'success' }];
-  assert.deepEqual(deployContext('a', runs, deployed), {
-    deployedAt: '2026-10-31T01:00:00Z',
-    supersededBy: 'b',
-  });
-  assert.deepEqual(deployContext('b', runs, deployed), {
+  const attempts = {
+    1: [job('success', '2026-10-31T01:00:00Z')],
+    2: [job('success', '2026-10-31T02:00:00Z'), job('success', '2026-10-31T05:00:00Z')],
+    3: [job('failure', '2026-10-31T06:00:00Z')],
+  };
+  const jobsOf = (r) => attempts[r.id];
+  // Before: the listing's updated_at (05:00) was taken as b's deploy time, so
+  // a valid capture at 03:00 was rejected. After: the first deploy job, 02:00.
+  assert.deepEqual(deployContext('b', runs, jobsOf), {
     deployedAt: '2026-10-31T02:00:00Z',
     supersededBy: undefined,
   });
-  assert.deepEqual(deployContext('z', runs, deployed), {});
-  // A rerun of an earlier deploy does not move the deploy time later.
-  const rerun = [...runs, { ...runs[1], updated_at: '2026-10-31T05:00:00Z' }];
-  assert.equal(deployContext('b', rerun, deployed).deployedAt, '2026-10-31T02:00:00Z');
-  // A successful workflow whose deploy job was skipped deployed nothing: it
-  // neither starts the merge's deploy time nor supersedes it.
-  const skipped = (r) =>
-    r.updated_at === '2026-10-31T02:00:00Z'
-      ? [{ name: 'deploy', conclusion: 'skipped' }]
-      : deployed();
-  assert.deepEqual(deployContext('a', runs, skipped), {
+  assert.deepEqual(deployContext('a', runs, jobsOf), {
     deployedAt: '2026-10-31T01:00:00Z',
-    supersededBy: undefined,
+    supersededBy: 'b',
   });
-  // Mixed history: b skipped at 02:00, then really deployed on a rerun at 05:00.
-  assert.equal(deployContext('b', rerun, skipped).deployedAt, '2026-10-31T05:00:00Z');
-  assert.equal(deployContext('a', rerun, skipped).supersededBy, 'b');
-  // Unknown or unread job history stays owed, never a deploy time.
+  // A failed deploy never counts, not even as a superseding deploy.
+  assert.deepEqual(deployContext('c', runs, jobsOf), {});
+  // Skipped first attempt, real deploy on the rerun: the rerun's job time.
+  const skipFirst = {
+    ...attempts,
+    2: [job('skipped', '2026-10-31T02:00:00Z'), job('success', '2026-10-31T05:00:00Z')],
+  };
+  assert.equal(deployContext('b', runs, (r) => skipFirst[r.id]).deployedAt, '2026-10-31T05:00:00Z');
+  // A failed rerun after a real deploy keeps the deploy time from attempt 1.
+  const failedRerun = [runs[0], { ...runs[1], conclusion: 'failure' }];
+  const fr = {
+    1: attempts[1],
+    2: [job('success', '2026-10-31T02:00:00Z'), job('failure', '2026-10-31T05:00:00Z')],
+  };
+  assert.equal(deployContext('b', failedRerun, (r) => fr[r.id]).deployedAt, '2026-10-31T02:00:00Z');
+  // A skipped-only history deploys nothing.
+  assert.deepEqual(
+    deployContext('a', [runs[0]], () => [job('skipped', '2026-10-31T01:00:00Z')]),
+    {},
+  );
+  // Unread job history stays owed.
   assert.deepEqual(deployContext('a', runs), { incomplete: true });
   assert.deepEqual(
-    deployContext('a', runs, (r) => (r.head_sha === 'b' ? undefined : deployed())),
-    { incomplete: true },
+    deployContext('a', runs, (r) => (r.id === 2 ? undefined : attempts[r.id])),
+    {
+      incomplete: true,
+    },
   );
   const merges = [
     { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
@@ -2671,6 +2680,76 @@ test('shipped: deploy context and the owed ledger keep older gaps', () => {
     { sha: 'a', state: 'superseded-verification-owed', owed: ['x'], keys: ['a:f'] },
     { sha: 'c', state: 'deploy-failed', owed: [], keys: [] },
   ]);
+});
+
+test('shipped: every commit-files page counts, and an unread page owes every flow', () => {
+  const infra = Array.from({ length: 300 }, (_, i) => ({ filename: `scripts/native/f${i}.mjs` }));
+  const game = { filename: 'src/games/mini-putt/game.ts' };
+  // Before: only page one (300 infra paths) was read and called complete when
+  // under 300, so a default 30-file page of infra alone looked exempt.
+  const firstOnly = { complete: true, items: [{ files: infra.slice(0, 30) }] };
+  assert.equal(needsBrowserEvidence(commitFiles(firstOnly)), false);
+  // After: the later page's game is seen and its flow is required.
+  const all = commitFiles({ complete: true, items: [{ files: infra }, { files: [game] }] });
+  assert.equal(all.complete, true);
+  assert.equal(needsBrowserEvidence(all), true);
+  assert.deepEqual(requiredFlows(all).flows, ['mini-putt-hole-next']);
+  // An unread page, or the 3000-file cap, owes everything.
+  assert.equal(commitFiles({ complete: false, items: [{ files: infra }] }).complete, false);
+  assert.equal(needsBrowserEvidence(commitFiles({ complete: false, items: [] })), true);
+  const cap = Array.from({ length: 3000 }, (_, i) => ({ filename: `docs/f${i}.md` }));
+  assert.equal(commitFiles({ complete: true, items: [{ files: cap }] }).complete, false);
+});
+
+test('owed: one deploy-history read per sweep, jobs cached per run, bounded merges', () => {
+  const C = 100;
+  const R = 100;
+  const shas = Array.from({ length: C }, (_, i) => `m${i}`);
+  const runs = shas.slice(0, R).map((sha, i) => ({
+    id: i,
+    head_sha: sha,
+    status: 'completed',
+    conclusion: 'success',
+    run_attempt: 1,
+  }));
+  const calls = { runs: 0, jobs: 0, files: 0, checks: 0 };
+  const read = {
+    runs: () => (calls.runs++, { complete: true, items: [{ workflow_runs: runs }] }),
+    jobs: (r) => (
+      calls.jobs++,
+      [
+        {
+          name: 'deploy',
+          conclusion: 'success',
+          completed_at: `2026-10-31T01:${String(r.id % 60).padStart(2, '0')}:00Z`,
+        },
+      ]
+    ),
+    files: () => (
+      calls.files++,
+      { complete: true, items: [{ files: [{ filename: 'src/games/mini-putt/game.ts' }] }] }
+    ),
+    checks: () => (calls.checks++, { complete: true, items: [] }),
+    shots: () => ({}),
+  };
+  const out = reconcile(shas, read);
+  // Before: each merge listed the history and reread every run's jobs, C x R = 10,000.
+  assert.equal(calls.runs, 1);
+  assert.equal(calls.jobs, R);
+  assert.equal(calls.files + calls.checks, 2 * C);
+  assert.equal(out.length, C);
+  assert.ok(out.every((m) => m.state !== 'shipped'));
+  // A budget bounds the work without dropping any obligation.
+  for (const k of Object.keys(calls)) calls[k] = 0;
+  const bounded = reconcile(shas, read, 10);
+  assert.equal(bounded.length, C);
+  assert.equal(calls.files, 10);
+  assert.equal(bounded.filter((m) => m.state === 'verification-unread').length, C - 10);
+  assert.equal(owedMerges(bounded).length, C);
+  // Unread deploy history keeps every merge owed.
+  const unread = reconcile(shas, { ...read, runs: () => ({ complete: false, items: [] }) });
+  assert.ok(unread.every((m) => m.state === 'unknown' && m.owed.length));
+  assert.equal(owedMerges(unread).length, C);
 });
 
 test('live identity: only a byte-for-byte match of the merge build counts', async () => {
