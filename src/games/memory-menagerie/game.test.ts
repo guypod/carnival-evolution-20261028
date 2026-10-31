@@ -16,6 +16,7 @@ import {
   deal,
   finalScore,
   forecastScore,
+  foundSymbols,
   lastTryText,
   pairsLeft,
   flip,
@@ -446,6 +447,40 @@ describe('peek', () => {
     expect(onPeekButton(theme.canvas.width / 2, 60)).toBe(true);
     expect(onPeekButton(10, 60)).toBe(false);
     expect(cardAt(theme.canvas.width / 2, 60)).toBeUndefined();
+  });
+});
+
+describe('found tray', () => {
+  it('starts empty and adds each animal once its pair is found', () => {
+    const state = playing();
+    expect(foundSymbols(state)).toEqual([]);
+    const pairs = pairsOf(state);
+    flip(state, pairs[3][0]);
+    expect(foundSymbols(state)).toEqual([]);
+    flip(state, pairs[3][1]);
+    expect(foundSymbols(state)).toEqual([3]);
+    flip(state, pairs[1][0]);
+    flip(state, pairs[1][1]);
+    expect(foundSymbols(state)).toEqual([1, 3]);
+  });
+
+  it('keeps found animals through a miss and empties for a new round', () => {
+    const state = playing();
+    const pairs = pairsOf(state);
+    flip(state, pairs[0][0]);
+    flip(state, pairs[0][1]);
+    const a = pairs[1][0];
+    flip(state, a);
+    flip(state, pairs[2][0]);
+    step(state, MISMATCH_TIME);
+    expect(foundSymbols(state)).toEqual([0]);
+    for (const [x, y] of pairs.slice(1)) {
+      flip(state, x);
+      flip(state, y);
+    }
+    expect(state.phase).toBe('over');
+    expect(foundSymbols(state)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(foundSymbols(beginRound(state))).toEqual([]);
   });
 });
 
