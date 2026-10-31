@@ -8,7 +8,10 @@ Soak the targets on the three rails before your tank runs dry.
   button, or press `1`, `2` or `3`, or the arrow keys, then click **Start** or
   press Space or Enter. Only the buttons respond on this screen, so a stray
   click neither starts the round nor fires a shot.
-- Move the mouse to aim the cannon, and click to fire a shot of water.
+- Move the mouse to aim the cannon, and click to fire a shot of water. Every
+  shot sprays a short jet from the barrel to where you aimed, so you can see
+  your aim. A shot that misses splashes where you aimed it; a hit shows its
+  points instead.
 - You have 15 shots. The game ends when the tank is empty and the last shot has landed.
 - The game over screen shows your score and the mode you played. Click it, or
   press Space or Enter, to go back to the mode selector with the same mode
@@ -70,7 +73,7 @@ Add `?shots=25` to the page URL to change the size of the tank, for example
 
 ## Files
 
-- `game.ts`: the game logic (`createState`, `fire`, `step`, `scoreForHit`,
+- `game.ts`: the game logic (`createState`, `fire`, `shotPath`, `step`, `scoreForHit`,
   `multiplierFor`, `registerHit`, `registerMiss`, `takeFinalScore`), the
   challenge modes (`MODES`, `createReadyState`, `selectMode`, `beginRound`,
   `replay`, `keyAction`, `pointerAction`) and the `waterCannon` entry the

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BARREL_LENGTH,
   CANNON,
+  JET_LIFE,
+  MISS_SPLASH_LIFE,
   MAX_MULTIPLIER,
   MODES,
   TANK_SIZE,
@@ -22,6 +25,7 @@ import {
   scoreForHit,
   selectMode,
   selectorActionAt,
+  shotPath,
   step,
   takeFinalScore,
   type Target,
@@ -188,6 +192,67 @@ describe('water cannon', () => {
     registerHit(state, target);
     const replay = createState();
     expect(replay).toMatchObject({ streak: 0, score: 0, tank: TANK_SIZE, scoreTaken: false });
+  });
+});
+
+describe('water cannon jets and miss splashes', () => {
+  it('runs the shot path from the barrel tip to the aim point', () => {
+    const path = shotPath(CANNON.x + 300, CANNON.y - 400);
+    expect(path.barrel.x).toBeCloseTo(CANNON.x + BARREL_LENGTH * 0.6);
+    expect(path.barrel.y).toBeCloseTo(CANNON.y - BARREL_LENGTH * 0.8);
+    expect(path.aim.x).toBeCloseTo(CANNON.x + 300);
+    expect(path.aim.y).toBeCloseTo(CANNON.y - 400);
+    expect(Math.hypot(path.vx, path.vy)).toBeCloseTo(700);
+    expect(path.angle).toBeCloseTo(Math.atan2(-400, 300));
+  });
+
+  it('never points the jet down or ends it inside the barrel', () => {
+    const below = shotPath(CANNON.x + 100, CANNON.y + 200);
+    expect(below.aim.y).toBeLessThan(CANNON.y);
+    expect(below.vy).toBeLessThan(0);
+    const close = shotPath(CANNON.x, CANNON.y - 10);
+    expect(close.aim).toEqual(close.barrel);
+  });
+
+  it('draws a jet on every shot for a short, fixed time', () => {
+    const state = createState();
+    fire(state, 200, 100);
+    fire(state, 600, 100);
+    expect(state.jets).toHaveLength(2);
+    expect(state.jets[0]).toMatchObject({ toX: 200, toY: 100, age: 0 });
+    step(state, JET_LIFE / 2);
+    expect(state.jets).toHaveLength(2);
+    step(state, JET_LIFE / 2);
+    expect(state.jets).toHaveLength(0);
+  });
+
+  it('splashes a miss at the aim point and leaves a hit with only its popup', () => {
+    const state = createState();
+    state.targets = [];
+    fire(state, 100, 60);
+    for (let i = 0; i < 60 && state.shots.length > 0; i++) step(state, 0.02);
+    expect(state.misses).toHaveLength(1);
+    expect(state.misses[0].x).toBeCloseTo(100);
+    expect(state.misses[0].y).toBeCloseTo(60);
+    expect(state.splashes).toHaveLength(0);
+    step(state, MISS_SPLASH_LIFE);
+    expect(state.misses).toHaveLength(0);
+
+    const hit = createState();
+    hit.targets = [{ ...target, speed: 1 }];
+    fire(hit, target.x, target.y);
+    for (let i = 0; i < 60 && hit.shots.length > 0; i++) step(hit, 0.02);
+    expect(hit.splashes).toHaveLength(1);
+    expect(hit.misses).toHaveLength(0);
+  });
+
+  it('keeps scoring the same with jets and splashes on screen', () => {
+    const still = { ...target, speed: 1 };
+    const state = createState();
+    state.targets = [still];
+    fire(state, target.x, target.y);
+    for (let i = 0; i < 60 && state.shots.length > 0; i++) step(state, 0.02);
+    expect(state.score).toBe(scoreForHit(still));
   });
 });
 
