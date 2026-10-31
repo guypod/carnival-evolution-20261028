@@ -1791,10 +1791,14 @@ test('an admitted claim with no visible run after the run grace is blocked for a
       request: 'r',
     }),
   });
+  gh.branchExists = async () => false;
+  gh.triggerImplementation = async (n, req) => gh.calls.push(['handoff', n, req]);
   const r = await dispatch(gh, DSLOT, new Date('2026-10-31T05:00:00Z'));
   assert.equal(r.status, 'blocked');
   assert.match(r.reason, /no run for r is visible/);
   assert.deepEqual(writes(gh), []);
+  // The replay rechecked every guard and refused (no events, no journal): no handoff.
+  assert.ok(!gh.calls.some((c) => c[0] === 'handoff'));
 });
 
 test('launchRuns reads every page, keeps only this repository, and fails closed on a bad page', () => {
@@ -1964,4 +1968,22 @@ test('a read failure at admission alone, with no deferral record, is retried aft
   assert.equal(r.retried?.status, 'admitted', JSON.stringify(r));
   assert.deepEqual(handoffs(gh), [['handoff', 40, OWN]]);
   assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'), 'never relabelled');
+});
+
+test('an admission whose handoff was interrupted is replayed under the same request id', async () => {
+  const gh = owedWorld();
+  gh.triggerImplementation = async () => {
+    throw new Error('killed');
+  };
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'uncertain');
+  assert.equal(readAdmissions(gh.state.comments[40]).length, 1);
+  gh.triggerImplementation = async (num, request) => gh.calls.push(['handoff', num, request]);
+  const r = await dispatch(gh, LSLOT, LATER);
+  assert.equal(r.status, 'busy', JSON.stringify(r));
+  assert.deepEqual(handoffs(gh), [['handoff', 40, OWN]]);
+  assert.equal(readAdmissions(gh.state.comments[40]).length, 1, 'no second record');
+  // Its run now shows: later dispatches replay nothing.
+  gh.state.runs.push(implRun('own-1', 'pending', { label: runLabel(OWN), issue: 40 }));
+  await dispatch(gh, LSLOT, LATER);
+  assert.equal(handoffs(gh).length, 1);
 });

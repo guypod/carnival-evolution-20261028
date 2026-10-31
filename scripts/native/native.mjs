@@ -557,6 +557,15 @@ async function awaitingRun(adapter, number, now, issue) {
     const { request } = readAdmissions([admitted])[0];
     const exec = executionState(pending, linked, request);
     if (exec.state === 'own-ended') return null;
+    // No run for its request is visible: the handoff may never have been sent.
+    // Replay the original admission, which reuses the same request id, so the
+    // platform and the entry guard still allow at most one implementation.
+    if (exec.state === 'clear') {
+      // A refusal here frees nothing: the earlier request may still be accepted
+      // but not yet visible, so the run grace below still decides.
+      const r = await admitIssue(adapter, { number, nodeId: issue?.node_id, id: issue?.id }, now);
+      if (r.status === 'uncertain') return { status: 'blocked', issue: number, retried: r };
+    }
     const age = now - new Date(admitted.created_at);
     if (Number.isNaN(age) || age < RUN_GRACE_MS) return { status: 'busy', waitingOn: number };
     return {

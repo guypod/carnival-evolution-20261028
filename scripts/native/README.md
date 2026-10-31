@@ -171,7 +171,9 @@ that runs as that app can write these records. Nothing narrower is claimed.
     frees it; the runs decide:
     - its label is the owner's: busy;
     - admitted: busy until its own run (by request id) is seen to end, then
-      the queue moves on. If no run for its request is visible 3 hours after
+      the queue moves on. While no run for its request is visible, each
+      dispatch replays the original admission, with fresh guards and the
+      same request id, in case the handoff was never sent. If no run for its request is visible 3 hours after
       the admission record, dispatch reports `blocked` for a person, and
       stays blocked, rather than calling it idle;
     - the bot's label, never admitted: busy for 90 minutes, then, with no
