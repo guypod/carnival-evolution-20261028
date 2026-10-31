@@ -20,6 +20,9 @@ import {
   dispatchSlot,
   itemMarker,
   mergeGate,
+  browserEvidence,
+  needsBrowserEvidence,
+  evidenceMarker,
   mergeOne,
   produceBacklog,
   readBatch,
@@ -580,6 +583,27 @@ const reviewerRun = (extra = {}) => ({
   conclusion: 'neutral',
   ...extra,
 });
+const SHOT = 'c'.repeat(64);
+const EVIDENCE = 'd'.repeat(40);
+const record = (extra = {}) => ({
+  head: HEAD,
+  evidenceCommit: EVIDENCE,
+  flows: [{ name: 'mini-putt hole done then Next', result: 'pass' }],
+  screenshots: [{ path: 'evidence/a/hole-done.png', sha256: SHOT }],
+  ...extra,
+});
+const browserRun = (extra = {}) => ({
+  id: 50,
+  name: 'browser-flow',
+  app: { id: BOT_APP_ID },
+  head_sha: HEAD,
+  status: 'completed',
+  conclusion: 'success',
+  output: { text: evidenceMarker(record()) },
+  ...extra,
+});
+const shots = { complete: true, digests: { 'evidence/a/hole-done.png': SHOT } };
+const appFiles = { complete: true, items: [{ filename: 'src/games/mini-putt/game.ts' }] };
 const snapshot = (extra = {}) => ({
   writerKeyHeld: true,
   pr: {
@@ -596,8 +620,10 @@ const snapshot = (extra = {}) => ({
   reviews: { complete: true, items: [review()] },
   checks: {
     complete: true,
-    items: [ci(), reviewerRun()],
+    items: [ci(), reviewerRun(), browserRun()],
   },
+  files: appFiles,
+  browserShots: shots,
   ciRuns: {
     complete: true,
     items: [{ path: '.github/workflows/ci.yml', head_sha: HEAD, check_suite_id: CI_SUITE }],
@@ -2034,4 +2060,155 @@ test('an admission whose handoff was interrupted is replayed under the same requ
   gh.state.runs.push(implRun('own-1', 'pending', { label: runLabel(OWN), issue: 40 }));
   await dispatch(gh, LSLOT, LATER);
   assert.equal(handoffs(gh).length, 1);
+});
+
+// ---------- browser-flow evidence ----------
+
+const withRun = (run) => ({
+  complete: true,
+  items: [ci(), reviewerRun(), ...(run ? [run] : [])],
+});
+refuses(
+  'app change with no browser-flow evidence',
+  snapshot({ checks: withRun() }),
+  /no browser-flow evidence on the head/,
+);
+refuses(
+  'browser-flow evidence for an older head',
+  snapshot({ checks: withRun(browserRun({ head_sha: OLD })) }),
+  /no browser-flow evidence on the head/,
+);
+refuses(
+  'browser-flow record naming another head',
+  snapshot({
+    checks: withRun(browserRun({ output: { text: evidenceMarker(record({ head: OLD })) } })),
+  }),
+  /for another head/,
+);
+refuses(
+  'failed browser-flow run',
+  snapshot({ checks: withRun(browserRun({ conclusion: 'failure' })) }),
+  /browser-flow evidence failure/,
+);
+refuses(
+  'browser-flow run still running',
+  snapshot({ checks: withRun(browserRun({ status: 'in_progress', conclusion: null })) }),
+  /still running/,
+);
+refuses(
+  'a flow that did not pass',
+  snapshot({
+    checks: withRun(
+      browserRun({
+        output: { text: evidenceMarker(record({ flows: [{ name: 'next', result: 'fail' }] })) },
+      }),
+    ),
+  }),
+  /browser flow next did not pass/,
+);
+refuses(
+  'a record with no flows',
+  snapshot({
+    checks: withRun(browserRun({ output: { text: evidenceMarker(record({ flows: [] })) } })),
+  }),
+  /names no flow/,
+);
+refuses(
+  'a record with no screenshots',
+  snapshot({
+    checks: withRun(browserRun({ output: { text: evidenceMarker(record({ screenshots: [] })) } })),
+  }),
+  /no screenshots/,
+);
+refuses(
+  'forged browser-flow run from another app',
+  snapshot({ checks: withRun(browserRun({ app: { id: 1 } })) }),
+  /no browser-flow evidence on the head/,
+);
+refuses(
+  'screenshot bytes that do not match the record',
+  snapshot({
+    browserShots: { complete: true, digests: { 'evidence/a/hole-done.png': 'e'.repeat(64) } },
+  }),
+  /does not match its digest/,
+);
+refuses(
+  'screenshot not retained',
+  snapshot({ browserShots: { complete: true, digests: {} } }),
+  /is not retained/,
+);
+refuses(
+  'retained screenshots unread',
+  snapshot({ browserShots: { complete: false } }),
+  /retained screenshots not read/,
+);
+refuses(
+  'a newer failed browser-flow run replaces an older pass',
+  snapshot({
+    checks: withRun(browserRun({ id: 51, conclusion: 'failure' })),
+    // the older pass is still listed
+  }),
+  /browser-flow evidence failure/,
+);
+refuses(
+  'unreadable changed-file listing counts as an app change',
+  snapshot({ checks: withRun(), files: { complete: false, items: [] } }),
+  /no browser-flow evidence/,
+);
+
+test('browser evidence: an approving review or a PR comment is never evidence', () => {
+  // The trusted review approves and a comment carries a valid-looking record,
+  // but no factory browser-flow check run exists on the head.
+  const s = snapshot({ checks: withRun(), comments: [{ body: evidenceMarker(record()) }] });
+  const g = mergeGate(s);
+  assert.equal(g.merge, false);
+  assert.ok(g.reasons.includes('no browser-flow evidence on the head'));
+});
+
+test('browser evidence: only a complete, all-infrastructure file list skips it', () => {
+  const infra = (...f) => ({ complete: true, items: f.map((filename) => ({ filename })) });
+  assert.equal(
+    needsBrowserEvidence(infra('scripts/native/native.mjs', 'docs/x.md', 'README.md')),
+    false,
+  );
+  assert.equal(needsBrowserEvidence(infra('scripts/native/native.mjs', 'src/main.ts')), true);
+  assert.equal(needsBrowserEvidence(infra('index.html')), true);
+  assert.equal(needsBrowserEvidence(infra('src/games/mini-putt/README.md')), true);
+  assert.equal(needsBrowserEvidence(infra('package.json')), true);
+  assert.equal(needsBrowserEvidence(infra()), true);
+  assert.equal(needsBrowserEvidence(undefined), true);
+  const g = mergeGate(snapshot({ checks: withRun(), files: infra('scripts/native/native.mjs') }));
+  assert.deepEqual(g.reasons, []);
+});
+
+test('browser evidence: an exact-head pass with retained, matching screenshots holds', () => {
+  assert.deepEqual(browserEvidence(HEAD, [browserRun()], shots), []);
+  assert.deepEqual(browserEvidence(HEAD, [browserRun({ output: { text: 'trust me' } })], shots), [
+    'browser-flow evidence has no record',
+  ]);
+});
+
+test('browser evidence: a published flow report round-trips through the gate', async () => {
+  const { flowCheckRun } = await import('../visual/flow-check.mjs');
+  const report = {
+    flow: 'mini-putt-hole-next',
+    result: 'pass',
+    errors: [],
+    checks: [{ check: 'Next moves to the next hole', result: 'pass' }],
+    screenshots: [{ file: 'hole-done.png', sha256: SHOT }],
+  };
+  const body = flowCheckRun(report, HEAD, EVIDENCE, 'evidence/a');
+  const run = { ...body, id: 9, app: { id: BOT_APP_ID } };
+  assert.deepEqual(browserEvidence(HEAD, [run], shots), []);
+  const failed = flowCheckRun(
+    { ...report, result: 'fail', checks: [{ check: 'x', result: 'fail' }] },
+    HEAD,
+    EVIDENCE,
+    'evidence/a',
+  );
+  assert.equal(failed.conclusion, 'failure');
+  assert.match(
+    browserEvidence(HEAD, [{ ...failed, id: 9, app: { id: BOT_APP_ID } }], shots).join(),
+    /failure/,
+  );
 });

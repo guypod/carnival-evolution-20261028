@@ -245,7 +245,36 @@ into `main`, labelled `tessl`, when:
   also has a job named `check`, and it is not CI. Only the newest run of each
   check from each app in each check suite counts, so a successful rerun
   replaces the failure it reran, and another workflow's run never does;
+- an app change has browser-flow evidence for the exact head (see below);
 - every listing was read to its last page.
+
+### Browser-flow evidence
+
+A reviewer's `approved=true` and comments on the issue or PR are not browser
+evidence. For an app change, the gate needs the newest `browser-flow` check
+run created by the factory app (app 4096310) on the exact head, completed with
+`success`, whose output carries one `carnival-browser-flow:v1` record that:
+
+- names that head;
+- lists at least one changed flow, every one with `result: pass`;
+- lists screenshots retained on `factory-state/browser-evidence` at the
+  recorded commit, each of whose bytes, read back by the controller, hash to
+  the recorded sha256.
+
+Missing, stale (another head), failed, still running, forged (another app),
+recordless or digest-mismatched evidence refuses the merge, and so does an
+unread file listing. The one exception is a complete changed-file listing in
+which every file is infrastructure that no screen draws with: under
+`scripts/`, `docs/`, `tessl-factory/` or `skills/`, or a top-level `.md`
+file. Anything else, including `index.html`, `src/` and `package.json`, is an
+app change.
+
+`scripts/visual/run-flow.sh <out dir> <flow> --publish` produces this evidence
+on the checked-out, committed head: it sets up headless Chromium with
+`setup-browser.sh`, serves the checkout, plays the flow from
+`scripts/visual/flow.mjs` (for example `mini-putt-hole-next`, which finishes a
+hole and presses Next), pushes the screenshots to the evidence branch and
+creates the check run. A failed flow is published as a failure.
 
 `mergeOne` gates twice, then merges with GitHub's atomic merge API
 (`PUT pulls/<n>/merge`) with `sha` set to the head both gates saw, so GitHub
@@ -257,7 +286,8 @@ another way. It never submits a review.
 A merge is not shipped. `deploy <sha>` reports `deployed-needs-sanity` only
 when the Pages run's `deploy` job succeeded for that commit, and shipping
 also needs the changed flow checked in a real browser on that commit, not
-just a 200 response.
+just a 200 response. Pre-merge browser evidence does not count for that:
+post-deployment verification stays owed until the deployed flow passes.
 
 ## Activation and limits
 

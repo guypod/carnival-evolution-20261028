@@ -1106,6 +1106,71 @@ export function provenance(pr, issue) {
   return [];
 }
 
+// ---------- browser-flow evidence ----------
+
+/** The check run, created by the factory app on the head, that carries browser evidence. */
+export const BROWSER_CHECK = 'browser-flow';
+/** Where captured screenshots are retained, one commit per capture. */
+export const EVIDENCE_BRANCH = 'factory-state/browser-evidence';
+const EVIDENCE_RE = /<!-- carnival-browser-flow:v1 (\{.*?\}) -->/s;
+// Files no screen draws with and no player runs. Anything else is an app change.
+const INFRA_ONLY = [/^scripts\//, /^docs\//, /^tessl-factory\//, /^skills\//, /^[^/]+\.md$/];
+
+export const evidenceMarker = (record) =>
+  `<!-- carnival-browser-flow:v1 ${JSON.stringify(record)} -->`;
+
+/**
+ * Whether the pull request's changed files need browser evidence. Only a
+ * complete listing in which every file is infrastructure skips it.
+ */
+export function needsBrowserEvidence(files) {
+  if (!files?.complete || !files.items.length) return true;
+  return files.items.some((f) => !INFRA_ONLY.some((re) => re.test(f.filename ?? '')));
+}
+
+/**
+ * Why the browser evidence for `head` does not hold, as a list. Evidence is
+ * only the factory app's own completed, successful browser-flow check run on
+ * the head, whose record names that head, every changed flow as passed, and
+ * screenshots whose retained bytes hash to the recorded digests. Reviews and
+ * comments never count.
+ */
+export function browserEvidence(head, checks, shots) {
+  const runs = (checks ?? [])
+    .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
+    .sort((a, b) => a.id - b.id);
+  const run = runs.at(-1);
+  if (!run) return ['no browser-flow evidence on the head'];
+  if (run.status !== 'completed') return ['browser-flow evidence still running'];
+  if (run.conclusion !== 'success') return [`browser-flow evidence ${run.conclusion}`];
+  const m = EVIDENCE_RE.exec(run.output?.text ?? '');
+  let record;
+  try {
+    record = m && JSON.parse(m[1]);
+  } catch {
+    record = undefined;
+  }
+  if (!record) return ['browser-flow evidence has no record'];
+  const reasons = [];
+  if (record.head !== head) reasons.push('browser-flow evidence is for another head');
+  const flows = Array.isArray(record.flows) ? record.flows : [];
+  if (!flows.length) reasons.push('browser-flow evidence names no flow');
+  for (const f of flows)
+    if (f?.result !== 'pass') reasons.push(`browser flow ${f?.name ?? '?'} did not pass`);
+  const list = Array.isArray(record.screenshots) ? record.screenshots : [];
+  if (!list.length) reasons.push('browser-flow evidence has no screenshots');
+  if (!/^[0-9a-f]{40}$/.test(record.evidenceCommit ?? ''))
+    reasons.push('browser-flow evidence names no retained commit');
+  if (!shots?.complete) reasons.push('retained screenshots not read');
+  else
+    for (const sh of list) {
+      const got = shots.digests?.[sh?.path];
+      if (!got) reasons.push(`screenshot ${sh?.path} is not retained`);
+      else if (got !== sh.sha256) reasons.push(`screenshot ${sh.path} does not match its digest`);
+    }
+  return reasons;
+}
+
 /**
  * Whether a pull request may be merged now, from a snapshot of its
  * current state. Every listing must be complete. Returns { merge, reasons }.
@@ -1218,6 +1283,9 @@ export function mergeGate(s) {
     else if (!['success', 'neutral', 'skipped'].includes(c.conclusion))
       reasons.push(`${c.name} ${c.conclusion}`);
   }
+  // An app change also needs the factory's own browser-flow evidence for this head.
+  if (needsBrowserEvidence(s.files))
+    reasons.push(...browserEvidence(head, s.checks.items, s.browserShots));
   if (s.combinedStatus && !['success', 'pending'].includes(s.combinedStatus.state))
     reasons.push(`commit status ${s.combinedStatus.state}`);
   if (s.combinedStatus?.state === 'pending' && s.combinedStatus.total_count > 0)
@@ -1286,6 +1354,39 @@ function pages(path) {
     return { items: JSON.parse(out).flat(), complete: true };
   } catch {
     return { items: [], complete: false };
+  }
+}
+
+/**
+ * The sha256 of each screenshot the newest factory browser-flow run on `head`
+ * names, read from its retained evidence commit. Any failed read is incomplete.
+ */
+function retainedShots(checks, head) {
+  const run = checks
+    .filter((c) => c.name === BROWSER_CHECK && c.head_sha === head && c.app?.id === BOT_APP_ID)
+    .sort((a, b) => a.id - b.id)
+    .at(-1);
+  const m = EVIDENCE_RE.exec(run?.output?.text ?? '');
+  if (!m) return { complete: true, digests: {} };
+  try {
+    const record = JSON.parse(m[1]);
+    const digests = {};
+    for (const sh of record.screenshots ?? []) {
+      const bytes = execFileSync(
+        'gh',
+        [
+          'api',
+          '-H',
+          'Accept: application/vnd.github.raw',
+          `repos/${REPOSITORY}/contents/${sh.path}?ref=${record.evidenceCommit}`,
+        ],
+        { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
+      );
+      digests[sh.path] = createHash('sha256').update(bytes).digest('hex');
+    }
+    return { complete: true, digests };
+  } catch {
+    return { complete: false, digests: {} };
   }
 }
 
@@ -1453,6 +1554,11 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
           return { ...r, items: r.items.flatMap((p) => p.workflow_runs ?? p) };
         })(),
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
+        files: pages(`${base}/pulls/${n}/files?per_page=100`),
+        browserShots: retainedShots(
+          checks.items.flatMap((p) => p.check_runs ?? p),
+          sha,
+        ),
       };
     },
     repoSettings: async () => JSON.parse(gh(['api', base])),
