@@ -430,20 +430,44 @@ It has no mode that publishes a directory it did not just capture.
   needs a valid signature, a 1280 pixel width and its recorded sha256. Only
   those bytes are copied to fresh private staging, which is validated again.
 - **Authority.** `--publish` and the merge gate both read one operator
-  record, `control/operator-browser-authority.json` on
-  `factory-state/browser-evidence`, through the GitHub API and never from a
-  checkout. A missing, unread, malformed or unapproved record fails closed.
-  The record names the wrapper commit `W`, the capture pin, the image
-  digests, the boundary and each flow's checks and states. The wrapper must
-  run from a clean checkout of exactly `W`, and `W` must differ from the
-  candidate, except under the record's `bootstrap` entry, which may name only
-  pull request 449 at a head equal to `W`. Later commits on `main` do not
-  matter: nothing compares `W` with `main`. No routine run writes the record
-  or updates its pins; the operator installs it after reviewing `W`.
+  record, `control/operator-browser-authority.json`, at exactly the commit
+  named by `CARNIVAL_AUTHORITY_COMMIT`, a plain value an admin saves on the
+  Carnival environment. They read it through GitHub's git object API
+  (commit, tree, blob), never at a branch tip and never from a checkout. The
+  factory App can move `factory-state/browser-evidence`, so the tip proves
+  nothing; only the anchor does. A missing or invalid anchor, an unreadable
+  commit, or a record missing, malformed or unapproved at that commit fails
+  closed. INPUTS, trigger payloads, the command line and the candidate never
+  select the anchor. The record names the wrapper commit `W`, the capture
+  pin, the image digests, the boundary and each flow's checks and states.
+  The wrapper must run from a clean checkout of exactly `W`, and `W` must
+  differ from the candidate, except under the record's `bootstrap` entry,
+  which may name only pull request 449 at a head equal to `W`. Later commits
+  on `main` do not matter: nothing compares `W` with `main`. No routine run
+  writes the record, its anchor or its pins.
+- **Run provenance.** Saved environment values survive repository syncs and
+  a run's own token cannot change them, but a raw launch or resume can
+  upload its own environment. So the gate and the publisher also read this
+  run from `tessl api /experimental/launch-runs/$TESSL_LAUNCH_RUN_ID` and
+  accept only two routes in the Carnival repository and environment
+  (`01a18320-...`): the scheduled `native-intake` dispatch created by the
+  Carnival project automation (`01a1831d-...`), or, for pull request 449
+  only, the owner's `shepherd` action (`01a18325-...`) started by a user with
+  the single `tessl:trigger` event and a link to the PR. Anything else is
+  refused: another environment or project, a manual or raw launch, a run
+  with a resume, overlay or encrypted environment field, an unknown config
+  key, an unreadable run, or a trigger override other than `timeout` and
+  `instructions`. The API exposes no resume or environment upload field
+  today, so their absence there is not proof; the route check is what
+  refuses them. Trigger events can add refusals, never grant a route. The
+  run id, route, environment and anchor are bound into `provenance.json`,
+  and the gate refuses evidence whose anchor differs from the one it read
+  or that names no supported route. The trusted controller and its
+  credentials remain a trust assumption: this is not a separate signature.
 - **Publishing.** It opens the check run in progress first, re-reads the PR
   head, commits the screenshots, `flow.json` and `provenance.json`
   (repository, PR, candidate, capture runner, wrapper, image ids, boundary,
-  flow spec) under `evidence/<candidate>/<flow>/` only, on top of the branch
+  flow spec, authority commit, run) under `evidence/<candidate>/<flow>/` only, on top of the branch
   tip so `control/` is kept, reads every file back and compares its sha256,
   re-reads the head again, and only then concludes the check as a success
   with the usual record plus `provenance` and `provenanceSha256`. Any failure
@@ -456,13 +480,28 @@ It has no mode that publishes a directory it did not just capture.
   record's checks. A legacy app success without that never qualifies.
 - **Not live QA.** This is a loopback capture of a build. Shipping still
   needs the separate `browser-flow-live` run on the deployed site.
-- **Status.** No authority record is installed, so nothing qualifies yet. The
-  coordinator reviews the final wrapper commit `W`, installs the record once
-  (shape below), then checks out `W` and `CAPTURE_PIN` as two clean worktrees
-  and runs, from `W`:
-  `node scripts/visual/trusted-publish.mjs --pr 449 --candidate <head>
---flow mini-putt-hole-next --runner <CAPTURE_PIN worktree> --publish`, with
-  the factory app's token for `gh`. The record:
+- **Status.** No anchor or record is installed, so nothing qualifies yet.
+  Activation needs, in order: an independent review of the final `W`; a
+  commit holding only the record (shape below) at
+  `control/operator-browser-authority.json`, made by the operator; an admin
+  saving that commit's full sha as `CARNIVAL_AUTHORITY_COMMIT` on the
+  Carnival environment; then the bootstrap. The bootstrap runs from the
+  owner's existing `shepherd` action for PR 449, with no new identity or
+  credential. Before running any code from `W`, it checks with fixed `gh`
+  and `git` commands that the record at the anchor names `W` and that a
+  clean worktree's `HEAD` is `W`:
+
+  ```sh
+  rec=$(gh api "repos/guypod/carnival-evolution-20261028/contents/control/operator-browser-authority.json?ref=$CARNIVAL_AUTHORITY_COMMIT" -H 'Accept: application/vnd.github.raw')
+  test "$(printf %s "$rec" | jq -r .wrapper)" = "$W"
+  git worktree add --detach /tmp/w "$W" && test "$(git -C /tmp/w rev-parse HEAD)" = "$W"
+  git worktree add --detach /tmp/pin 3dbcc6d5da3799b40660db5c9b8cb65725b76853
+  cd /tmp/w && node scripts/native/native.mjs authority
+  node scripts/visual/trusted-publish.mjs --pr 449 --candidate "$W" \
+    --flow mini-putt-hole-next --runner /tmp/pin --publish
+  ```
+
+  The record:
 
   ```json
   {
@@ -488,10 +527,13 @@ It has no mode that publishes a directory it did not just capture.
   }
   ```
 
-  `node scripts/native/native.mjs authority` shows what is installed.
+  `node scripts/native/native.mjs authority` shows what the anchor holds and
+  whether this run's provenance is accepted.
 
-- **Trust model.** The operator and the approved factory App, which can
-  write the evidence branch and post check runs, are trusted. This does not
+- **Trust model.** The admin who saves the anchor, the operator who makes
+  the record commit, and the Tessl controller that starts supported runs
+  are trusted. The factory App can still post check runs and write the
+  evidence branch, but it cannot change the anchor or the record at it. This does not
   protect against a compromised controller credential.
 - **Limits.** Shared host kernel, Chromium's own sandbox off, and only
   candidates with the runner's exact `package.json`, lockfile and `.npmrc`

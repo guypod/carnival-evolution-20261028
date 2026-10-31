@@ -44,6 +44,12 @@ import {
   NODE_IMAGE,
   PLAYWRIGHT_IMAGE,
   readAuthority,
+  trustedAuthority,
+  rawAtCommit,
+  runProvenanceProblems,
+  CARNIVAL_ENVIRONMENT,
+  CARNIVAL_PROJECT,
+  SHEPHERD_ACTION,
   mergeOne,
   produceBacklog,
   readBatch,
@@ -605,6 +611,7 @@ const reviewerRun = (extra = {}) => ({
   ...extra,
 });
 const SHOT = 'c'.repeat(64);
+const RUN_ID = '01a19267-0000-7000-8000-000000000001';
 const EVIDENCE = 'd'.repeat(40);
 const FLOW = 'mini-putt-hole-next';
 const WRAPPER = 'e'.repeat(40);
@@ -624,9 +631,15 @@ const authorityRecord = (extra = {}) => ({
   bootstrap: null,
   ...extra,
 });
-const authorityOf = (rec) =>
-  readAuthority((path) =>
-    path === AUTHORITY_PATH && rec !== undefined ? Buffer.from(JSON.stringify(rec)) : null,
+/** The immutable authority commit an admin saves as CARNIVAL_AUTHORITY_COMMIT. */
+const ANCHOR = 'a1'.repeat(20);
+const authorityOf = (rec, anchor = ANCHOR) =>
+  readAuthority(
+    (path, commit) =>
+      path === AUTHORITY_PATH && commit === ANCHOR && rec !== undefined
+        ? Buffer.from(JSON.stringify(rec))
+        : null,
+    anchor,
   );
 const AUTH = authorityOf(authorityRecord());
 const prov = (extra = {}) => ({
@@ -640,6 +653,13 @@ const prov = (extra = {}) => ({
   boundary: BOUNDARY,
   spec: SPEC,
   kind: 'premerge-loopback-capture',
+  authorityCommit: ANCHOR,
+  run: {
+    id: RUN_ID,
+    route: 'scheduled',
+    environment: CARNIVAL_ENVIRONMENT,
+    authorityCommit: ANCHOR,
+  },
   ...extra,
 });
 const provSha = (p) =>
@@ -2790,7 +2810,7 @@ test('authority: a missing, unread, malformed or unapproved record fails closed'
     /not read/,
   );
   assert.match(
-    reasonsOf({ browserAuthority: readAuthority(() => Buffer.from('{nope')) }),
+    reasonsOf({ browserAuthority: readAuthority(() => Buffer.from('{nope'), ANCHOR) }),
     /not read/,
   );
   assert.match(reasonsOf({ browserAuthority: undefined }), /authority record not read/);
@@ -2970,4 +2990,219 @@ test('authority: a fresh failed attempt still supersedes an authorized pass', ()
     checks: { complete: true, items: [ci(), reviewerRun(), browserRun(), failed] },
   });
   assert.match(r, /browser-flow evidence for mini-putt-hole-next failure/);
+});
+
+// ---------- immutable authority anchor and run provenance ----------
+
+/** Gate inputs whose passing run and retained file both carry provenance `p`. */
+const withProv = (p) => ({
+  checks: {
+    complete: true,
+    items: [
+      ci(),
+      reviewerRun(),
+      browserRun({
+        output: { text: evidenceMarker(record({ provenance: p, provenanceSha256: provSha(p) })) },
+      }),
+    ],
+  },
+  browserShots: shotsOf({ ...shots[50], provenance: { sha256: provSha(p), content: p } }),
+});
+
+const SCHEDULED_RUN = {
+  config: {
+    skillRef: 'file:tessl-factory#native-intake',
+    repoUrl: `https://github.com/${REPOSITORY}`,
+    agent: 'claude',
+    model: 'claude-opus-5-5',
+    triggerSource: 'scheduled',
+    baseBranch: 'main',
+  },
+  requestedBy: { kind: 'schedule', triggerName: 'native-dispatch-twenty-minutes' },
+  createdByProjectAutomation: { id: CARNIVAL_PROJECT, name: 'carnival-evolution-20261028' },
+  environment: { id: CARNIVAL_ENVIRONMENT, name: 'carnival-evolution-20261028-factory' },
+  scheduledRunId: '01a19020-373c-704d-aede-93bab62019e9',
+  triggerEvents: ['cron:tick'],
+  links: [],
+};
+const OWNER_RUN = {
+  config: {
+    skillRef: 'tessl-labs/factory@0.6.0#shepherd',
+    repoUrl: `https://github.com/${REPOSITORY}`,
+    agent: 'claude',
+    model: 'claude-opus-5-5',
+    triggerSource: 'webhook',
+    skillVersion: '0.6.0',
+    baseBranch: 'main',
+  },
+  requestedBy: { kind: 'user', id: 'u1', username: 'owner' },
+  createdByProjectAutomation: null,
+  environment: { id: CARNIVAL_ENVIRONMENT, name: 'carnival-evolution-20261028-factory' },
+  scheduledRunId: SHEPHERD_ACTION,
+  triggerEvents: ['tessl:trigger'],
+  links: [{ linkType: 'github_pr', value: `https://github.com/${REPOSITORY}/pull/449` }],
+};
+
+/** A GitHub that holds `records` per commit; `branchTip` is never consulted by the reader. */
+const githubWith = (records) => (path) => {
+  let m = /git\/commits\/([0-9a-f]{40})$/.exec(path);
+  if (m) {
+    if (!(m[1] in records)) throw new Error('HTTP 404');
+    return { sha: m[1], tree: { sha: `t${m[1]}` } };
+  }
+  m = /git\/trees\/t([0-9a-f]{40})\?recursive=1$/.exec(path);
+  if (m)
+    return {
+      truncated: false,
+      tree: records[m[1]] ? [{ path: AUTHORITY_PATH, type: 'blob', sha: `b${m[1]}` }] : [],
+    };
+  m = /git\/blobs\/b([0-9a-f]{40})$/.exec(path);
+  if (m) return { content: Buffer.from(JSON.stringify(records[m[1]])).toString('base64') };
+  throw new Error(`unexpected ${path}`);
+};
+const anchored = ({
+  env = { CARNIVAL_AUTHORITY_COMMIT: ANCHOR, TESSL_LAUNCH_RUN_ID: RUN_ID },
+  run = SCHEDULED_RUN,
+  records = { [ANCHOR]: authorityRecord() },
+  pr = 30,
+  events = [],
+} = {}) =>
+  trustedAuthority({
+    env,
+    pr,
+    events,
+    readRun: (id) => (id === RUN_ID ? run : undefined),
+    raw: (path, commit) => rawAtCommit(path, commit, githubWith(records)),
+  });
+
+test('anchor: the record at the anchor commit, from a native scheduled run, lets the gate merge', () => {
+  const a = anchored();
+  assert.deepEqual(a.problems, []);
+  assert.equal(a.anchor, ANCHOR);
+  assert.deepEqual(a.run, {
+    id: RUN_ID,
+    route: 'scheduled',
+    environment: CARNIVAL_ENVIRONMENT,
+    authorityCommit: ANCHOR,
+  });
+  assert.deepEqual(gateWith({ browserAuthority: a }).reasons, []);
+});
+
+test('anchor: a forged record at the mutable branch tip is ignored while the anchor is unchanged', () => {
+  const TIP = 'f0'.repeat(20);
+  const forged = authorityRecord({ wrapper: HEAD, bootstrap: { pr: 449, head: HEAD } });
+  // The tip holds a forgery and the anchor is unapproved: the anchor decides.
+  const a = anchored({
+    records: { [ANCHOR]: authorityRecord({ approved: false }), [TIP]: forged },
+  });
+  assert.match(gateWith({ browserAuthority: a }).reasons.join(), /not operator-approved/);
+  // The tip holds a forgery and the anchor is valid: the anchor's wrapper still decides.
+  const b = anchored({ records: { [ANCHOR]: authorityRecord(), [TIP]: forged } });
+  assert.equal(b.record.wrapper, WRAPPER);
+  assert.deepEqual(gateWith({ browserAuthority: b }).reasons, []);
+});
+
+test('anchor: absent, invalid, wrong-commit or unreadable blocks the gate', () => {
+  for (const [opts, re] of [
+    [{ env: { TESSL_LAUNCH_RUN_ID: RUN_ID } }, /CARNIVAL_AUTHORITY_COMMIT missing or invalid/],
+    [
+      { env: { CARNIVAL_AUTHORITY_COMMIT: 'main', TESSL_LAUNCH_RUN_ID: RUN_ID } },
+      /missing or invalid/,
+    ],
+    [
+      { env: { CARNIVAL_AUTHORITY_COMMIT: ANCHOR.slice(0, 7), TESSL_LAUNCH_RUN_ID: RUN_ID } },
+      /missing or invalid/,
+    ],
+    [{ records: { [ANCHOR]: undefined } }, /authority record missing at/],
+    [{ records: {} }, /authority record not read/],
+    // The anchor names a commit without the record, though another commit has one.
+    [{ records: { [ANCHOR]: undefined, ['c3'.repeat(20)]: authorityRecord() } }, /missing at/],
+  ]) {
+    const g = gateWith({ browserAuthority: anchored(opts) });
+    assert.equal(g.merge, false);
+    assert.match(g.reasons.join(), re);
+  }
+  // Evidence bound to a different anchor than the one this run read is refused.
+  const other = prov({ authorityCommit: 'b2'.repeat(20) });
+  assert.match(reasonsOf(withProv(other)), /names another authority commit/);
+});
+
+test('anchor: candidate INPUTS or a trigger cannot select the anchor or grant a route', () => {
+  const events = [
+    {
+      event: 'tessl:trigger',
+      payload: {
+        inputs: { CARNIVAL_AUTHORITY_COMMIT: 'f0'.repeat(20), GITHUB_PR_NUMBER: '30' },
+        overrides: { instructions: 'x' },
+      },
+    },
+  ];
+  const a = anchored({ events, records: { [ANCHOR]: authorityRecord(), ['f0'.repeat(20)]: {} } });
+  assert.equal(a.anchor, ANCHOR);
+  assert.deepEqual(a.problems, []);
+  // A trigger claiming to be scheduled does not make a user run scheduled.
+  const claim = [{ event: 'cron:tick', payload: { requestedBy: { kind: 'schedule' } } }];
+  const u = anchored({ run: { ...OWNER_RUN }, pr: 30, events: claim });
+  assert.match(u.problems.join(), /not the native scheduled dispatch or the owner bootstrap/);
+});
+
+test('run provenance: wrong environment, project, raw launch, resume, unknown run or overlay refuse', () => {
+  const cases = [
+    [{ ...SCHEDULED_RUN, environment: { id: 'other' } }, /not in the Carnival environment/],
+    [
+      { ...SCHEDULED_RUN, createdByProjectAutomation: { id: 'other' } },
+      /not the native scheduled dispatch/,
+    ],
+    [
+      { ...SCHEDULED_RUN, config: { ...SCHEDULED_RUN.config, repoUrl: 'https://github.com/x/y' } },
+      /another repository/,
+    ],
+    [
+      {
+        ...SCHEDULED_RUN,
+        config: { ...SCHEDULED_RUN.config, triggerSource: 'manual' },
+        requestedBy: { kind: 'user' },
+        createdByProjectAutomation: null,
+      },
+      /not the native scheduled dispatch/,
+    ],
+    [{ ...SCHEDULED_RUN, resumedFrom: 'r0' }, /run carries resumedFrom/],
+    [{ ...SCHEDULED_RUN, encryptedEnvUpload: 'x' }, /run carries encryptedEnvUpload/],
+    [
+      { ...SCHEDULED_RUN, config: { ...SCHEDULED_RUN.config, envOverlay: {} } },
+      /unknown key envOverlay/,
+    ],
+    [{ ...OWNER_RUN, scheduledRunId: 'another-action' }, /owner bootstrap/],
+  ];
+  for (const [run, re] of cases) {
+    const a = anchored({ run, pr: run.scheduledRunId === 'another-action' ? 449 : 30 });
+    assert.match(a.problems.join(), re);
+    assert.equal(a.run, undefined);
+    assert.equal(gateWith({ browserAuthority: a }).merge, false);
+  }
+  const unknown = anchored({
+    env: { CARNIVAL_AUTHORITY_COMMIT: ANCHOR, TESSL_LAUNCH_RUN_ID: 'nope' },
+  });
+  assert.match(unknown.problems.join(), /run provenance not read/);
+  const noId = anchored({ env: { CARNIVAL_AUTHORITY_COMMIT: ANCHOR } });
+  assert.match(noId.problems.join(), /run provenance not read/);
+  const overlay = anchored({ events: [{ payload: { overrides: { env: { X: '1' } } } }] });
+  assert.match(overlay.problems.join(), /trigger carries overlay env/);
+  assert.match(runProvenanceProblems(undefined).join(), /not read/);
+});
+
+test('run provenance: the owner shepherd action is accepted only for the 449 bootstrap', () => {
+  const ok = anchored({ run: OWNER_RUN, pr: 449 });
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.run.route, 'owner-action');
+  const other = anchored({ run: OWNER_RUN, pr: 30 });
+  assert.match(other.problems.join(), /owner bootstrap/);
+});
+
+test('run provenance: evidence without a supported run binding is refused', () => {
+  assert.match(reasonsOf(withProv(prov({ run: null }))), /names no supported run/);
+  assert.match(
+    reasonsOf(withProv(prov({ run: { id: RUN_ID, route: 'raw' } }))),
+    /names no supported run/,
+  );
 });

@@ -1245,15 +1245,24 @@ export function changedFiles(listing, count) {
 // ---------- operator browser authority ----------
 //
 // Premerge browser evidence counts only under an operator-approved authority
-// record read from a fixed trusted location: AUTHORITY_PATH on the evidence
-// branch, through the GitHub API, never from any candidate checkout. The
-// record names the reviewed wrapper commit W, the capture pin, the image
-// digests, the boundary and the flow registry. The operator installs it after
-// reviewing W; no routine run writes it, updates its pins or infers approval
-// from main's HEAD. Trust model: anyone who can write the evidence branch (the
-// operator and the approved factory App) is trusted; this does not protect
-// against a compromised controller credential.
+// record. The record is AUTHORITY_PATH read through the GitHub API at one
+// exact immutable commit, the anchor, never at a branch tip or from any
+// checkout. The same App that uploads evidence can move the evidence branch,
+// so the tip proves nothing; the anchor is CARNIVAL_AUTHORITY_COMMIT, a plain
+// value an admin saves on the Carnival environment. A missing or invalid
+// anchor, or a record not at that commit, fails closed. Nothing in a
+// candidate, INPUTS or the command line selects the anchor.
+//
+// The anchor is only as good as the run that reads it: a raw launch or resume
+// can upload its own environment. So the gate and the publisher also check
+// this run through the authenticated Tessl run API (runProvenanceProblems)
+// and accept only the native scheduled dispatch or the owner's shepherd
+// action bootstrap of PR 449, in the Carnival project and environment. The
+// trusted controller itself is still a trust assumption: this does not
+// protect against a compromised controller credential.
 
+/** The environment value that names the immutable authority commit. */
+export const AUTHORITY_ANCHOR_ENV = 'CARNIVAL_AUTHORITY_COMMIT';
 /** The reserved control record on the evidence branch. Uploads never touch control/. */
 export const AUTHORITY_PATH = 'control/operator-browser-authority.json';
 export const AUTHORITY_SCHEMA = 'carnival-browser-authority';
@@ -1321,18 +1330,125 @@ export function wrapperProblems(a, pr, candidate, wrapper) {
   return ['the wrapper is the candidate without an exact bootstrap authorization'];
 }
 
-/** The authority, as { complete, record } for the gate; anything unread or invalid is problems. */
-export function readAuthority(fetch) {
+/** The anchor commit from the environment, or problems; never from INPUTS or a candidate. */
+export function authorityAnchor(env = process.env) {
+  const v = env?.[AUTHORITY_ANCHOR_ENV];
+  if (!isSha(v))
+    return { problems: [`authority anchor ${AUTHORITY_ANCHOR_ENV} missing or invalid`] };
+  return { anchor: v, problems: [] };
+}
+
+/**
+ * The authority, as { complete, anchor, record } for the gate. `fetch(path,
+ * commit)` must read the file at exactly that commit and return null when it
+ * is absent there. Anything unread or invalid is problems.
+ */
+export function readAuthority(fetch, anchor) {
+  if (!isSha(anchor))
+    return {
+      complete: true,
+      record: undefined,
+      problems: [`authority anchor ${AUTHORITY_ANCHOR_ENV} missing or invalid`],
+    };
   try {
-    const bytes = fetch(AUTHORITY_PATH);
+    const bytes = fetch(AUTHORITY_PATH, anchor);
     if (bytes == null)
-      return { complete: true, record: undefined, problems: ['authority record missing'] };
+      return {
+        complete: true,
+        anchor,
+        record: undefined,
+        problems: [`authority record missing at ${anchor}`],
+      };
     const record = JSON.parse(Buffer.from(bytes).toString('utf8'));
-    return { complete: true, record, problems: authorityProblems(record) };
+    return { complete: true, anchor, record, problems: authorityProblems(record) };
   } catch {
-    return { complete: false, problems: ['authority record not read'] };
+    return { complete: false, anchor, problems: ['authority record not read'] };
   }
 }
+
+// ---------- run provenance ----------
+
+/** The Carnival project automation and environment that may act on authority. */
+export const CARNIVAL_PROJECT = '01a1831d-52c0-76ed-8f37-31683acd362e';
+export const CARNIVAL_ENVIRONMENT = '01a18320-2e95-770e-b77f-a791adc369b5';
+/** The shepherd action in that project, the only route for the owner's bootstrap. */
+export const SHEPHERD_ACTION = '01a18325-cf7e-71dd-8364-07c007d53ae4';
+/** Run config keys the API exposes today; any other key is an unknown overlay. */
+const RUN_CONFIG_KEYS = new Set([
+  'skillRef',
+  'repoUrl',
+  'agent',
+  'model',
+  'triggerSource',
+  'skillVersion',
+  'baseBranch',
+  'effort',
+]);
+/** Override keys a trigger may carry visibly; any other is an overlay and refuses. */
+const TRIGGER_OVERRIDE_KEYS = new Set(['timeout', 'instructions']);
+
+/**
+ * Why this run may not use the authority, as a list. `run` is the
+ * `data.attributes` of `tessl api /experimental/launch-runs/<id>` for this
+ * run, read by the controller; `events` are the trigger events, which can
+ * only add refusals, never grant. Accepted routes: `scheduled`, the native
+ * dispatch schedule; `owner-action`, the owner's shepherd action, only for
+ * pull request BOOTSTRAP_PR. Empty means accepted.
+ */
+export function runProvenanceProblems(run, { pr, events = [] } = {}) {
+  if (!run || typeof run !== 'object') return ['run provenance not read'];
+  const p = [];
+  const c = run.config ?? {};
+  if (c.repoUrl?.replace(/\.git$/, '') !== `https://github.com/${REPOSITORY}`)
+    p.push('run is for another repository');
+  if (run.environment?.id !== CARNIVAL_ENVIRONMENT)
+    p.push('run is not in the Carnival environment');
+  for (const k of Object.keys(c))
+    if (!RUN_CONFIG_KEYS.has(k)) p.push(`run config carries unknown key ${k}`);
+  for (const k of Object.keys(run))
+    if (/resum|overlay|override|encrypt|envUpload|envMap/i.test(k)) p.push(`run carries ${k}`);
+  for (const e of Array.isArray(events) ? events : [])
+    for (const k of Object.keys(e?.payload?.overrides ?? {}))
+      if (!TRIGGER_OVERRIDE_KEYS.has(k)) p.push(`trigger carries overlay ${k}`);
+  const route = runRoute(run, pr);
+  if (!route) p.push('run is not the native scheduled dispatch or the owner bootstrap action');
+  return p;
+}
+
+/** Which supported route the run took, or undefined. */
+export function runRoute(run, pr) {
+  const c = run?.config ?? {};
+  const by = run?.requestedBy ?? {};
+  if (
+    c.triggerSource === 'scheduled' &&
+    by.kind === 'schedule' &&
+    c.skillRef === 'file:tessl-factory#native-intake' &&
+    run.createdByProjectAutomation?.id === CARNIVAL_PROJECT
+  )
+    return 'scheduled';
+  if (
+    Number(pr) === BOOTSTRAP_PR &&
+    c.triggerSource === 'webhook' &&
+    by.kind === 'user' &&
+    run.scheduledRunId === SHEPHERD_ACTION &&
+    same(run.triggerEvents, ['tessl:trigger']) &&
+    /^tessl-labs\/factory@[^#]+#shepherd$/.test(c.skillRef ?? '') &&
+    (run.links ?? []).some(
+      (l) =>
+        l.linkType === 'github_pr' && l.value === `https://github.com/${REPOSITORY}/pull/${pr}`,
+    )
+  )
+    return 'owner-action';
+  return undefined;
+}
+
+/** The run provenance to bind into evidence: id, route and the anchor read. */
+export const runBinding = (id, run, pr, anchor) => ({
+  id,
+  route: runRoute(run, pr),
+  environment: run?.environment?.id,
+  authorityCommit: anchor,
+});
 
 /** Why a passing run's retained provenance does not bind it to the authority. */
 function provenanceReasons(head, flow, pr, record, shots, authority) {
@@ -1356,6 +1472,10 @@ function provenanceReasons(head, flow, pr, record, shots, authority) {
   if (prov.flow !== flow || prov.candidate !== head)
     r.push(`provenance for ${flow} names another flow or candidate`);
   if (prov.repository !== REPOSITORY) r.push(`provenance for ${flow} is for another repository`);
+  if (prov.authorityCommit !== authority.anchor)
+    r.push(`provenance for ${flow} names another authority commit`);
+  if (!['scheduled', 'owner-action'].includes(prov.run?.route) || !prov.run?.id)
+    r.push(`provenance for ${flow} names no supported run`);
   if (prov.captureRunner !== a.captureRunner)
     r.push(`provenance for ${flow} has the wrong capture pin`);
   r.push(...wrapperProblems(a, pr, head, prov.wrapper).map((x) => `provenance for ${flow}: ${x}`));
@@ -1866,16 +1986,76 @@ function rawAt(path, ref) {
   );
 }
 
-/** The authority record from the evidence branch on GitHub; a 404 is missing. */
-export function trustedAuthority() {
-  return readAuthority((path) => {
+/**
+ * `path` at exactly commit `sha`, through git objects only: a branch or tag
+ * that happens to be named like the sha can never stand in for it.
+ */
+export function rawAtCommit(path, sha, api = (p) => JSON.parse(gh(['api', p]))) {
+  let commit;
+  try {
+    commit = api(`repos/${REPOSITORY}/git/commits/${sha}`);
+  } catch {
+    commit = undefined;
+  }
+  // An anchor that names no commit here is unreadable, never "absent".
+  if (commit?.sha !== sha) throw new Error('authority commit not read');
+  const tree = api(`repos/${REPOSITORY}/git/trees/${commit.tree.sha}?recursive=1`);
+  if (tree?.truncated) throw new Error('authority tree truncated');
+  const entry = (tree?.tree ?? []).find((e) => e.path === path && e.type === 'blob');
+  if (!entry) return null;
+  const blob = api(`repos/${REPOSITORY}/git/blobs/${entry.sha}`);
+  return Buffer.from(blob.content, 'base64');
+}
+
+/**
+ * The authority for this run: the record at the anchor commit through the
+ * GitHub API, refused unless this run's own provenance, read from the Tessl
+ * run API, is a supported route. A 404 at the anchor is missing.
+ */
+export function trustedAuthority({
+  env = process.env,
+  pr,
+  events = [],
+  readRun = launchRun,
+  raw = rawAtCommit,
+} = {}) {
+  const { anchor } = authorityAnchor(env);
+  const a = readAuthority((path, commit) => {
     try {
-      return rawAt(path, EVIDENCE_BRANCH);
+      return raw(path, commit);
     } catch (e) {
       if (/HTTP 404|Not Found/.test(String(e.stderr ?? e.message))) return null;
       throw e;
     }
-  });
+  }, anchor);
+  const id = env?.TESSL_LAUNCH_RUN_ID;
+  const run = id ? readRun(id) : undefined;
+  const runProblems = runProvenanceProblems(run, { pr, events });
+  return {
+    ...a,
+    run: runProblems.length ? undefined : runBinding(id, run, pr, anchor),
+    problems: [...a.problems, ...runProblems],
+  };
+}
+
+/** The trigger events of this run; they can only add refusals. Unreadable is an overlay. */
+export function triggerEvents(env = process.env) {
+  try {
+    return env.TRIGGER_EVENTS ? JSON.parse(readFileSync(env.TRIGGER_EVENTS, 'utf8')) : [];
+  } catch {
+    return [{ payload: { overrides: { unreadable: true } } }];
+  }
+}
+
+/** This run's attributes from the authenticated Tessl run API, or undefined. */
+export function launchRun(id, call = tesslApi) {
+  if (!/^[0-9a-f-]{36}$/.test(id ?? '')) return undefined;
+  try {
+    const body = JSON.parse(call(`/experimental/launch-runs/${id}`));
+    return body?.data?.id === id ? body.data.attributes : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Who last added `label` to issue `n`, read from every page of its events. */
@@ -2043,7 +2223,7 @@ export function ghAdapter({ writerKeyHeld = false } = {}) {
         })(),
         combinedStatus: JSON.parse(gh(['api', `${base}/commits/${sha}/status`])),
         files: changedFiles(pages(`${base}/pulls/${n}/files?per_page=100`), pr.changed_files),
-        browserAuthority: trustedAuthority(),
+        browserAuthority: trustedAuthority({ pr: n, events: triggerEvents() }),
         browserShots: retainedShots(
           checks.items.flatMap((p) => p.check_runs ?? p),
           sha,
@@ -2131,8 +2311,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   } else if (command === 'authority') {
     // Read-only: whether the operator's authority record is installed and valid.
-    const a = trustedAuthority();
-    print({ path: `${EVIDENCE_BRANCH}:${AUTHORITY_PATH}`, ...a });
+    const a = trustedAuthority({ events: triggerEvents() });
+    print({ path: `${a.anchor ?? '<no anchor>'}:${AUTHORITY_PATH}`, ...a });
   } else if (command === 'flows') {
     // The flows a pull request's head needs, and what no flow covers yet.
     const pr = JSON.parse(gh(['api', `repos/${REPOSITORY}/pulls/${arg}`]));

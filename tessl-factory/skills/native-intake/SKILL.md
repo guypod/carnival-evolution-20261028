@@ -70,9 +70,11 @@ credentials or anything from outside this repository's public record.
    that change dependencies stay owed. Coverage is not universal.
 
    Then run `node scripts/native/native.mjs authority`. It reads the
-   operator's record `control/operator-browser-authority.json` from
-   `factory-state/browser-evidence` through the GitHub API, never from any
-   checkout. If it reports any problem, report every listed flow as
+   operator's record `control/operator-browser-authority.json` at exactly
+   the commit in the environment value `CARNIVAL_AUTHORITY_COMMIT`, through
+   the GitHub API, never at a branch tip or from any checkout, and checks
+   this run's provenance through the Tessl run API. Never set, guess or
+   replace that anchor. If it reports any problem, report every listed flow as
    `browser-flow-owed: <pr>:<flow>` with the reason "no operator browser
    authority" and stop this step. Otherwise the record names the wrapper
    commit `W`. Use a separate, clean checkout of exactly `W` (not dispatch's
@@ -81,7 +83,7 @@ credentials or anything from outside this repository's public record.
    `W`:
    `node scripts/visual/trusted-publish.mjs --pr <pr> --candidate <head sha>
 --flow <flow> --runner <clean checkout of captureRunner> --publish`,
-   one PR at a time. The wrapper reads the same record again and refuses
+   one PR at a time. The wrapper reads the same anchored record again and refuses
    unless its own clean `HEAD` is `W`, the pins and the flow spec match, and
    `W` differs from the candidate (the record's `bootstrap` entry may allow
    only PR 449 at that exact head). Report a non-zero exit as

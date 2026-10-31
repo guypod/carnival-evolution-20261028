@@ -58,7 +58,8 @@ import {
   PLAYWRIGHT_IMAGE,
   REPOSITORY as REPO,
   authorityProblems,
-  readAuthority,
+  trustedAuthority,
+  triggerEvents,
   wrapperProblems,
 } from '../native/native.mjs';
 
@@ -231,6 +232,8 @@ export const provenance = (o) => ({
   boundary: BOUNDARY,
   spec: o.spec ?? FLOWS[o.flow],
   kind: 'premerge-loopback-capture',
+  authorityCommit: o.authority?.anchor ?? null,
+  run: o.authority?.run ?? null,
 });
 
 /** Where an attempt may write: only its own evidence/<candidate>/<flow> folder. */
@@ -390,7 +393,9 @@ async function main() {
   const o = parseArgs(process.argv.slice(2));
   const self = join(dirname(fileURLToPath(import.meta.url)), '../..');
   const wrapper = git(self, ['rev-parse', 'HEAD']);
-  const authority = o.publish ? readAuthority(authorityAt) : undefined;
+  // The record at the environment's anchor commit, refused unless this run's
+  // Tessl provenance is a supported route. Checked before any capture runs.
+  const authority = o.publish ? trustedAuthority({ pr: o.pr, events: triggerEvents() }) : undefined;
   const problems = [
     ...invocationProblems(o, wrapper, authority),
     ...(o.publish ? checkoutProblems(git, self, authority?.record?.wrapper) : []),
@@ -409,7 +414,7 @@ async function main() {
   let step = 'capture';
   try {
     const { images, staged } = capture(o);
-    const prov = provenance({ ...o, wrapper, images });
+    const prov = provenance({ ...o, wrapper, images, authority });
     console.log(JSON.stringify({ staging: staged.dir, provenance: prov }, null, 2));
     if (!o.publish) return;
     step = 'publish';
@@ -437,23 +442,6 @@ async function ghApi(method, path, body) {
   });
   if (r.status !== 0) throw new Error(`gh ${method} ${path} failed`);
   return JSON.parse(r.stdout || '{}');
-}
-
-/** The authority record on the evidence branch, through the API; null when absent. */
-function authorityAt(path) {
-  const r = spawnSync(
-    'gh',
-    [
-      'api',
-      '-H',
-      'Accept: application/vnd.github.raw',
-      `repos/${REPO}/contents/${path}?ref=${EVIDENCE_BRANCH}`,
-    ],
-    { maxBuffer: 1 << 20 },
-  );
-  if (r.status === 0) return r.stdout;
-  if (/404|Not Found/.test(String(r.stderr))) return null;
-  throw new Error('authority record not read');
 }
 
 /** Commits the files to the evidence branch through the API, on top of its current tip. */

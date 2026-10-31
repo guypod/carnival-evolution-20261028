@@ -15,6 +15,7 @@ import {
   invocationProblems,
   uploadPaths,
   privateDir,
+  provenance,
   publish,
   stage,
   validateReport,
@@ -297,4 +298,41 @@ test('a head race, failed upload or bad readback publishes nothing', async () =>
     await assert.rejects(publish(args(m)), undefined, name);
     assert.equal(m.writes.length, 0, name);
   }
+});
+
+test('provenance binds the anchored authority commit and the supported run', () => {
+  const anchor = 'a1'.repeat(20);
+  const run = { id: 'r1', route: 'owner-action', environment: 'env', authorityCommit: anchor };
+  const p = provenance({
+    pr: '449',
+    flow: 'mini-putt-hole-next',
+    candidate: 'e'.repeat(40),
+    wrapper: 'e'.repeat(40),
+    images: {},
+    authority: { anchor, run, problems: [] },
+  });
+  assert.equal(p.authorityCommit, anchor);
+  assert.deepEqual(p.run, run);
+  // Without an anchored authority, nothing is bound and the gate refuses it.
+  const bare = provenance({ pr: '449', flow: 'mini-putt-hole-next', candidate: 'e'.repeat(40) });
+  assert.equal(bare.authorityCommit, null);
+  assert.equal(bare.run, null);
+});
+
+test('publishing refuses an authority without an anchor or a supported run', () => {
+  const o = {
+    pr: '449',
+    candidate: 'e'.repeat(40),
+    flow: 'mini-putt-hole-next',
+    runner: '/r',
+    publish: true,
+  };
+  for (const problems of [
+    ['authority anchor CARNIVAL_AUTHORITY_COMMIT missing or invalid'],
+    ['run is not the native scheduled dispatch or the owner bootstrap action'],
+  ])
+    assert.match(
+      invocationProblems(o, 'e'.repeat(40), { complete: true, record: undefined, problems }).join(),
+      new RegExp(problems[0].split(' ').slice(0, 3).join(' ')),
+    );
 });
