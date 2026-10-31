@@ -1,5 +1,6 @@
 import { createRegistry } from '../carnival';
 import { balloonDarts } from './balloon-darts/game';
+import { coconutShy } from './coconut-shy/game';
 import { duckDash } from './duck-dash/game';
 import { highStriker } from './high-striker/game';
 import { memoryMenagerie } from './memory-menagerie/game';
@@ -22,4 +23,5 @@ export const registry = createRegistry([
   skeeBall,
   miniPutt,
   puppetTheatre,
+  coconutShy,
 ]);
