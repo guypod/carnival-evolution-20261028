@@ -1551,6 +1551,8 @@ test('a bot-labelled claim never admitted stops holding the queue after the grac
       { event: 'labeled', label: { name: 'tessl' }, actor: bot, created_at: labelAt },
     ];
     Object.assign(gh.state.links, extra);
+    gh.branchExists = async () => false;
+    gh.triggerImplementation = async (n, req) => gh.calls.push(['handoff', n, req]);
     return gh;
   };
   // Inside the grace its admit run may still be queued.
@@ -1581,12 +1583,14 @@ test('a bot-labelled claim never admitted stops holding the queue after the grac
   r = await dispatch(gh, 'dispatch-2026-10-31T0400', new Date('2026-10-31T04:00:00Z'));
   assert.equal(r.status, 'dispatched');
   assert.equal(r.issue, 12);
-  // Past the grace with no admission: refused, so the next issue goes and #11 is left alone.
+  // Past the grace with no admission: the original admission is retried with
+  // fresh guards, it refuses (no journal), so the next issue goes and #11 is left alone.
   gh = world();
   r = await dispatch(gh, DSLOT, new Date('2026-10-31T03:00:00Z'));
   assert.equal(r.status, 'dispatched');
   assert.equal(r.issue, 12);
   assert.ok(!writes(gh).some((c) => c[1] === 11));
+  assert.ok(!gh.calls.some((c) => c[0] === 'handoff'));
   // The owner's own label is the owner trigger's run: it still holds the queue.
   gh = world({
     'events:11': [
@@ -1944,4 +1948,20 @@ test('merge gate: a failed check superseded by a successful rerun on the same he
   const worse = ci({ id: 3, conclusion: 'failure' });
   const t = { ...base, checks: { complete: true, items: [...base.checks.items, rerun, worse] } };
   assert.equal(mergeGate(t).merge, false);
+});
+
+test('a read failure at admission alone, with no deferral record, is retried after the grace', async () => {
+  const gh = owedWorld();
+  gh.failRuns = true;
+  assert.equal((await admit(gh, labelledEvent(), NOW)).status, 'deferred');
+  assert.equal(readDeferrals(gh.state.comments[40]).length, 0, 'the failed read wrote nothing');
+  gh.failRuns = false;
+  // Within the 90-minute grace the admit run may still be in flight: busy, no retry.
+  const early = await dispatch(gh, LSLOT, new Date('2026-10-31T01:00:00Z'));
+  assert.equal(early.status, 'busy');
+  assert.deepEqual(handoffs(gh), []);
+  const r = await dispatch(gh, LSLOT, LATER);
+  assert.equal(r.retried?.status, 'admitted', JSON.stringify(r));
+  assert.deepEqual(handoffs(gh), [['handoff', 40, OWN]]);
+  assert.ok(!gh.calls.some((c) => c[0] === 'addLabel'), 'never relabelled');
 });

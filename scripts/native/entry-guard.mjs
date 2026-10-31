@@ -80,6 +80,10 @@ export function identity(n, issue, events, comments) {
         a.request === requestId(n, label.id),
     );
     if (!admitted) return { error: 'bot label has no admission for its label event' };
+    // The content must still be what admission checked against the journal.
+    const digest = contentDigest(issue.title, issue.body);
+    if (!readAdmissions(comments.items).some((a) => a.event === label.id && a.digest === digest))
+      return { error: 'content changed since admission' };
   } else if (!isOwner(label.actor)) {
     return { error: 'tessl label was not added by the owner or an admitted bot' };
   }

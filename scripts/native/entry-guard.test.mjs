@@ -31,14 +31,15 @@ const labelled = (actor, id = 9001) => ({
   complete: true,
   items: [{ id, event: 'labeled', label: { name: 'tessl' }, actor }],
 });
-const admission = (event = 9001, node = 'I_node40') => ({
+const DIGEST = contentDigest('Item', 'Do it.');
+const admission = (event = 9001, node = 'I_node40', digest = DIGEST) => ({
   user: bot,
   performed_via_github_app: { id: BOT_APP_ID },
   body: admissionMarker({
     issue: 40,
     node,
     slot: 'dispatch-2026-10-31T0020',
-    digest: 'a'.repeat(64),
+    digest,
     event,
     request: requestId(40, event),
   }),
@@ -185,4 +186,15 @@ test('a new label generation is a new key, and an old generation stays claimed',
   assert.equal((await go(next, RUN_B)).status, 'claimed');
   assert.equal(w.refs.size, 2);
   assert.ok(identity(40, issue(), labelled(owner), { complete: true, items: [] }).key);
+});
+
+test('a bot handoff whose content changed after admission never enters', async () => {
+  const w = world({
+    events: labelled(bot),
+    comments: [admission(9001, 'I_node40', 'b'.repeat(64))],
+  });
+  const r = await go(w, RUN_A);
+  assert.equal(r.status, 'refused');
+  assert.match(r.reason, /content changed since admission/);
+  assert.equal(w.refs.size, 0);
 });

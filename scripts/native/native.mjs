@@ -580,12 +580,7 @@ async function awaitingRun(adapter, number, now, issue) {
       d.node === issue?.node_id &&
       d.request === requestId(number, labelEvent.id),
   );
-  if (owed && isBot(labelEvent.actor)) {
-    const r = await admitIssue(adapter, { number, nodeId: issue.node_id, id: issue.id }, now);
-    if (r.status === 'refused') return null;
-    if (r.status === 'uncertain') return { status: 'blocked', issue: number, retried: r };
-    return { status: 'busy', waitingOn: number, retried: r };
-  }
+  if (owed && isBot(labelEvent.actor)) return retryAdmission(adapter, number, now, issue);
   const at = events.items
     .filter((e) => e.event === 'labeled' && e.label?.name === TRIGGER_LABEL)
     .at(-1)?.created_at;
@@ -593,7 +588,17 @@ async function awaitingRun(adapter, number, now, issue) {
   if (!at || now - new Date(at) < ADMIT_GRACE_MS) return { status: 'busy', waitingOn: number };
   const last = events.items.filter((e) => e.label?.name === TRIGGER_LABEL).at(-1);
   if (!isBot(last?.actor)) return { status: 'busy', waitingOn: number };
-  return null;
+  // Past the grace with no admission and no admit run pending: the admit run
+  // refused, or deferred on a read that failed and could write no record.
+  // Retry the original admission with fresh guards; only a refusal frees it.
+  return retryAdmission(adapter, number, now, issue);
+}
+
+async function retryAdmission(adapter, number, now, issue) {
+  const r = await admitIssue(adapter, { number, nodeId: issue?.node_id, id: issue?.id }, now);
+  if (r.status === 'refused') return null;
+  if (r.status === 'uncertain') return { status: 'blocked', issue: number, retried: r };
+  return { status: 'busy', waitingOn: number, retried: r };
 }
 
 export const MISSING_LABEL_ROUTE =

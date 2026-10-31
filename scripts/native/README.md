@@ -79,10 +79,13 @@ current label event and node calls the same admission again, with every
 guard read fresh. It uses the original request id, never relabels, makes no
 new generation and fabricates no event. Deferred again keeps the queue on
 that issue. A refusal (taken back, held, assigned, a person commented,
-content changed, an earlier run) frees the queue and nothing resumes it. A
-read that fails blocks dispatch, so the owed work stays owed. A deferral
-from a failed read alone writes no record, so it falls back to the 90-minute
-grace below and is not retried.
+content changed, an earlier run) frees the queue for that dispatch and
+writes nothing. A later dispatch checks again, and admission can pass only
+if every guard passes then: a label removed or a person comment never
+clears, so taken-back work never resumes. A read that fails blocks dispatch,
+so the owed work stays owed. A deferral from a failed read alone writes no
+record. Once the 90-minute grace passes with no admission and no admit run
+pending, dispatch retries that admission the same way.
 
 ## Implementation entry guard
 
@@ -172,7 +175,8 @@ that runs as that app can write these records. Nothing narrower is claimed.
       the admission record, dispatch reports `blocked` for a person, and
       stays blocked, rather than calling it idle;
     - the bot's label, never admitted: busy for 90 minutes, then, with no
-      admit run still pending, `admit` refused it and the queue moves on.
+      admit run still pending, dispatch retries the original admission. A
+      refusal moves the queue on; deferred keeps it busy.
 
     That issue is never relabelled;
 
