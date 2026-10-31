@@ -150,3 +150,7 @@ platform review, and it cannot turn a denied action into an authorized one.
 
 `WORKSHOP.md` walks people through the workshop this repo was built for, module
 by module.
+
+# Agent Rules <!-- tessl-managed -->
+
+@.tessl/RULES.md follow the [instructions](.tessl/RULES.md)

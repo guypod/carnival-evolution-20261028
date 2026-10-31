@@ -1,4 +1,5 @@
 import { canvasFont, recordScore, theme, type CarnivalGame } from '../../carnival';
+import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../../midway/motion';
 
 const { width: WIDTH, height: HEIGHT } = theme.canvas;
 
@@ -14,6 +15,10 @@ const TARGETS_PER_RAIL = 3;
 /** The streak multiplier never goes above this. */
 export const MAX_MULTIPLIER = 3;
 const POPUP_LIFE = 0.8;
+/** Pixels a score popup floats up over its life: well short of the rail above. */
+export const POPUP_RISE = 12;
+/** The solid plate behind every score popup, so the text never sits on the shelves. */
+export const POPUP_PLATE = theme.colors.background;
 /** How far the barrel reaches from the middle of the cannon. */
 export const BARREL_LENGTH = 46;
 /** Seconds a shot's water jet stays on screen. */
@@ -291,6 +296,25 @@ export function step(state: WaterCannonState, dt: number): void {
   if (state.tank === 0 && state.shots.length === 0) state.phase = 'over';
 }
 
+/**
+ * How far a score popup has floated up after `age` seconds. It rises
+ * `POPUP_RISE` pixels at most, and under Quiet it holds still.
+ */
+export function popupRise(age: number, quiet: boolean): number {
+  if (quiet) return 0;
+  return Math.min(age / POPUP_LIFE, 1) * POPUP_RISE;
+}
+
+/** A hit's popup text: its points and, on a streak, its multiplier. */
+export function popupLabel(splash: Splash): string {
+  return splash.multiplier > 1 ? `+${splash.points} x${splash.multiplier}` : `+${splash.points}`;
+}
+
+/** A hit's popup colour: accent on a streak, the theme's text colour otherwise. */
+export function popupColor(splash: Splash): string {
+  return splash.multiplier > 1 ? theme.colors.accent : theme.colors.text;
+}
+
 const PAGE_CONTROLS = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
 
 export type KeyAction = { type: 'select'; mode: ModeId } | { type: 'start' } | { type: 'replay' };
@@ -415,6 +439,7 @@ function draw(
   ctx: CanvasRenderingContext2D,
   state: WaterCannonState,
   aim: { x: number; y: number },
+  quiet = false,
 ) {
   const { colors } = theme;
 
@@ -501,17 +526,29 @@ function draw(
   }
   ctx.globalAlpha = 1;
 
-  // Score popups float up from each splash and fade.
+  // Score popups sit on a solid plate above each splash and float up a little.
+  // They stay opaque, so the text keeps its contrast with the plate.
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   for (const splash of state.splashes) {
-    ctx.globalAlpha = 1 - splash.age / POPUP_LIFE;
     const bonus = splash.multiplier > 1;
-    ctx.fillStyle = bonus ? colors.accent : colors.text;
     ctx.font = canvasFont(bonus ? 'title' : 'body', 'bold');
-    const label = bonus ? `+${splash.points} x${splash.multiplier}` : `+${splash.points}`;
-    ctx.fillText(label, splash.x, splash.y - 20 - splash.age * 60);
+    const label = popupLabel(splash);
+    const size = theme.font[bonus ? 'title' : 'body'];
+    const w = ctx.measureText(label).width + 16;
+    const h = size + 8;
+    const y = splash.y - 26 - popupRise(splash.age, quiet);
+    ctx.fillStyle = POPUP_PLATE;
+    ctx.strokeStyle = popupColor(splash);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(splash.x - w / 2, y - h / 2, w, h, h / 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = popupColor(splash);
+    ctx.fillText(label, splash.x, y);
   }
-  ctx.globalAlpha = 1;
+  ctx.textBaseline = 'alphabetic';
 
   // Cannon, pointing at the aim.
   ctx.save();
@@ -604,6 +641,15 @@ export const waterCannon: CarnivalGame = {
       event.preventDefault();
       state = applyAction(state, action);
     };
+    // Read Quiet before adding listeners, and treat a throwing query as no
+    // preference, so a failed lookup can't strand them.
+    let systemReduces: boolean;
+    try {
+      systemReduces = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
+    } catch {
+      systemReduces = false;
+    }
+    const quiet = isQuiet(motionPreference.load(), systemReduces);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerdown', onDown);
     window.addEventListener('keydown', onKeyDown);
@@ -617,7 +663,7 @@ export const waterCannon: CarnivalGame = {
       step(state, dt);
       const finalScore = takeFinalScore(state);
       if (finalScore !== null) recordScore(waterCannon.id, finalScore);
-      draw(ctx, state, aim);
+      draw(ctx, state, aim, quiet);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
