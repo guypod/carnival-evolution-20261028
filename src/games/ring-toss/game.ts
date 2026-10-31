@@ -283,7 +283,7 @@ function draw(ctx: CanvasRenderingContext2D, state: RingTossState, aim: { x: num
         : landing.points > 0
           ? `+${landing.points}`
           : 'Miss',
-      landing.x,
+      Math.min(Math.max(landing.x, 48), WIDTH - 48),
       labelY,
     );
   }
