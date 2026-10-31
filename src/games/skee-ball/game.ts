@@ -35,6 +35,8 @@ export interface SkeeState {
   lastRoll: number | undefined;
   /** Whether the last ball had too little power, too much, or reached the centre ring. */
   lastAim: Aim | undefined;
+  /** Where the last ball came to rest: its lane, distance up the ramp and the ring it dropped into. */
+  lastBall: Landing | undefined;
   scoreRecorded: boolean;
   /** The last save threw. Only an explicit replay or exit tries again. */
   saveFailed: boolean;
@@ -51,6 +53,7 @@ export function createState(): SkeeState {
     score: 0,
     lastRoll: undefined,
     lastAim: undefined,
+    lastBall: undefined,
     scoreRecorded: false,
     saveFailed: false,
   };
@@ -74,6 +77,23 @@ export function aimFor(lane: number, power: number): Aim {
   const off = power - TARGETS[clampLane(lane)];
   if (Math.abs(off) <= RINGS[0].within + 1e-9) return 'on';
   return off < 0 ? 'under' : 'over';
+}
+
+export interface Landing {
+  lane: number;
+  /** How far up the ramp the ball stopped, 0 at the player end. */
+  distance: number;
+  /** Index into RINGS of the ring it dropped into, or undefined when it missed. */
+  ring: number | undefined;
+}
+
+/** Where a ball released with `power` at `lane` comes to rest, and the ring it drops into. */
+export function landingFor(lane: number, power: number): Landing {
+  const l = clampLane(lane);
+  const distance = ballDistance(power, 1);
+  const off = Math.abs(distance - TARGETS[l]);
+  const ring = RINGS.findIndex((r) => off <= r.within + 1e-9);
+  return { lane: l, distance, ring: ring === -1 ? undefined : ring };
 }
 
 const AIM_TEXT: Record<Aim, string> = {
@@ -124,6 +144,7 @@ function land(state: SkeeState): void {
   state.score += points;
   state.lastRoll = points;
   state.lastAim = aimFor(state.lane, state.power);
+  state.lastBall = landingFor(state.lane, state.power);
   state.ballsLeft -= 1;
   state.meterTime = 0;
   state.phase = state.ballsLeft === 0 ? 'over' : 'aiming';
@@ -218,6 +239,50 @@ function rampY(distance: number): number {
   return RAMP.y + RAMP.h - distance * RAMP.h;
 }
 
+/** How much narrower the far end of the alley is drawn than the player end. */
+const FAR_SCALE = 0.55;
+
+/** The drawing scale at a distance up the alley: 1 at the player, FAR_SCALE at the top. */
+function depthScale(distance: number): number {
+  return 1 - (1 - FAR_SCALE) * Math.min(Math.max(distance, 0), 1);
+}
+
+/** Canvas x for a point `offset` lanes from the alley's middle, `distance` up it. */
+function alleyX(offset: number, distance: number): number {
+  return WIDTH / 2 + offset * LANE_W * depthScale(distance);
+}
+
+/** Where the ball is drawn at `distance` up `lane`, and how big. */
+export function ballPosition(lane: number, distance: number): { x: number; y: number; r: number } {
+  const d = Math.min(Math.max(distance, 0), 1);
+  return { x: alleyX(clampLane(lane) - (LANES - 1) / 2, d), y: rampY(d), r: 12 * depthScale(d) };
+}
+
+/** The ellipse drawn for `lane`'s ring `ring` (an index into RINGS). */
+export function ringEllipse(
+  lane: number,
+  ring: number,
+): { x: number; y: number; rx: number; ry: number } {
+  const l = clampLane(lane);
+  const centre = TARGETS[l];
+  const s = depthScale(centre);
+  return {
+    x: alleyX(l - (LANES - 1) / 2, centre),
+    y: rampY(centre),
+    rx: ((LANE_W / 2) * s - 6) * ((ring + 1) / RINGS.length),
+    ry: RINGS[ring].within * RAMP.h,
+  };
+}
+
+/** Whether a canvas point lies inside an ellipse. */
+export function inEllipse(
+  e: { x: number; y: number; rx: number; ry: number },
+  x: number,
+  y: number,
+) {
+  return ((x - e.x) / e.rx) ** 2 + ((y - e.y) / e.ry) ** 2 <= 1 + 1e-6;
+}
+
 function inside(box: { x: number; y: number; w: number; h: number }, x: number, y: number) {
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
 }
@@ -263,33 +328,94 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
     ctx.fillText(AIM_TEXT[state.lastAim], 16, 145);
   }
 
+  // The alley, drawn in perspective: wide at the player end, narrow at the top.
+  const corner = (offset: number, distance: number) =>
+    [alleyX(offset, distance), rampY(distance)] as const;
+  const half = LANES / 2;
+  const quad = (a: number, b: number) => {
+    ctx.beginPath();
+    ctx.moveTo(...corner(a, 0));
+    ctx.lineTo(...corner(b, 0));
+    ctx.lineTo(...corner(b, 1));
+    ctx.lineTo(...corner(a, 1));
+    ctx.closePath();
+  };
+  ctx.fillStyle = colors.surface;
+  quad(-half - 0.15, half + 0.15);
+  ctx.fill();
   ctx.fillStyle = colors.wood;
-  ctx.fillRect(RAMP.x, RAMP.y, RAMP.w, RAMP.h);
+  quad(-half, half);
+  ctx.fill();
+  // Boards across the alley, closer together towards the top.
+  ctx.strokeStyle = colors.background;
+  ctx.globalAlpha = 0.25;
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 10; i++) {
+    const d = 1 - (1 - i / 10) ** 1.4;
+    ctx.beginPath();
+    ctx.moveTo(...corner(-half, d));
+    ctx.lineTo(...corner(half, d));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
   for (let lane = 0; lane < LANES; lane++) {
-    const x = laneCentre(lane);
+    const offset = lane - half;
     if (lane === state.lane && state.phase !== 'ready') {
-      ctx.fillStyle = colors.surface;
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(RAMP.x + lane * LANE_W, RAMP.y, LANE_W, RAMP.h);
+      ctx.fillStyle = colors.text;
+      ctx.globalAlpha = 0.15;
+      quad(offset, offset + 1);
+      ctx.fill();
       ctx.globalAlpha = 1;
     }
     if (lane > 0) {
-      ctx.fillStyle = colors.background;
-      ctx.fillRect(RAMP.x + lane * LANE_W - 1, RAMP.y, 2, RAMP.h);
+      ctx.strokeStyle = colors.background;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(...corner(offset, 0));
+      ctx.lineTo(...corner(offset, 1));
+      ctx.stroke();
     }
-    // Rings, outer first, drawn as bands across the lane at their distances.
-    const centre = TARGETS[lane];
-    const ringColors = [colors.muted, colors.water, colors.accent];
-    [...RINGS].reverse().forEach((ring, i) => {
-      const top = rampY(Math.min(centre + ring.within, 1));
-      const bottom = rampY(centre - ring.within);
-      ctx.fillStyle = ringColors[i];
-      ctx.fillRect(x - LANE_W / 2 + 10, top, LANE_W - 20, bottom - top);
-    });
-    ctx.fillStyle = colors.background;
+    // Rings, outer first, as concentric holes at the lane's target.
+    const ringColors = [colors.accent, colors.water, colors.muted];
+    for (let ring = RINGS.length - 1; ring >= 0; ring--) {
+      const e = ringEllipse(lane, ring);
+      ctx.fillStyle = colors.background;
+      ctx.beginPath();
+      ctx.ellipse(e.x, e.y, e.rx, e.ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = ringColors[ring];
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+    const inner = ringEllipse(lane, 0);
+    ctx.fillStyle = colors.accent;
     ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'center';
-    ctx.fillText('50', x, rampY(centre) + 5);
+    ctx.fillText('50', inner.x, inner.y + 5);
+  }
+
+  // The last ball, resting in the ring it scored, or short of the rings.
+  if (state.lastBall && state.phase !== 'rolling') {
+    const { lane, distance, ring } = state.lastBall;
+    if (ring !== undefined) {
+      const e = ringEllipse(lane, ring);
+      ctx.strokeStyle = colors.text;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(e.x, e.y, e.rx + 3, e.ry + 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const ball = ballPosition(lane, distance);
+    ctx.fillStyle = colors.text;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = ring !== undefined ? colors.accent : colors.muted;
+    ctx.font = canvasFont('body', 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillText(`${state.lastRoll ?? 0}`, ball.x + ball.r + 6, ball.y + 6);
   }
 
   // The power meter, with each lane's 50 band marked for the chosen lane.
@@ -310,15 +436,16 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
   ctx.fillText('Power', METER.x + METER.w / 2, METER.y - 10);
 
   if (state.phase === 'rolling') {
+    const ball = ballPosition(state.lane, ballDistance(state.power, state.flight));
+    ctx.fillStyle = colors.background;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.ellipse(ball.x, ball.y + ball.r * 0.7, ball.r, ball.r * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.fillStyle = colors.text;
     ctx.beginPath();
-    ctx.arc(
-      laneCentre(state.lane),
-      rampY(ballDistance(state.power, state.flight)),
-      12,
-      0,
-      Math.PI * 2,
-    );
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
     ctx.fill();
   }
 
