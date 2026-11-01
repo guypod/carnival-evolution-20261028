@@ -218,6 +218,28 @@ function rampY(distance: number): number {
   return RAMP.y + RAMP.h - distance * RAMP.h;
 }
 
+/**
+ * Where to print each ring's points on `lane`, as distances up the ramp: the
+ * centre ring once at its centre, and every outer ring in the middle of its
+ * band above and below the centre ring. Bands cut off by the top of the ramp
+ * keep only the part that shows.
+ */
+export function ringLabels(lane: number): { points: number; distance: number }[] {
+  const centre = TARGETS[clampLane(lane)];
+  const labels: { points: number; distance: number }[] = [
+    { points: RINGS[0].points, distance: centre },
+  ];
+  for (let i = 1; i < RINGS.length; i++) {
+    const inner = RINGS[i - 1].within;
+    const outer = RINGS[i].within;
+    const top = Math.min(centre + outer, 1);
+    if (top > centre + inner)
+      labels.push({ points: RINGS[i].points, distance: (centre + inner + top) / 2 });
+    labels.push({ points: RINGS[i].points, distance: centre - (inner + outer) / 2 });
+  }
+  return labels;
+}
+
 function inside(box: { x: number; y: number; w: number; h: number }, x: number, y: number) {
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
 }
@@ -287,9 +309,12 @@ function draw(ctx: CanvasRenderingContext2D, state: SkeeState) {
       ctx.fillRect(x - LANE_W / 2 + 10, top, LANE_W - 20, bottom - top);
     });
     ctx.fillStyle = colors.background;
-    ctx.font = canvasFont('small', 'bold');
+    ctx.font = canvasFont('body', 'bold');
     ctx.textAlign = 'center';
-    ctx.fillText('50', x, rampY(centre) + 5);
+    ctx.textBaseline = 'middle';
+    for (const label of ringLabels(lane))
+      ctx.fillText(String(label.points), x, rampY(label.distance) + 1);
+    ctx.textBaseline = 'alphabetic';
   }
 
   // The power meter, with each lane's 50 band marked for the chosen lane.
