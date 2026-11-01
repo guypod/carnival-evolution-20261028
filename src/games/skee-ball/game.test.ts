@@ -16,6 +16,7 @@ import {
   meterPower,
   moveAim,
   pointerAction,
+  ringLabels,
   saveFinalScore,
   scoreRoll,
   setLane,
@@ -255,5 +256,18 @@ describe('skee ball', () => {
     expect(state.lastRoll).toBeUndefined();
     expect(state.lastAim).toBeUndefined();
     expect(state.ballsLeft).toBe(BALLS);
+  });
+
+  it('labels every ring band with the points a ball landing there scores', () => {
+    for (let lane = 0; lane < TARGETS.length; lane++) {
+      const labels = ringLabels(lane);
+      for (const label of labels) expect(scoreRoll(lane, label.distance)).toBe(label.points);
+      const counts = labels.map((label) => label.points).sort((a, b) => b - a);
+      expect(counts).toEqual([50, 20, 20, 10, 10]);
+      for (const label of labels) {
+        expect(label.distance).toBeGreaterThan(0);
+        expect(label.distance).toBeLessThan(1);
+      }
+    }
   });
 });
