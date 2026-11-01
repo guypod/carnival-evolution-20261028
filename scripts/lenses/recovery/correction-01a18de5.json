@@ -1,0 +1,97 @@
+{
+  "correctionId": "correction-learner-1740-coverage-20261030",
+  "target": {
+    "runId": "01a18de5-aa80-720a-8fb2-54b58fc34259",
+    "revision": 0,
+    "claimed": "complete"
+  },
+  "coverage": {
+    "status": "partial",
+    "inspected": [
+      "#250",
+      "#257",
+      "#262",
+      "#263",
+      "#271",
+      "#272",
+      "#276",
+      "#283",
+      "#304",
+      "#375",
+      "#299",
+      "#394",
+      "#398",
+      "#405",
+      "#409"
+    ],
+    "gaps": "The run counted reviews and read selected, truncated comments, bodies and file lists, a capped CI list and visual-repair git history. It did not read full PR diffs, review summary bodies, the visual ledger contents, or tests and live-play evidence. No source was read in full, so there is no through.",
+    "sources": [
+      {
+        "source": "pull-requests",
+        "enumeration": "complete",
+        "read": "truncated",
+        "scope": "the PR list since 2026-10-29T17:40Z; selected bodies, truncated",
+        "gaps": "PR bodies were read truncated"
+      },
+      {
+        "source": "pr-diffs",
+        "enumeration": "none",
+        "read": "none",
+        "scope": "only truncated file lists",
+        "gaps": "no full PR diff was read"
+      },
+      {
+        "source": "review-comments",
+        "enumeration": "count-only",
+        "read": "truncated",
+        "scope": "review counts and selected truncated comments",
+        "gaps": "review comments were counted and read only in part"
+      },
+      {
+        "source": "review-bodies",
+        "enumeration": "count-only",
+        "read": "none",
+        "scope": "review counts only",
+        "gaps": "no review summary body was read"
+      },
+      {
+        "source": "visual-repair",
+        "enumeration": "complete",
+        "read": "truncated",
+        "scope": "factory-state/visual-repair git history",
+        "gaps": "the visual ledger contents were not read"
+      },
+      {
+        "source": "ci-runs",
+        "enumeration": "capped",
+        "read": "truncated",
+        "scope": "a capped CI run list",
+        "gaps": "the CI list hit its cap and runs were not read in full"
+      },
+      {
+        "source": "tests",
+        "enumeration": "none",
+        "read": "none",
+        "scope": "not read",
+        "gaps": "tests were not inspected"
+      },
+      {
+        "source": "live-play",
+        "enumeration": "none",
+        "read": "none",
+        "scope": "not read",
+        "gaps": "no live-play evidence was inspected"
+      }
+    ]
+  },
+  "rationale": "The run recorded complete coverage, but its own report shows it only counted reviews and read selected truncated comments, bodies and file lists, a capped CI list and visual-repair git history. Complete coverage moved the lens-tuning checkpoint past an interval that was never read. This downgrade keeps the run, its proposal a3060372ac14845d and every decision, and restores the owed interval from 2026-10-29T17:40Z.",
+  "evidence": [
+    {
+      "kind": "issue",
+      "ref": "#417",
+      "url": "https://github.com/guypod/carnival-evolution-20261028/issues/417"
+    }
+  ],
+  "correctedBy": "external block coordinator",
+  "correctedAt": "2026-10-30T19:45:00.000Z"
+}
