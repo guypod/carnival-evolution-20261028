@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ACTION_BUTTON,
   BALL_RADIUS,
+  BOUNCE,
   COURSE,
   CUP_RADIUS,
   HELP,
@@ -9,8 +10,10 @@ import {
   MAX_STROKES,
   METER,
   METER_LABEL,
+  PHYSICS_STEP,
   SINK_SPEED,
   aimAt,
+  aimPath,
   beginRound,
   changePower,
   clampPower,
@@ -373,5 +376,113 @@ describe('controls', () => {
     expect(pointerAction(state, 680, 470)).toEqual({ kind: 'putt' });
     putt(state);
     expect(pointerAction(state, 680, 470)).toBeUndefined();
+  });
+});
+
+describe('aim guide', () => {
+  const open = { start: { x: 0, y: 0 }, cup: { x: 0, y: 0 }, walls: [], bumpers: [] };
+
+  it('runs to the first edge and shows the bounce off it', () => {
+    const [start, bounce, next] = aimPath({ x: 400, y: 255 }, Math.PI / 4, open);
+    const bottom = COURSE.y + COURSE.h - BALL_RADIUS;
+    expect(start).toEqual({ x: 400, y: 255 });
+    expect(bounce.x).toBeCloseTo(400 + (bottom - 255));
+    expect(bounce.y).toBeCloseTo(bottom);
+    // Off the bottom edge it keeps BOUNCE of its downward speed, so it climbs
+    // at a shallower slope until the right edge.
+    expect(next.x).toBeCloseTo(COURSE.x + COURSE.w - BALL_RADIUS);
+    expect(next.y).toBeCloseTo(bottom - BOUNCE * (next.x - bounce.x));
+  });
+
+  it('follows the rolling ball through an oblique bounce on hole 1', () => {
+    const state = playing();
+    const hole = HOLES[0];
+    const [, bounce, next] = aimPath(state.ball, Math.PI / 4, hole);
+    state.angle = Math.PI / 4;
+    setPower(state, 1);
+    putt(state);
+    // Roll until the ball has bounced off the bottom edge and reached the wall.
+    while (state.phase === 'rolling' && state.ball.x < next.x - 0.5) step(state, PHYSICS_STEP);
+    expect(bounce.y).toBeCloseTo(COURSE.y + COURSE.h - BALL_RADIUS);
+    expect(next.x).toBeCloseTo(hole.walls[0].x - BALL_RADIUS);
+    // The fixed physics step lands it within a pixel or two of the guide.
+    expect(Math.abs(state.ball.y - next.y)).toBeLessThan(3);
+  });
+
+  it('lets the ball clear a wall corner it only passes near', () => {
+    const hole = HOLES[0];
+    const angle = Math.atan2(-122, 257);
+    const [, bounce] = aimPath(hole.start, angle, hole);
+    // The ray passes about 9.75px from the corner, more than BALL_RADIUS.
+    expect(bounce.y).toBeCloseTo(COURSE.y + BALL_RADIUS);
+  });
+
+  it('bounces off a wall corner the ball does touch', () => {
+    const wall = { x: 400, y: 200, w: 30, h: 100 };
+    const hole = { ...open, walls: [wall] };
+    // Aimed straight at the corner along the diagonal, it meets the round corner.
+    const from = { x: 300, y: 100 };
+    const [, bounce, next] = aimPath(from, Math.PI / 4, hole);
+    const offset = BALL_RADIUS / Math.SQRT2;
+    expect(bounce.x).toBeCloseTo(wall.x - offset);
+    expect(bounce.y).toBeCloseTo(wall.y - offset);
+    expect(next.x).toBeLessThan(bounce.x);
+    expect(next.y).toBeLessThan(bounce.y);
+  });
+
+  it('meets a wall or bumper the ball is resting against', () => {
+    const hole = HOLES[0];
+    const touching = { x: hole.walls[0].x - BALL_RADIUS, y: hole.start.y };
+    const [, bounce, next] = aimPath(touching, 0, hole);
+    expect(bounce.x).toBeCloseTo(touching.x);
+    expect(next.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+    // Aiming away from the wall it rolls to the far edge.
+    const [, away] = aimPath(touching, Math.PI, hole);
+    expect(away.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+
+    const bumper = { x: 400, y: 255, r: 30 };
+    const resting = { x: bumper.x - bumper.r - BALL_RADIUS, y: bumper.y };
+    const [, hit] = aimPath(resting, 0, { ...open, bumpers: [bumper] });
+    expect(hit.x).toBeCloseTo(resting.x);
+    const [, gone] = aimPath(resting, Math.PI, { ...open, bumpers: [bumper] });
+    expect(gone.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+  });
+
+  it('stops at the centre wall of hole 1 and bounces straight back', () => {
+    const hole = HOLES[0];
+    const [, bounce, next] = aimPath(hole.start, 0, hole);
+    expect(bounce.x).toBeCloseTo(hole.walls[0].x - BALL_RADIUS);
+    expect(bounce.y).toBeCloseTo(hole.start.y);
+    expect(next.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+    expect(next.y).toBeCloseTo(hole.start.y);
+  });
+
+  it('bounces off a bumper away from its centre', () => {
+    const bumper = { x: 400, y: 255, r: 30 };
+    const hole = { ...open, bumpers: [bumper] };
+    const [, bounce, next] = aimPath({ x: 200, y: 255 }, 0, hole);
+    expect(bounce.x).toBeCloseTo(bumper.x - bumper.r - BALL_RADIUS);
+    expect(next.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+  });
+
+  it('matches where the rolling ball first bounces on hole 3', () => {
+    const state = createState();
+    startRound(state);
+    while (state.hole < 2) {
+      state.phase = 'holeDone';
+      nextHole(state);
+    }
+    const hole = HOLES[2];
+    const angle = Math.atan2(hole.cup.y - hole.start.y, hole.cup.x - hole.start.x);
+    const [, bounce] = aimPath(state.ball, angle, hole);
+    expect(bounce.x).toBeCloseTo(hole.walls[0].x - BALL_RADIUS);
+
+    setPower(state, 1);
+    state.angle = angle;
+    putt(state);
+    while (state.phase === 'rolling' && state.velocity.x > 0) step(state, 1 / 240);
+    expect(state.velocity.x).toBeLessThan(0);
+    expect(state.ball.x).toBeCloseTo(bounce.x, 0);
+    expect(state.ball.y).toBeCloseTo(bounce.y, -1);
   });
 });
