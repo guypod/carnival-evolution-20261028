@@ -1,4 +1,5 @@
 import { canvasFont, recordScore, theme, type CarnivalGame } from '../../carnival';
+import { REDUCED_MOTION_QUERY, isQuiet, motionPreference } from '../../midway/motion';
 
 const { width: WIDTH, height: HEIGHT } = theme.canvas;
 
@@ -170,6 +171,19 @@ export function step(state: DartsState, dt: number): void {
   if (state.phase === 'playing' && state.dartsLeft === 0 && !state.dart) state.phase = 'over';
 }
 
+/**
+ * Where a dart in the air is drawn: on the line from the thrower at the bottom
+ * of the board to its landing point, reaching it as the flight ends. In Quiet
+ * mode the dart does not fly: it shows at its landing point straight away.
+ */
+export function dartPosition(dart: Dart, quiet = false): { x: number; y: number } {
+  const t = quiet ? 1 : Math.min(Math.max(dart.age / FLIGHT_TIME, 0), 1);
+  return {
+    x: THROWER.x + (dart.x - THROWER.x) * t,
+    y: THROWER.y + (dart.y - THROWER.y) * t,
+  };
+}
+
 /** Hits as a whole percentage of the darts thrown. */
 export function accuracy(state: DartsState): number {
   const thrown = DARTS_PER_ROUND - state.dartsLeft;
@@ -294,7 +308,7 @@ function drawResults(ctx: CanvasRenderingContext2D, lines: string[], title: stri
   lines.forEach((line, i) => ctx.fillText(line, WIDTH / 2, HEIGHT / 2 + i * 30));
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
+function draw(ctx: CanvasRenderingContext2D, state: DartsState, quiet: boolean) {
   const { colors } = theme;
   ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -367,9 +381,7 @@ function draw(ctx: CanvasRenderingContext2D, state: DartsState) {
 
   // The dart in flight.
   if (state.dart) {
-    const t = Math.min(state.dart.age / FLIGHT_TIME, 1);
-    const x = THROWER.x + (state.dart.x - THROWER.x) * t;
-    const y = THROWER.y + (state.dart.y - THROWER.y) * t;
+    const { x, y } = dartPosition(state.dart, quiet);
     const angle = Math.atan2(state.dart.y - THROWER.y, state.dart.x - THROWER.x);
     ctx.strokeStyle = colors.text;
     ctx.lineWidth = 3;
@@ -456,6 +468,10 @@ export const balloonDarts: CarnivalGame = {
       },
     });
 
+    const quiet = isQuiet(
+      motionPreference.load(),
+      window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false,
+    );
     let frame = 0;
     let last = performance.now();
     const loop = (time: number) => {
@@ -464,7 +480,7 @@ export const balloonDarts: CarnivalGame = {
       last = time;
       step(state, dt);
       save();
-      draw(ctx, state);
+      draw(ctx, state, quiet);
     };
     frame = requestAnimationFrame(loop);
 
