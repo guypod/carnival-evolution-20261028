@@ -375,6 +375,8 @@ export const METER = { x: 300, y: 456, w: 270, h: 26 } as const;
 export const HELP = { x: 16, y: 446, w: 214, h: 46 } as const;
 /** The "Power" label, between the help and the meter. */
 export const METER_LABEL = { x: 240, y: 456, w: 52, h: 26 } as const;
+/** The hole result, below the green in place of the help and meter, so the course stays in view. */
+export const RESULT_BANNER = { x: 16, y: 446, w: 570, h: 48 } as const;
 
 function inside(box: { x: number; y: number; w: number; h: number }, x: number, y: number) {
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
@@ -490,7 +492,7 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
     ctx.fill();
   }
 
-  if (state.phase === 'aiming' || state.phase === 'rolling' || state.phase === 'holeDone') {
+  if (state.phase === 'aiming' || state.phase === 'rolling') {
     ctx.fillStyle = colors.text;
     ctx.font = canvasFont('small', 'bold');
     ctx.textAlign = 'left';
@@ -508,7 +510,9 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
     ctx.textAlign = 'left';
     ctx.fillText('Aim: tap the green or Left/Right', HELP.x, HELP.y + 16, HELP.w);
     ctx.fillText('Power: tap the meter or Up/Down', HELP.x, HELP.y + 38, HELP.w);
+  }
 
+  if (state.phase === 'aiming' || state.phase === 'rolling' || state.phase === 'holeDone') {
     const label = state.phase === 'holeDone' ? 'Next' : 'Putt';
     const active = state.phase !== 'rolling';
     ctx.fillStyle = active ? colors.stripeA : colors.surface;
@@ -521,26 +525,27 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
 
   if (state.phase === 'holeDone') {
     const result = state.results[state.results.length - 1];
-    ctx.fillStyle = colors.background;
-    ctx.globalAlpha = 0.8;
-    ctx.fillRect(COURSE.x + 160, COURSE.y + 120, COURSE.w - 320, 110);
-    ctx.globalAlpha = 1;
+    const middle = RESULT_BANNER.x + RESULT_BANNER.w / 2;
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(RESULT_BANNER.x, RESULT_BANNER.y, RESULT_BANNER.w, RESULT_BANNER.h);
     ctx.textAlign = 'center';
-    ctx.font = canvasFont('title', 'bold');
+    ctx.font = canvasFont('body', 'bold');
     ctx.fillStyle = result.sunk ? colors.accent : colors.danger;
     ctx.fillText(
       result.sunk ? `Sunk in ${result.strokes}! +${holeScore(result)}` : `Out of strokes: +0`,
-      WIDTH / 2,
-      COURSE.y + 170,
+      middle,
+      RESULT_BANNER.y + 20,
+      RESULT_BANNER.w - 16,
     );
     ctx.fillStyle = colors.text;
-    ctx.font = canvasFont('body');
+    ctx.font = canvasFont('small');
     ctx.fillText(
       state.hole + 1 >= HOLES.length
         ? 'Press Next to see your total'
         : 'Press Next for the next hole',
-      WIDTH / 2,
-      COURSE.y + 208,
+      middle,
+      RESULT_BANNER.y + 40,
+      RESULT_BANNER.w - 16,
     );
   }
 

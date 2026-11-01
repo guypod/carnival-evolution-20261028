@@ -1,0 +1,565 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import {
+  CAPTURE_PIN,
+  FLOWS,
+  LIMITS,
+  parseArgs,
+  alreadyCaptured,
+  capture,
+  primitive,
+  STEP_LABEL,
+  NODE_IMAGE,
+  PLAYWRIGHT_IMAGE,
+  checkoutProblems,
+  invocationProblems,
+  uploadPaths,
+  privateDir,
+  provenance,
+  publish,
+  stage,
+  validateReport,
+} from './trusted-publish.mjs';
+import {
+  AUTHORITY_PATH,
+  BOT_APP_ID,
+  BOUNDARY,
+  REPOSITORY,
+  authorityProblems,
+} from '../native/native.mjs';
+
+const FLOW = 'mini-putt-hole-next';
+const SHA = 'a'.repeat(40);
+const WRAPPER = 'c'.repeat(40);
+const sha256 = (b) => createHash('sha256').update(b).digest('hex');
+
+/** A PNG header of the given size; enough for signature and IHDR checks. */
+function png(w = 1280, h = 800, tag = '') {
+  const b = Buffer.alloc(64);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'latin1');
+  b.writeUInt32BE(w, 16);
+  b.writeUInt32BE(h, 20);
+  b.write(tag, 40, 'latin1');
+  return b;
+}
+
+/** A report directory as the pinned flow.mjs writes it, then edited. */
+function report(edit = () => {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'tp-test-'));
+  const r = { flow: FLOW, result: 'pass', checks: [], screenshots: [], errors: [] };
+  for (const c of FLOWS[FLOW].checks) r.checks.push({ check: c, result: 'pass' });
+  for (const s of FLOWS[FLOW].states) {
+    const file = `${FLOW}-${s}.png`;
+    const bytes = png(1280, 800, s);
+    writeFileSync(join(dir, file), bytes);
+    r.screenshots.push({ file, sha256: sha256(bytes) });
+  }
+  edit(dir, r);
+  writeFileSync(join(dir, 'flow.json'), JSON.stringify(r));
+  return dir;
+}
+
+test('a capture from the pinned flow validates and stages', () => {
+  const v = validateReport(report(), FLOW);
+  assert.deepEqual(v.problems, []);
+  const s = stage(v, FLOW);
+  assert.deepEqual(s.problems, []);
+  assert.equal(statSync(s.dir).mode & 0o777, 0o700);
+  assert.deepEqual(Object.keys(s.files).sort(), Object.keys(v.files).sort());
+});
+
+test('an unsafe or forged report never validates', () => {
+  const shot = `${FLOW}-hole-done.png`;
+  const cases = {
+    'an extra symlink': (d) => symlinkSync('/etc/passwd', join(d, `${FLOW}-x.png`)),
+    'a screenshot replaced by a symlink': (d) => {
+      const p = join(d, shot);
+      writeFileSync(join(d, '..', `${shot}.${process.pid}`), png());
+      rmSync(p);
+      symlinkSync(join(d, '..', `${shot}.${process.pid}`), p);
+    },
+    'a hardlinked screenshot': (d) =>
+      linkSync(join(d, shot), join(tmpdir(), `tp-link-${Date.now()}-${Math.random()}`)),
+    'an unexpected file': (d) => writeFileSync(join(d, 'extra.txt'), 'x'),
+    'an oversized screenshot': (d, r) => {
+      const big = Buffer.concat([png(), Buffer.alloc(LIMITS.png)]);
+      writeFileSync(join(d, shot), big);
+      r.screenshots[1].sha256 = sha256(big);
+    },
+    'a malformed PNG': (d, r) => {
+      writeFileSync(join(d, shot), 'not a png');
+      r.screenshots[1].sha256 = sha256(Buffer.from('not a png'));
+    },
+    'a PNG of the wrong width': (d, r) => {
+      writeFileSync(join(d, shot), png(640));
+      r.screenshots[1].sha256 = sha256(png(640));
+    },
+    'a digest that does not match': (_, r) => (r.screenshots[0].sha256 = '0'.repeat(64)),
+    'a missing screenshot': (d) => rmSync(join(d, shot)),
+    'a failed check': (_, r) => (r.checks[1].result = 'fail'),
+    'a missing check': (_, r) => r.checks.pop(),
+    'no checks at all': (_, r) => (r.checks = []),
+    'a renamed check': (_, r) => (r.checks[0].check = 'anything passes'),
+    'a page error': (_, r) => r.errors.push('TypeError'),
+    'a failed result': (_, r) => (r.result = 'fail'),
+    'another flow': (_, r) => (r.flow = 'skee-ball-roll'),
+    'a path escape in the report': (_, r) => (r.screenshots[0].file = '../../etc/passwd'),
+  };
+  for (const [name, edit] of Object.entries(cases))
+    assert.notDeepEqual(validateReport(report(edit), FLOW).problems, [], name);
+});
+
+test('a malformed or oversized flow.json never validates', () => {
+  const d = report();
+  writeFileSync(join(d, 'flow.json'), '{not json');
+  assert.notDeepEqual(validateReport(d, FLOW).problems, []);
+  writeFileSync(join(d, 'flow.json'), ' '.repeat(LIMITS.report + 1));
+  assert.match(validateReport(d, FLOW).problems.join(), /too large/);
+});
+
+test('a flow the trusted runner does not register stays owed', () => {
+  assert.match(validateReport(report(), 'skee-ball-roll').problems.join(), /owed/);
+  assert.match(
+    invocationProblems(
+      { pr: '1', candidate: SHA, flow: 'candidate-added', runner: '/r' },
+      WRAPPER,
+    ).join(),
+    /owed/,
+  );
+});
+
+/** An operator authority record as the coordinator would install it. */
+const authority = (extra = {}) => {
+  const record = {
+    schema: 'carnival-browser-authority',
+    version: 1,
+    approved: true,
+    approvedBy: 'operator',
+    repository: REPOSITORY,
+    wrapper: WRAPPER,
+    captureRunner: CAPTURE_PIN,
+    images: { node: NODE_IMAGE, playwright: PLAYWRIGHT_IMAGE },
+    boundary: BOUNDARY,
+    flows: { [FLOW]: FLOWS[FLOW] },
+    bootstrap: null,
+    ...extra,
+  };
+  return { complete: true, record, problems: authorityProblems(record) };
+};
+
+test('publishing needs the operator authority naming this wrapper', () => {
+  const ok = { pr: '450', candidate: SHA, flow: FLOW, runner: '/r' };
+  const pub = { ...ok, publish: true };
+  assert.deepEqual(invocationProblems(ok, WRAPPER), []);
+  assert.deepEqual(invocationProblems(pub, WRAPPER, authority()), []);
+  assert.match(invocationProblems(pub, WRAPPER).join(), /authority record missing/);
+  assert.match(invocationProblems(pub, WRAPPER, { complete: false }).join(), /not read/);
+  assert.match(invocationProblems(pub, 'd'.repeat(40), authority()).join(), /not the approved/);
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ approved: false })).join(),
+    /not operator-approved/,
+  );
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ repository: 'x/y' })).join(),
+    /another repository/,
+  );
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ captureRunner: SHA })).join(),
+    /capture pin/,
+  );
+  assert.match(
+    invocationProblems(
+      pub,
+      WRAPPER,
+      authority({ images: { node: 'node:22', playwright: PLAYWRIGHT_IMAGE } }),
+    ).join(),
+    /images/,
+  );
+  assert.match(
+    invocationProblems(
+      pub,
+      WRAPPER,
+      authority({ flows: { [FLOW]: { checks: ['x'], states: ['y'] } } }),
+    ).join(),
+    /not the operator-approved spec/,
+  );
+  // A --approved-wrapper argument is no longer accepted: only the record decides.
+  assert.throws(() => parseArgs(['--approved-wrapper', WRAPPER]), /unknown argument/);
+  assert.match(invocationProblems({ ...ok, candidate: 'HEAD' }, WRAPPER).join(), /full sha/);
+});
+
+test('the wrapper may be the candidate only under the exact 449 bootstrap', () => {
+  const pub = { pr: '449', candidate: WRAPPER, flow: FLOW, runner: '/r', publish: true };
+  assert.match(invocationProblems(pub, WRAPPER, authority()).join(), /without an exact bootstrap/);
+  const boot = authority({ bootstrap: { pr: 449, head: WRAPPER } });
+  assert.deepEqual(invocationProblems(pub, WRAPPER, boot), []);
+  assert.match(invocationProblems({ ...pub, pr: '450' }, WRAPPER, boot).join(), /bootstrap/);
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ bootstrap: { pr: 450, head: WRAPPER } })).join(),
+    /may only name pull request 449/,
+  );
+  assert.match(
+    invocationProblems(pub, WRAPPER, authority({ bootstrap: { pr: 449, head: SHA } })).join(),
+    /bootstrap head is not the wrapper/,
+  );
+  // An ordinary candidate under a bootstrap record still runs.
+  assert.deepEqual(invocationProblems({ ...pub, candidate: SHA }, WRAPPER, boot), []);
+});
+
+test('an attempt writes only its own evidence folder, never the control record', () => {
+  assert.deepEqual(uploadPaths(SHA, FLOW, ['flow.json']), [`evidence/${SHA}/${FLOW}/flow.json`]);
+  assert.throws(() => uploadPaths(SHA, FLOW, ['../../control/x.json']));
+  assert.throws(() => uploadPaths('control', FLOW, ['x']));
+  assert.throws(() => uploadPaths(SHA, 'candidate-added', ['x']));
+  assert.ok(AUTHORITY_PATH.startsWith('control/'));
+});
+
+test('the runner checkout must be the pin, clean, with pinned primitives', () => {
+  const git = (state) => (_, args) => {
+    if (args[0] === 'rev-parse' && args[1] === 'HEAD') return state.head ?? CAPTURE_PIN;
+    if (args[0] === 'status') return state.dirty ? ' M scripts/visual/flow.mjs' : '';
+    if (args[0] === 'hash-object') return state.changed ? 'x' : 'blob';
+    return 'blob';
+  };
+  const f = ['scripts/visual/flow.mjs'];
+  assert.deepEqual(checkoutProblems(git({}), '/r', CAPTURE_PIN, f), []);
+  assert.match(checkoutProblems(git({ head: SHA }), '/r', CAPTURE_PIN, f).join(), /not 6ae7388/);
+  assert.match(checkoutProblems(git({ dirty: true }), '/r', CAPTURE_PIN, f).join(), /uncommitted/);
+  assert.match(
+    checkoutProblems(git({ changed: true }), '/r', CAPTURE_PIN, f).join(),
+    /not the pinned/,
+  );
+});
+
+test('private directories are fresh and 0700', () => {
+  const a = privateDir('tp-');
+  const b = privateDir('tp-');
+  assert.notEqual(a, b);
+  assert.equal(statSync(a).mode & 0o777, 0o700);
+});
+
+/** A mocked GitHub that records writes; nothing leaves the process. */
+function mock({ heads = [SHA, SHA], uploadSha = 'e'.repeat(40), corrupt = false } = {}) {
+  const writes = [];
+  const gh = async (method, path, body) => {
+    if (method === 'GET') return { head: { sha: heads.shift() } };
+    writes.push({ method, path, body });
+    return { html_url: 'x' };
+  };
+  const stored = {};
+  const uploads = [];
+  const upload = async (dir, files) => {
+    if (!uploadSha) throw new Error('upload unavailable');
+    uploads.push(...Object.keys(files).map((n) => `${dir}/${n}`));
+    for (const [n, b] of Object.entries(files)) stored[`${dir}/${n}`] = sha256(b);
+    return uploadSha;
+  };
+  const readback = async () => {
+    if (corrupt) return { ...stored, [Object.keys(stored)[0]]: '0'.repeat(64) };
+    return stored;
+  };
+  return { gh, upload, readback, writes, uploads };
+}
+
+const staged = () => stage(validateReport(report(), FLOW), FLOW);
+const args = (m) => ({
+  ...m,
+  checkId: 7,
+  pr: '449',
+  candidate: SHA,
+  flow: FLOW,
+  staged: staged(),
+  prov: { candidate: SHA, captureRunner: CAPTURE_PIN, wrapper: WRAPPER, images: { n: 'sha256:1' } },
+});
+
+test('a validated capture is published with its record and provenance', async () => {
+  const m = mock();
+  await publish(args(m));
+  assert.equal(m.writes.length, 1);
+  const body = m.writes[0].body;
+  assert.equal(m.writes[0].path.endsWith('check-runs/7'), true);
+  assert.equal(body.conclusion, 'success');
+  assert.equal(body.external_id, `browser-flow:${FLOW}`);
+  const record = JSON.parse(body.output.text.match(/v1 (\{.*\}) -->/s)[1]);
+  assert.equal(record.head, SHA);
+  assert.equal(record.provenance.captureRunner, CAPTURE_PIN);
+  assert.match(record.provenanceSha256, /^[0-9a-f]{64}$/);
+  // Routine publishing writes the evidence folder only, never the authority record.
+  assert.ok(m.uploads.every((p) => p.startsWith(`evidence/${SHA}/${FLOW}/`)));
+  assert.ok(!m.uploads.includes(AUTHORITY_PATH));
+  assert.ok(m.writes.every((w) => !w.path.includes('contents/control')));
+  assert.equal(record.screenshots.length, 3);
+  assert.ok(record.screenshots.every((s) => s.path.startsWith(`evidence/${SHA}/${FLOW}/`)));
+});
+
+test('a head race, failed upload or bad readback publishes nothing', async () => {
+  for (const [name, m] of Object.entries({
+    'head moved before upload': mock({ heads: ['f'.repeat(40)] }),
+    'head moved after upload': mock({ heads: [SHA, 'f'.repeat(40)] }),
+    'upload unavailable': mock({ uploadSha: null }),
+    'readback differs': mock({ corrupt: true }),
+  })) {
+    await assert.rejects(publish(args(m)), undefined, name);
+    assert.equal(m.writes.length, 0, name);
+  }
+});
+
+test('provenance binds the anchored authority commit and the supported run', () => {
+  const anchor = 'a1'.repeat(20);
+  const run = { id: 'r1', route: 'owner-action', environment: 'env', authorityCommit: anchor };
+  const p = provenance({
+    pr: '449',
+    flow: 'mini-putt-hole-next',
+    candidate: 'e'.repeat(40),
+    wrapper: 'e'.repeat(40),
+    images: {},
+    authority: { anchor, run, problems: [] },
+  });
+  assert.equal(p.authorityCommit, anchor);
+  assert.deepEqual(p.run, run);
+  // Without an anchored authority, nothing is bound and the gate refuses it.
+  const bare = provenance({ pr: '449', flow: 'mini-putt-hole-next', candidate: 'e'.repeat(40) });
+  assert.equal(bare.authorityCommit, null);
+  assert.equal(bare.run, null);
+});
+
+test('publishing refuses an authority without an anchor or a supported run', () => {
+  const o = {
+    pr: '449',
+    candidate: 'e'.repeat(40),
+    flow: 'mini-putt-hole-next',
+    runner: '/r',
+    publish: true,
+  };
+  for (const problems of [
+    ['authority anchor CARNIVAL_AUTHORITY_COMMIT missing or invalid'],
+    ['run is not the native scheduled dispatch or the owner bootstrap action'],
+  ])
+    assert.match(
+      invocationProblems(o, 'e'.repeat(40), { complete: true, record: undefined, problems }).join(),
+      new RegExp(problems[0].split(' ').slice(0, 3).join(' ')),
+    );
+});
+
+const dockerUp = spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0;
+const SMALL = 'busybox:1.36';
+const haveSmall =
+  dockerUp && spawnSync('docker', ['image', 'inspect', SMALL], { stdio: 'ignore' }).status === 0;
+const running = (id) =>
+  spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', id], {
+    encoding: 'utf8',
+  }).stdout.trim();
+
+test(
+  'a hung primitive stops only its own containers; an unrelated sentinel survives',
+  { skip: !haveSmall && 'needs Docker with busybox:1.36' },
+  () => {
+    const runner = mkdtempSync(join(tmpdir(), 'runner-'));
+    mkdirSync(join(runner, 'scripts/visual'), { recursive: true });
+    // Before: every new container from the capture images was killed, so an
+    // operator's container started during the step died too. After: only the
+    // ones carrying this step's label.
+    const sentinel = spawnSync(
+      'docker',
+      ['run', '-d', '--rm', '--network', 'none', SMALL, 'sleep', '120'],
+      { encoding: 'utf8' },
+    ).stdout.trim();
+    try {
+      writeFileSync(
+        join(runner, 'scripts/visual/hang.sh'),
+        `docker run --rm --network none ${SMALL} sleep 600\n`,
+      );
+      const homes = () =>
+        readdirSync(tmpdir()).filter((n) => n.startsWith('carnival-home-')).length;
+      const h0 = homes();
+      const t0 = Date.now();
+      assert.equal(primitive(runner, 'hang.sh', [], { seconds: 3 }), 124);
+      assert.ok(Date.now() - t0 < 30_000);
+      assert.equal(running(sentinel), 'true');
+      const mine = spawnSync('docker', ['ps', '-q', '--filter', `label=${STEP_LABEL}`], {
+        encoding: 'utf8',
+      }).stdout.trim();
+      assert.equal(mine, '');
+      // A clean step succeeds and leaves no HOME behind.
+      writeFileSync(
+        join(runner, 'scripts/visual/ok.sh'),
+        `docker run --rm --network none ${SMALL} true\n`,
+      );
+      assert.equal(primitive(runner, 'ok.sh', [], { seconds: 30 }), 0);
+      assert.equal(homes(), h0);
+      assert.equal(running(sentinel), 'true');
+    } finally {
+      spawnSync('docker', ['kill', sentinel], { stdio: 'ignore' });
+      rmSync(runner, { recursive: true, force: true });
+    }
+  },
+);
+
+test('a step whose own containers cannot be listed or stopped fails closed', () => {
+  const runner = mkdtempSync(join(tmpdir(), 'runner-'));
+  mkdirSync(join(runner, 'scripts/visual'), { recursive: true });
+  writeFileSync(join(runner, 'scripts/visual/ok.sh'), 'exit 0\n');
+  const id = 'a'.repeat(64);
+  const calls = [];
+  const fake = (ps, kill, afterKill = { status: 0, stdout: '' }) => {
+    let killed = false;
+    return (cmd, args, opts) => {
+      if (cmd === 'docker') {
+        calls.push(args);
+        // Every Docker control call is bounded.
+        assert.ok(opts?.timeout > 0);
+        if (args[0] === 'ps') return killed ? afterKill : ps;
+        if (args[0] === 'kill') {
+          killed = kill.status === 0;
+          return kill;
+        }
+      }
+      return spawnSync(cmd, args, opts);
+    };
+  };
+  // Before: a failed `docker ps` read as "no containers".
+  assert.equal(primitive(runner, 'ok.sh', [], { run: fake({ status: 1, stdout: '' }) }), 125);
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake({ status: 0, stdout: `${id}\n` }, { status: 1 }) }),
+    125,
+  );
+  // A step that left its own container running is not a clean pass.
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake({ status: 0, stdout: `${id}\n` }, { status: 0 }) }),
+    124,
+  );
+  // A kill that left the step's container running, or a listing that fails afterwards, fails closed.
+  const still = { status: 0, stdout: `${id}\n` };
+  assert.equal(primitive(runner, 'ok.sh', [], { run: fake(still, { status: 0 }, still) }), 125);
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake(still, { status: 0 }, { status: 1, stdout: '' }) }),
+    125,
+  );
+  // A hung `docker ps` is cut off at its bound and reads as unknown.
+  assert.equal(
+    primitive(runner, 'ok.sh', [], { run: fake({ error: new Error('ETIMEDOUT'), status: null }) }),
+    125,
+  );
+  // Every listing is scoped to a step label; no image-wide listing.
+  for (const a of calls.filter((a) => a[0] === 'ps')) {
+    assert.ok(a.some((x) => x.startsWith(`label=${STEP_LABEL}=`)));
+    assert.ok(!a.some((x) => x.startsWith('ancestor=')));
+  }
+  rmSync(runner, { recursive: true, force: true });
+});
+
+test('capture removes its disposable workspace on success and failure', () => {
+  const caps = () => readdirSync(tmpdir()).filter((n) => n.startsWith('carnival-capture-')).length;
+  const c0 = caps();
+  for (let i = 0; i < 3; i++)
+    assert.throws(() => capture({ runner: '/nonexistent', candidate: SHA, flow: FLOW }));
+  // Repeated failures leave nothing behind.
+  assert.equal(caps(), c0);
+});
+
+test('an unchanged head with a current authorized pass is not recaptured', () => {
+  const o = { candidate: SHA, flow: FLOW };
+  const run = (id, conclusion, prov) => ({
+    id,
+    name: 'browser-flow',
+    external_id: `browser-flow:${FLOW}`,
+    head_sha: SHA,
+    app: { id: BOT_APP_ID },
+    status: 'completed',
+    conclusion,
+    output: { text: `<!-- carnival-browser-flow:v1 ${JSON.stringify({ provenance: prov })} -->` },
+  });
+  const prov = { authorityCommit: 'a'.repeat(40), wrapper: WRAPPER, candidate: SHA };
+  assert.equal(alreadyCaptured([run(1, 'success', prov)], o, WRAPPER, 'a'.repeat(40)), true);
+  // The newest failed attempt is never skipped over.
+  assert.equal(
+    alreadyCaptured([run(1, 'success', prov), run(2, 'failure', prov)], o, WRAPPER, 'a'.repeat(40)),
+    false,
+  );
+  // A pass under another anchor or wrapper is recaptured.
+  assert.equal(alreadyCaptured([run(1, 'success', prov)], o, WRAPPER, 'b'.repeat(40)), false);
+  assert.equal(
+    alreadyCaptured([run(1, 'success', { ...prov, wrapper: SHA })], o, WRAPPER, 'a'.repeat(40)),
+    false,
+  );
+  assert.equal(alreadyCaptured([run(1, 'success', prov)], o, WRAPPER, undefined), false);
+  assert.equal(
+    alreadyCaptured(
+      [run(1, 'success', prov, { app: { id: 1 } })].map((r) => ({ ...r, app: { id: 1 } })),
+      o,
+      WRAPPER,
+      'a'.repeat(40),
+    ),
+    false,
+  );
+});
+
+test('a hung GitHub call is bounded, never a success, and never retried', async () => {
+  // Before: ghApi used spawnSync with no timeout, so a stalled check-run
+  // create, blob upload, readback or failure PATCH held dispatch forever.
+  // After: each call has a finite bound inside one publication budget.
+  const { ghApi, GH_LIMITS, resetGhBudget, upload, readback } =
+    await import('./trusted-publish.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'gh-hang-'));
+  const log = join(dir, 'calls');
+  writeFileSync(join(dir, 'gh'), `#!/bin/sh\necho "$*" >>${log}\nexec sleep 30\n`, {
+    mode: 0o755,
+  });
+  const PATH = process.env.PATH;
+  process.env.PATH = `${dir}:${PATH}`;
+  const saved = { ...GH_LIMITS };
+  Object.assign(GH_LIMITS, { call: 0.3, total: 0.8 });
+  const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []);
+  try {
+    for (const [name, attempt] of [
+      ['create', () => ghApi('POST', 'repos/x/check-runs', { name: 'browser-flow' })],
+      ['upload', () => upload('evidence/a/b', { 'a.png': Buffer.from('x') })],
+      ['readback', () => readback('a'.repeat(40), 'evidence/a/b')],
+      ['finalize', () => ghApi('PATCH', 'repos/x/check-runs/1', { conclusion: 'success' })],
+      ['failure PATCH', () => ghApi('PATCH', 'repos/x/check-runs/1', {}, { final: true })],
+    ]) {
+      resetGhBudget();
+      rmSync(log, { force: true });
+      const t = Date.now();
+      await assert.rejects(attempt(), /timed out/, name);
+      assert.ok(Date.now() - t < 2000, `${name} returned within its bound`);
+      assert.equal(calls().length, 1, `${name} sent exactly one call, no replay`);
+    }
+    // Writes say their outcome is unknown, and are not retried.
+    resetGhBudget();
+    await assert.rejects(ghApi('POST', 'repos/x/git/commits', {}), /outcome unknown, not retried/);
+    // The whole publication shares one budget: once it is spent, no call is sent.
+    GH_LIMITS.total = 0.5;
+    resetGhBudget();
+    rmSync(log, { force: true });
+    await assert.rejects(ghApi('GET', 'a'), /timed out/);
+    await assert.rejects(ghApi('GET', 'b'), /timed out/);
+    await assert.rejects(ghApi('GET', 'c'), /budget spent/);
+    assert.equal(calls().length, 2);
+    // The failure PATCH still gets its own bounded call after the budget.
+    await assert.rejects(ghApi('PATCH', 'd', {}, { final: true }), /timed out/);
+    assert.equal(calls().length, 3);
+  } finally {
+    process.env.PATH = PATH;
+    Object.assign(GH_LIMITS, saved);
+    resetGhBudget();
+  }
+});
