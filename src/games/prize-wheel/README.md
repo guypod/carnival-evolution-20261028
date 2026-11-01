@@ -21,11 +21,12 @@ The wheel has eight segments, clockwise from the one under the pointer at the
 start: 10, 50, 25, 100, 10, 25, 50 and 5 points. Each spin scores the segment
 it stops on, and the round's score is the total of its five spins, up to 500.
 The total is saved to the carnival's score board once, when the fifth spin
-lands.
+lands. If the save fails, the game says the score was not saved and the action
+becomes **Save again**, which tries once more with the same total.
 
 ## Files
 
 - `game.ts`: the game logic (`createState`, `segmentAt`, `restingAngle`,
-  `spin`, `brake`, `step`, `press`, `actionLabel`, `total`, `takeFinalScore`,
+  `spin`, `brake`, `step`, `press`, `actionLabel`, `total`, `saveFinalScore`,
   `isActionKey`, `listen`) and the `prizeWheel` entry the midway registers.
 - `game.test.ts`: tests for the game logic.

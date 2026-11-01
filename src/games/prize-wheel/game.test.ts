@@ -15,7 +15,7 @@ import {
   segmentAt,
   spin,
   step,
-  takeFinalScore,
+  saveFinalScore,
   total,
   type WheelState,
 } from './game';
@@ -114,19 +114,44 @@ describe('prize wheel', () => {
     expect(actionLabel(state)).toBe('Play again');
   });
 
-  it('hands out the final score once, and only when the round is over', () => {
+  it('saves the final score once, and only when the round is over', () => {
     const state = createState();
+    const saved: number[] = [];
+    const record = (score: number) => void saved.push(score);
     for (let i = 0; i < SPINS - 1; i++) spinOnto(state, 3);
-    expect(takeFinalScore(state)).toBeUndefined();
+    expect(saveFinalScore(state, record)).toBe(false);
     spinOnto(state, 3);
-    expect(takeFinalScore(state)).toBe(SPINS * 100);
-    expect(takeFinalScore(state)).toBeUndefined();
+    expect(saveFinalScore(state, record)).toBe(true);
+    expect(saveFinalScore(state, record)).toBe(false);
+    expect(saved).toEqual([SPINS * 100]);
+  });
+
+  it('keeps the total after a failed save, so the player can save again', () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state = createState();
+    for (let i = 0; i < SPINS; i++) spinOnto(state, 3);
+    const failing = () => {
+      throw new Error('QuotaExceededError');
+    };
+    expect(saveFinalScore(state, failing)).toBe(false);
+    expect(state.saveFailed).toBe(true);
+    expect(state.scoreRecorded).toBe(false);
+    expect(actionLabel(state)).toBe('Save again');
+    // No retry on every frame until the player asks for one.
+    const saved: number[] = [];
+    const record = (score: number) => void saved.push(score);
+    expect(saveFinalScore(state, record)).toBe(false);
+    expect(press(state)).toBe(state);
+    expect(saveFinalScore(state, record)).toBe(true);
+    expect(saved).toEqual([SPINS * 100]);
+    expect(actionLabel(state)).toBe('Play again');
+    quiet.mockRestore();
   });
 
   it('starts a fresh spinning round on Play again', () => {
     const state = createState();
     for (let i = 0; i < SPINS; i++) spinOnto(state, 1);
-    takeFinalScore(state);
+    saveFinalScore(state, () => {});
     const next = press(state);
     expect(next).not.toBe(state);
     expect(next.phase).toBe('spinning');

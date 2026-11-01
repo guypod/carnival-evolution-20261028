@@ -31,12 +31,14 @@ export interface WheelState {
   speed: number;
   /** Points for each spin landed so far. */
   spins: number[];
-  /** Set once the round's total has been handed to the score board. */
+  /** Set once the score board has saved the round's total. */
   scoreRecorded: boolean;
+  /** Set when saving the total failed, until the player asks to try again. */
+  saveFailed: boolean;
 }
 
 export function createState(): WheelState {
-  return { phase: 'ready', angle: 0, speed: 0, spins: [], scoreRecorded: false };
+  return { phase: 'ready', angle: 0, speed: 0, spins: [], scoreRecorded: false, saveFailed: false };
 }
 
 /** `angle` brought into one turn, 0 up to TURN. */
@@ -103,6 +105,11 @@ export function step(state: WheelState, dt: number): void {
  * round starts. Does nothing while the wheel is braking.
  */
 export function press(state: WheelState): WheelState {
+  if (state.phase === 'over' && state.saveFailed) {
+    // Keep the round so the next save attempt still has its total.
+    state.saveFailed = false;
+    return state;
+  }
   if (state.phase === 'over') {
     const next = createState();
     spin(next);
@@ -122,20 +129,28 @@ export function actionLabel(state: WheelState): string | undefined {
     case 'result':
       return 'Next spin';
     case 'over':
-      return 'Play again';
+      return state.saveFailed ? 'Save again' : 'Play again';
     default:
       return undefined;
   }
 }
 
 /**
- * The total the first time it is asked for after the round ends, and
- * undefined before that and every time after, so the score is saved once.
+ * Hands the total to `record` once the round ends, and marks it saved only
+ * when `record` succeeds. A failed save sets `saveFailed` and keeps the total,
+ * so the player can try again instead of losing it. Returns whether it saved.
  */
-export function takeFinalScore(state: WheelState): number | undefined {
-  if (state.phase !== 'over' || state.scoreRecorded) return undefined;
+export function saveFinalScore(state: WheelState, record: (score: number) => void): boolean {
+  if (state.phase !== 'over' || state.scoreRecorded || state.saveFailed) return false;
+  try {
+    record(total(state));
+  } catch (error) {
+    console.error('Prize Wheel could not save the score', error);
+    state.saveFailed = true;
+    return false;
+  }
   state.scoreRecorded = true;
-  return total(state);
+  return true;
 }
 
 const PAGE_CONTROLS = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
@@ -246,7 +261,9 @@ function draw(ctx: CanvasRenderingContext2D, state: WheelState) {
         ? `Spin ${state.spins.length + 1} of ${SPINS}: brake now!`
         : state.phase === 'braking'
           ? 'Slowing down...'
-          : `Landed on ${state.spins[state.spins.length - 1]} points`;
+          : state.saveFailed
+            ? 'Score not saved. Press to try again.'
+            : `Landed on ${state.spins[state.spins.length - 1]} points`;
   ctx.fillText(message, mid, 240);
 
   const label = actionLabel(state);
@@ -301,8 +318,7 @@ export const prizeWheel: CarnivalGame = {
       const dt = Math.min(Math.max((time - last) / 1000, 0), 0.05);
       last = time;
       step(state, dt);
-      const finalScore = takeFinalScore(state);
-      if (finalScore !== undefined) recordScore(prizeWheel.id, finalScore);
+      saveFinalScore(state, (score) => recordScore(prizeWheel.id, score));
       draw(ctx, state);
     };
     frame = requestAnimationFrame(loop);
