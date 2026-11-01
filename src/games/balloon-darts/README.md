@@ -8,6 +8,9 @@ Nine balloons hang in a 3x3 rack. You have nine darts to pop them.
 - Click a balloon to throw at it, or press 1 to 9 for the rack's cells: 1 is
   top left, 3 is top right and 9 is bottom right.
 - A click that is not on a balloon is a miss.
+- Each throw sends a dart up from the bottom of the board to the balloon, and
+  it pops when the dart arrives. In Quiet mode (reduced motion) the dart does
+  not fly: it shows still on the balloon until the pop.
 - One dart flies at a time. A throw while a dart is in the air is ignored and
   costs nothing.
 - When a link or button on the page has focus, the game leaves your keys alone.

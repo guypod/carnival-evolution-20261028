@@ -6,6 +6,7 @@ import {
   STAR_CELL,
   STAR_POINTS,
   STREAK_BONUSES,
+  THROWER,
   accuracy,
   act,
   begin,
@@ -13,6 +14,7 @@ import {
   cellCenter,
   cellForKey,
   createState,
+  dartPosition,
   gameOwnsKey,
   listen,
   saveFinalScore,
@@ -233,5 +235,41 @@ describe('balloon darts', () => {
     win.dispatchEvent(new Event('keydown'));
     expect(handlers.pointerdown).toHaveBeenCalledTimes(1);
     expect(handlers.keydown).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('balloon darts flight', () => {
+  it('flies a dart from the thrower to the chosen cell before the pop', () => {
+    const state = playing();
+    throwDart(state, 2);
+    const dart = state.dart!;
+    const target = cellCenter(2);
+    expect(dartPosition(dart)).toEqual({ x: THROWER.x, y: THROWER.y });
+    step(state, FLIGHT_TIME / 2);
+    const mid = dartPosition(dart);
+    expect(mid.x).toBeCloseTo((THROWER.x + target.x) / 2);
+    expect(mid.y).toBeCloseTo((THROWER.y + target.y) / 2);
+    expect(state.popped[2]).toBe(false);
+    dart.age = FLIGHT_TIME;
+    expect(dartPosition(dart)).toEqual(target);
+  });
+
+  it('keeps the flight time and score unchanged', () => {
+    const state = playing();
+    throwDart(state, STAR_CELL);
+    step(state, FLIGHT_TIME * 0.99);
+    expect(state.popped[STAR_CELL]).toBe(false);
+    expect(state.score).toBe(0);
+    step(state, FLIGHT_TIME * 0.01);
+    expect(state.popped[STAR_CELL]).toBe(true);
+    expect(state.score).toBe(STAR_POINTS);
+  });
+
+  it('shows the dart still at its landing point in Quiet mode', () => {
+    const state = playing();
+    throwDart(state, 6);
+    expect(dartPosition(state.dart!, true)).toEqual(cellCenter(6));
+    step(state, FLIGHT_TIME / 2);
+    expect(dartPosition(state.dart!, true)).toEqual(cellCenter(6));
   });
 });
