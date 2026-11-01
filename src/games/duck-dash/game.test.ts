@@ -23,6 +23,7 @@ import {
   moveDuck,
   resolveArrivals,
   resolveObject,
+  resultRows,
   saveFinalScore,
   seededRng,
   setLane,
@@ -377,5 +378,33 @@ describe('river current', () => {
 
   it('holds still under Quiet', () => {
     expect(currentOffset(3.7, true)).toBe(0);
+  });
+
+  it("lists the round's numbers on the result card", () => {
+    const state = playing(7);
+    for (let t = 0; state.phase === 'playing'; t += 1) {
+      if (t % 7 === 0) moveDuck(state, t % 14 === 0 ? 1 : -1);
+      step(state, 0.05);
+    }
+    expect(state.collected).toBeGreaterThan(0);
+    expect(resultRows(state)).toEqual([
+      { label: 'Stars', value: `${state.collected} (+${state.collected * STAR_POINTS})` },
+      { label: 'Reeds hit', value: `${state.hits}` },
+      { label: 'Streak bonus', value: `+${state.bonus}` },
+      { label: 'Best streak', value: `${state.peakStreak}` },
+      { label: 'Score', value: `${state.score}` },
+    ]);
+  });
+
+  it('shows fixed stats as labelled rows', () => {
+    const state = playing();
+    Object.assign(state, { collected: 4, hits: 2, bonus: 6, peakStreak: 3, score: 36 });
+    expect(resultRows(state).map((r) => `${r.label}: ${r.value}`)).toEqual([
+      'Stars: 4 (+40)',
+      'Reeds hit: 2',
+      'Streak bonus: +6',
+      'Best streak: 3',
+      'Score: 36',
+    ]);
   });
 });
