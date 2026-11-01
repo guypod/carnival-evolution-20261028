@@ -411,6 +411,68 @@ function drawSelector(ctx: CanvasRenderingContext2D, state: WaterCannonState) {
   ctx.fillText('Start (Space)', WIDTH / 2, START_BUTTON.y + 33);
 }
 
+/**
+ * The water cannon: a wooden mount, a water tank behind the pivot, and a brass
+ * barrel turned to `angle`, all outlined so it stands out from the night sky.
+ */
+function drawCannon(ctx: CanvasRenderingContext2D, angle: number) {
+  const { colors } = theme;
+  const { x, y } = CANNON;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = colors.text;
+
+  // Mount: two splayed wooden legs on a plank base.
+  ctx.fillStyle = colors.wood;
+  ctx.beginPath();
+  ctx.moveTo(x - 10, y);
+  ctx.lineTo(x + 10, y);
+  ctx.lineTo(x + 30, HEIGHT - 6);
+  ctx.lineTo(x - 30, HEIGHT - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillRect(x - 40, HEIGHT - 8, 80, 8);
+  ctx.strokeRect(x - 40, HEIGHT - 8, 80, 8);
+
+  // Tank: a riveted drum behind the pivot, with its water level showing.
+  ctx.fillStyle = colors.surface;
+  ctx.fillRect(x - 26, y - 14, 52, 22);
+  ctx.fillStyle = colors.water;
+  ctx.fillRect(x - 26, y - 4, 52, 12);
+  ctx.strokeRect(x - 26, y - 14, 52, 22);
+  ctx.fillStyle = colors.accent;
+  for (const rx of [-20, 20]) {
+    ctx.beginPath();
+    ctx.arc(x + rx, y - 9, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Barrel, pointing at the aim: a brass tube with bands and a flared nozzle.
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = colors.accent;
+  ctx.fillRect(0, -7, BARREL_LENGTH - 6, 14);
+  ctx.strokeRect(0, -7, BARREL_LENGTH - 6, 14);
+  ctx.fillRect(BARREL_LENGTH - 8, -10, 8, 20);
+  ctx.strokeRect(BARREL_LENGTH - 8, -10, 8, 20);
+  ctx.fillStyle = colors.stripeA;
+  ctx.fillRect(14, -7, 4, 14);
+  ctx.fillRect(26, -7, 4, 14);
+  ctx.restore();
+
+  // Pivot hub the barrel turns on.
+  ctx.fillStyle = colors.stripeA;
+  ctx.beginPath();
+  ctx.arc(x, y, 11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = colors.accent;
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function draw(
   ctx: CanvasRenderingContext2D,
   state: WaterCannonState,
@@ -513,17 +575,7 @@ function draw(
   }
   ctx.globalAlpha = 1;
 
-  // Cannon, pointing at the aim.
-  ctx.save();
-  ctx.translate(CANNON.x, CANNON.y);
-  ctx.rotate(shotPath(aim.x, aim.y).angle);
-  ctx.fillStyle = colors.accent;
-  ctx.fillRect(0, -8, BARREL_LENGTH, 16);
-  ctx.restore();
-  ctx.fillStyle = colors.surface;
-  ctx.beginPath();
-  ctx.arc(CANNON.x, CANNON.y, 20, 0, Math.PI * 2);
-  ctx.fill();
+  drawCannon(ctx, shotPath(aim.x, aim.y).angle);
 
   ctx.fillStyle = colors.text;
   ctx.font = canvasFont('body', 'bold');
