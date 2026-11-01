@@ -435,9 +435,12 @@ read in, its last verified result (`verified`: state, time, keys) and its last
 observation (`observed`), kept apart so a failed read never erases a shipped
 result. The merges read are the ones whose turn is oldest, so every merge,
 shipped ones included, is read again within ceil(merges / 60) sweeps however
-many new merges arrive. A merge not read this sweep keeps its verified result,
-or is `verification-unread`. A sweep whose Pages listing failed moves no
-merge's turn. Only the writer-key holder saves the ledger, through a
+many new merges arrive. A merge not read this sweep reports its last
+observation, with its owed reasons, when that observation was not `shipped`
+(a failed or running live check, for example); an older verified success is
+kept beside it as `verified`, never in its place. Otherwise it keeps its
+verified result, or is `verification-unread`. A sweep whose Pages listing
+failed moves no merge's turn and does not overwrite its last observation. Only the writer-key holder saves the ledger, through a
 fast-forward ref update on the branch tip it read: if another writer moved the
 tip, or the result is uncertain, nothing is retried and the next sweep starts
 from the tip it reads. A lost save only repeats reads. An unreadable or
