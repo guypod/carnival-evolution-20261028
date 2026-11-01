@@ -2004,8 +2004,11 @@ export function parseOwedLedger(json) {
  * if never visited, first sighting) is oldest, so a merge waits at most
  * ceil(merges / budget) sweeps and newly arriving commits queue behind it.
  * Shipped merges are revisited in turn, never every sweep. A merge not read
- * this sweep keeps its last verified result; with none it is
- * `verification-unread`. Returns { merges, ledger }, the ledger to save.
+ * this sweep reports its last observation when that owes work (failed,
+ * running or owed), with any older verified success kept beside it as
+ * `verified`, never in its place. Otherwise it reports its last verified
+ * result; with neither it is `verification-unread`. Returns
+ * { merges, ledger }, the ledger to save.
  */
 export function fairReconcile(
   shas,
@@ -2035,18 +2038,29 @@ export function fairReconcile(
     const r = bySha.get(sha);
     if (!r) {
       merges[sha] = prev;
+      const seen = prev.observed;
+      // A newer observation that owes work wins over an older verified success.
+      if (seen && seen.state !== 'shipped')
+        return {
+          sha,
+          state: seen.state,
+          owed: seen.owed?.length ? seen.owed : ['not reconciled this sweep'],
+          observedAt: seen.at,
+          ...(prev.verified ? { verified: prev.verified } : {}),
+        };
       return prev.verified?.state === 'shipped'
         ? { sha, state: 'shipped', keys: prev.verified.keys ?? [], verifiedAt: prev.verified.at }
         : { sha, state: 'verification-unread', owed: ['not reconciled this sweep'] };
     }
-    const observed = { state: r.state, at: now, owed: r.owed ?? [] };
+    // A sweep whose Pages listing failed observed nothing: the last observation stands.
+    const observed = runsUnread ? prev.observed : { state: r.state, at: now, owed: r.owed ?? [] };
     const verified =
       r.state === 'shipped' ? { state: r.state, at: now, keys: r.keys ?? [] } : prev.verified;
     // A sweep whose Pages listing failed made no progress: the merge keeps its turn.
     merges[sha] = {
       ...prev,
       visited: runsUnread ? prev.visited : sweep,
-      observed,
+      ...(observed ? { observed } : {}),
       ...(verified ? { verified } : {}),
     };
     if (r.state !== 'shipped' && prev.verified?.state === 'shipped')

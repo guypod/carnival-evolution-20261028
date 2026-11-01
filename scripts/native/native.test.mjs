@@ -2944,6 +2944,82 @@ test('owed ledger: older and shipped merges are revisited fairly, and kept', () 
     assert.equal(parseOwedLedger(bad), null);
 });
 
+test('owed ledger: an unsampled merge keeps its newer outstanding observation', () => {
+  // Before: the unsampled branch read only `verified`, so a shipped merge that
+  // later observed a failed or running live check was reported shipped again
+  // on the next sweep that skipped it, and dropped out of owedMerges; an
+  // unverified merge lost its owed reasons between visits.
+  const A = 'a'.repeat(40);
+  const B = 'b'.repeat(40);
+  for (const [kind, reason] of [
+    ['failed', 'live flow mini-putt-hole-next failure'],
+    ['running', 'live flow mini-putt-hole-next still running'],
+  ]) {
+    const result = { [A]: 'shipped', [B]: 'shipped' };
+    const rec = (picked) =>
+      picked.map((sha) =>
+        result[sha] === 'shipped'
+          ? { sha, state: 'shipped', keys: ['k'] }
+          : { sha, state: 'deployed-verification-owed', owed: [reason] },
+      );
+    let ledger = null;
+    const sweep = () => {
+      const r = fairReconcile([A, B], {}, 1, ledger, `t${ledger?.sweep ?? 0}`, rec);
+      ledger = JSON.parse(JSON.stringify(r.ledger));
+      return r.merges;
+    };
+    sweep();
+    sweep(); // both read once: both shipped
+    assert.deepEqual(
+      sweep().map((m) => m.state),
+      ['shipped', 'shipped'],
+      kind,
+    );
+    // The third sweep read one of them; the next turn is the other.
+    const next = ledger.merges[A].visited < ledger.merges[B].visited ? A : B;
+    const other = next === A ? B : A;
+    result[next] = 'owed';
+    const seen = sweep().find((m) => m.sha === next);
+    assert.equal(seen.state, 'deployed-verification-owed', kind);
+    // Next sweep reads `other` only; `next` is unsampled and stays owed.
+    const unsampled = sweep();
+    assert.ok(!unsampled.some((m) => m.sha === other && m.state !== 'shipped'));
+    const kept = unsampled.find((m) => m.sha === next);
+    assert.equal(kept.state, 'deployed-verification-owed', `${kind}: not resurrected`);
+    assert.deepEqual(kept.owed, [reason], kind);
+    assert.equal(kept.verified.state, 'shipped', `${kind}: history kept beside it`);
+    assert.deepEqual(
+      owedMerges(unsampled).map((m) => [m.sha, m.owed]),
+      [[next, [reason]]],
+      kind,
+    );
+    assert.equal(ledger.merges[next].verified.state, 'shipped', 'ledger keeps the old success');
+    // Fair rotation is unchanged: the owed merge is read again on its turn.
+    result[next] = 'shipped';
+    assert.equal(sweep().find((m) => m.sha === next).state, 'shipped', kind);
+  }
+  // An unverified merge keeps its actionable reasons while unsampled.
+  const rec = (picked) =>
+    picked.map((sha) => ({ sha, state: 'deploy-failed', owed: [`deploy of ${sha} failed`] }));
+  let ledger = null;
+  let out;
+  for (let i = 0; i < 3; i++) {
+    const r = fairReconcile([A, B], {}, 1, ledger, 't', rec);
+    ledger = JSON.parse(JSON.stringify(r.ledger));
+    out = r.merges;
+  }
+  for (const m of out) {
+    assert.equal(m.state, 'deploy-failed');
+    assert.deepEqual(m.owed, [`deploy of ${m.sha} failed`]);
+    assert.equal(m.verified, undefined);
+  }
+  // A sweep whose Pages listing failed does not overwrite the last observation.
+  const unread = (picked) =>
+    picked.map((sha) => ({ sha, state: 'unknown', owed: ['runs listing incomplete'] }));
+  const r = fairReconcile([A, B], {}, 1, ledger, 't', unread);
+  for (const sha of [A, B]) assert.equal(r.ledger.merges[sha].observed.state, 'deploy-failed');
+});
+
 test('live identity: only a byte-for-byte match of the merge build counts', async () => {
   const dist = mkdtempSync(join(tmpdir(), 'dist-'));
   mkdirSync(join(dist, 'assets'));

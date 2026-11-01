@@ -449,6 +449,7 @@ console.log(out)`,
 import { EventEmitter } from 'node:events';
 import {
   deploymentProblems,
+  liveDeployment,
   liveInvocationProblems,
   liveRecord,
   parseLiveArgs,
@@ -626,4 +627,82 @@ test('liveRecord lists every retained file but flow.json, with the identity repo
     r.screenshots.map((s) => s.path),
     [`${dir}/a.png`, `${dir}/identity.json`],
   );
+});
+
+test('liveDeployment: a hung jobs read is bounded on the before and after paths', async () => {
+  // Before: each attempt's jobs were read with execFileSync and no timeout,
+  // so a stalled read held the publication forever, before or after the check.
+  const {
+    mkdtempSync: mk,
+    writeFileSync: wf,
+    readFileSync: rf,
+    existsSync: ex,
+  } = await import('node:fs');
+  const { ghApi, GH_LIMITS, resetGhBudget } = await import('./trusted-publish.mjs');
+  const dir = mk(join(tmpdir(), 'gh-jobs-hang-'));
+  const log = join(dir, 'calls');
+  const runs = JSON.stringify({
+    workflow_runs: [{ id: 7, head_sha: MERGE, status: 'completed', conclusion: 'success' }],
+  });
+  // The runs listing answers; every jobs read and check-run PATCH hangs.
+  wf(
+    join(dir, 'gh'),
+    `#!/bin/sh\necho "$*" >>${log}\ncase "$*" in *jobs*|*check-runs*) exec sleep 30;; esac\necho '${runs}'\n`,
+    { mode: 0o755 },
+  );
+  const PATH = process.env.PATH;
+  process.env.PATH = `${dir}:${PATH}`;
+  const saved = { ...GH_LIMITS };
+  Object.assign(GH_LIMITS, { call: 0.3, total: 1 });
+  const calls = () => (ex(log) ? rf(log, 'utf8').trim().split('\n') : []);
+  try {
+    resetGhBudget();
+    const t0 = Date.now();
+    let t = t0;
+    await assert.rejects(liveDeployment(MERGE), /jobs.*timed out/, 'before');
+    assert.ok(Date.now() - t < 2000, 'the before read returned within its bound');
+    // After: a check run exists and the same budget is shared, so repeated
+    // reads end in "budget spent" rather than another wait.
+    t = Date.now();
+    await assert.rejects(liveDeployment(MERGE), /timed out/, 'after');
+    assert.ok(Date.now() - t < 2000, 'the after read returned within its bound');
+    let last;
+    for (let i = 0; i < 5 && !/budget spent/.test(last?.message); i++)
+      last = await liveDeployment(MERGE).catch((e) => e);
+    assert.match(last.message, /budget spent/, 'the budget is shared');
+    assert.ok(Date.now() - t0 < GH_LIMITS.total * 1000 + 1500, 'the whole read stays in budget');
+    // The failure PATCH that concludes the existing check still gets one bounded call.
+    const n = calls().length;
+    await assert.rejects(ghApi('PATCH', 'repos/x/check-runs/1', {}, { final: true }), /timed out/);
+    assert.equal(calls().length, n + 1, 'the failure PATCH is still sent, once');
+    assert.ok(calls().every((c) => !c.includes('/jobs') || c.includes('attempts/1/jobs')));
+  } finally {
+    process.env.PATH = PATH;
+    Object.assign(GH_LIMITS, saved);
+    resetGhBudget();
+  }
+});
+
+test('liveDeployment reads every attempt of each run through the bounded call', async () => {
+  const other = 'c'.repeat(40);
+  const runs = [
+    { id: 1, head_sha: MERGE, status: 'completed', conclusion: 'failure', run_attempt: 2 },
+    { id: 2, head_sha: other, status: 'completed', conclusion: 'success', run_attempt: 1 },
+  ];
+  const jobs = {
+    '1/1': [{ name: 'deploy', conclusion: 'success', completed_at: '2026-10-31T01:00:00Z' }],
+    '1/2': [{ name: 'deploy', conclusion: 'failure', completed_at: '2026-10-31T02:00:00Z' }],
+    '2/1': [{ name: 'deploy', conclusion: 'success', completed_at: '2026-10-31T00:00:00Z' }],
+  };
+  const paths = [];
+  const gh = async (method, path) => {
+    paths.push(`${method} ${path}`);
+    const m = path.match(/runs\/(\d+)\/attempts\/(\d+)\/jobs/);
+    return m ? { jobs: jobs[`${m[1]}/${m[2]}`] } : { workflow_runs: runs };
+  };
+  assert.deepEqual(await liveDeployment(MERGE, gh), []);
+  assert.equal(paths.length, 4);
+  assert.ok(paths.every((p) => p.startsWith('GET ')));
+  jobs['2/1'][0].completed_at = '2026-10-31T03:00:00Z';
+  assert.match((await liveDeployment(MERGE, gh)).join(), /replaced on Pages/);
 });

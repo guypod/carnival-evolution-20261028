@@ -418,6 +418,34 @@ export async function liveFromMerge({ runner, mergeSha, flow, upstream, seconds 
   }
 }
 
+/**
+ * Why the merge is not the current Pages deployment, read now. Every read,
+ * the runs listing and each attempt's jobs, goes through the bounded ghApi,
+ * so the before and after reads share the publication budget and a hung
+ * read is a failure, never a wait.
+ */
+export async function liveDeployment(mergeSha, gh = ghApi) {
+  const runs = await gh('GET', `repos/${REPO}/actions/workflows/pages.yml/runs?per_page=50`);
+  // deployContext asks for the jobs of the same runs whatever they hold, so a
+  // dry pass names exactly the runs the old lazy reads touched.
+  const wanted = [];
+  deployContext(mergeSha, runs.workflow_runs, (run) => (wanted.push(run), []));
+  const jobs = new Map();
+  for (const run of wanted) {
+    const out = [];
+    for (let n = 1; n <= Math.max(1, Number(run.run_attempt) || 1); n++)
+      out.push(
+        ...(await gh('GET', `repos/${REPO}/actions/runs/${run.id}/attempts/${n}/jobs?per_page=100`))
+          .jobs,
+      );
+    jobs.set(run.id, out);
+  }
+  return deploymentProblems(
+    mergeSha,
+    deployContext(mergeSha, runs.workflow_runs, (run) => jobs.get(run.id)),
+  );
+}
+
 async function main() {
   const o = parseLiveArgs(process.argv.slice(2));
   const self = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -437,26 +465,9 @@ async function main() {
     for (const p of problems) console.error(p);
     process.exit(o.publish && problems.some((p) => p.endsWith('owed')) ? 3 : 2);
   }
-  const live = async () => {
-    const runs = await ghApi('GET', `repos/${REPO}/actions/workflows/pages.yml/runs?per_page=50`);
-    const jobsOf = (run) => {
-      const out = [];
-      for (let n = 1; n <= Math.max(1, Number(run.run_attempt) || 1); n++)
-        out.push(
-          ...JSON.parse(
-            execFileSync(
-              'gh',
-              ['api', `repos/${REPO}/actions/runs/${run.id}/attempts/${n}/jobs?per_page=100`],
-              { encoding: 'utf8' },
-            ),
-          ).jobs,
-        );
-      return out;
-    };
-    return deploymentProblems(o.merge, deployContext(o.merge, runs.workflow_runs, jobsOf));
-  };
+  const live = () => liveDeployment(o.merge);
   if (o.publish) {
-    const before = await live();
+    const before = await live().catch((e) => [`Pages deploy history not read (${e.message})`]);
     if (before.length) {
       for (const p of before) console.error(`${p}: owed`);
       process.exit(3);
