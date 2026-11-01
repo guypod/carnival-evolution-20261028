@@ -324,6 +324,65 @@ function drawCrown(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fill();
 }
 
+/**
+ * How much a whacked mole is squashed, from the seconds of bonk left: 1 while
+ * it is up, then flattened and widened at the hit, easing back as the bonk ends.
+ */
+export function squash(bonk: number): { x: number; y: number } {
+  if (bonk <= 0) return { x: 1, y: 1 };
+  const t = Math.min(bonk / BONK_TIME, 1);
+  return { x: 1 + 0.25 * t, y: 1 - 0.45 * t };
+}
+
+/**
+ * A mole sitting in its hole at (x, y): a light, outlined face so it reads
+ * against the dark hole, brown mound and night background. A golden mole is
+ * gold with a crown and gold cheeks.
+ */
+function drawMole(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  golden: boolean,
+  scale: { x: number; y: number },
+) {
+  const { colors } = theme;
+  const base = y + 24;
+  ctx.save();
+  ctx.translate(x, base);
+  ctx.scale(scale.x, scale.y);
+  ctx.translate(-x, -base);
+
+  ctx.fillStyle = golden ? colors.accent : colors.text;
+  ctx.strokeStyle = colors.background;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(x, y, 38, Math.PI, 0);
+  ctx.lineTo(x + 38, base);
+  ctx.lineTo(x - 38, base);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = golden ? colors.text : colors.muted;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 8, 18, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = colors.background;
+  ctx.beginPath();
+  ctx.arc(x - 13, y - 10, 5, 0, Math.PI * 2);
+  ctx.arc(x + 13, y - 10, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = colors.danger;
+  ctx.beginPath();
+  ctx.arc(x, y + 2, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (golden) drawCrown(ctx, x, y - 36 * scale.y + 24 * (1 - scale.y));
+}
+
 function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
   const { colors } = theme;
 
@@ -353,23 +412,14 @@ function draw(ctx: CanvasRenderingContext2D, state: MoleState) {
     ctx.ellipse(x, y + 24, HOLE_RADIUS, HOLE_RADIUS * 0.4, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // The dark hole inside the mound, so a light mole stands out against it.
+    ctx.fillStyle = colors.background;
+    ctx.beginPath();
+    ctx.ellipse(x, y + 22, HOLE_RADIUS - 10, HOLE_RADIUS * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     if (hole.up > 0 || hole.bonk > 0) {
-      if (hole.bonk > 0) ctx.fillStyle = colors.muted;
-      else ctx.fillStyle = hole.golden ? colors.accent : colors.surface;
-      ctx.beginPath();
-      ctx.arc(x, y, 38, Math.PI, 0);
-      ctx.fillRect(x - 38, y, 76, 24);
-      ctx.fill();
-      ctx.fillStyle = colors.text;
-      ctx.beginPath();
-      ctx.arc(x - 13, y - 10, 5, 0, Math.PI * 2);
-      ctx.arc(x + 13, y - 10, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = colors.danger;
-      ctx.beginPath();
-      ctx.arc(x, y + 2, 6, 0, Math.PI * 2);
-      ctx.fill();
-      if (hole.golden) drawCrown(ctx, x, y - 36);
+      drawMole(ctx, x, y, hole.golden, squash(hole.bonk));
       if (hole.bonk > 0 || hole.golden) {
         ctx.fillStyle = colors.accent;
         ctx.font = canvasFont('body', 'bold');
