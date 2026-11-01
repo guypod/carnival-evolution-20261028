@@ -5,6 +5,7 @@ import { highStriker } from './high-striker/game';
 import { memoryMenagerie } from './memory-menagerie/game';
 import { miniPutt } from './mini-putt/game';
 import { moleMayhem } from './mole-mayhem/game';
+import { prizeWheel } from './prize-wheel/game';
 import { puppetTheatre } from './puppet-theatre/game';
 import { ringToss } from './ring-toss/game';
 import { skeeBall } from './skee-ball/game';
@@ -22,4 +23,5 @@ export const registry = createRegistry([
   skeeBall,
   miniPutt,
   puppetTheatre,
+  prizeWheel,
 ]);
