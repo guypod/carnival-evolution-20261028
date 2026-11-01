@@ -1,0 +1,36 @@
+{
+  "schema": "carnival-browser-authority",
+  "version": 1,
+  "approved": true,
+  "approvedBy": "Operator selection of this immutable record through the sealed environment anchor",
+  "repository": "guypod/carnival-evolution-20261028",
+  "wrapper": "36815a832fc62c4d74a953fe3d11b04aaceb29d4",
+  "captureRunner": "6ae738884f7d2007f88917b32062d3b276815a09",
+  "images": {
+    "node": "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da",
+    "playwright": "mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48"
+  },
+  "boundary": {
+    "network": "none",
+    "chromiumSandbox": false,
+    "dependencies": "runner-snapshot"
+  },
+  "flows": {
+    "mini-putt-hole-next": {
+      "checks": [
+        "hole ends with the result banner below the green",
+        "Next moves to the next hole",
+        "aim help and meter return after Next"
+      ],
+      "states": [
+        "aiming",
+        "hole-done",
+        "after-next"
+      ]
+    }
+  },
+  "bootstrap": {
+    "pr": 449,
+    "head": "36815a832fc62c4d74a953fe3d11b04aaceb29d4"
+  }
+}
