@@ -1,13 +1,11 @@
 {
   "version": 1,
-  "head": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
+  "head": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
   "reviewedThrough": "6b03265cd61be971ca3453ff3f79e59114633829",
   "pending": [
     "#/records",
     "#/booths",
     "#/balloon",
-    "#/fair",
-    "#/parade",
     "#/expedition",
     "#/workshop",
     "#/play/balloon-darts",
@@ -68,9 +66,9 @@
       "criterion": "controls",
       "note": "Spot grid buttons, collection buttons (Striped Rug, Paper Lantern...), Turn/Put away/Undo/Clear the room and Previous/Next spot are raw grey browser-default buttons with default font size; the Backdrop radios are default blue radio dots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-11-01T00:20:20.098Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -83,9 +81,9 @@
       "criterion": "composition",
       "note": "The room scene sits at left with an empty right half at 1280x800, followed by a long unframed column of controls, a clipped scrolling collection list and a plain ordered list of spots.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-11-01T00:20:20.098Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -98,9 +96,9 @@
       "criterion": "focus-contrast",
       "note": "Locked collection buttons and the disabled Turn/Put away/Undo buttons show light grey text on a mid-grey fill, well under 4.5:1.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-11-01T00:20:20.098Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -113,9 +111,9 @@
       "criterion": "spacing",
       "note": "Collection, backdrop, action buttons and the walk-the-room list are loose blocks without a shared framed panel; the collection list is cut off mid-row (Tiny Mallet Keyring) against the Backdrop fieldset.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-11-01T00:20:20.098Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -128,9 +126,9 @@
       "criterion": "art-integration",
       "note": "The 12 spot buttons under the scene are blank grey bars labelled with a single dot, detached from the drawing they control.",
       "firstSeen": "2026-10-30T04:45:35.510Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z",
+      "seenOn": "2026-11-01T00:20:20.098Z",
       "applied": [
         "394:merged:2026-10-30T15:31:24Z"
       ],
@@ -293,11 +291,11 @@
       "route": "#/postcard",
       "state": "desktop-clean",
       "criterion": "composition",
-      "note": "Still at 0e55deb: the 600px postcard sits left with a large empty area to its right, and below it two long plain bulleted lists repeat the card's contents, so the page reads as a document rather than a souvenir focal point.",
+      "note": "Still at 49c3b41: the 600px postcard sits left with a large empty area to its right, and below it two long plain bulleted lists repeat the card's contents, so the page reads as a document rather than a souvenir focal point.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "open",
-      "seenOn": "2026-10-31T06:52:20.583Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
     },
     {
       "fingerprint": "#/postcard:desktop-clean:spacing",
@@ -306,9 +304,9 @@
       "criterion": "spacing",
       "note": "The 'On the card' and 'Stamps and emblems' sections are plain default bullet lists loose on the background, not grouped in a framed panel with the postcard and its name/download controls.",
       "firstSeen": "2026-10-30T12:19:41.313Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "resolved",
-      "seenOn": "2026-10-31T06:52:20.583Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
     },
     {
       "fingerprint": "#/plush:desktop-clean:controls",
@@ -414,44 +412,44 @@
       "route": "#/fair",
       "state": "desktop-clean",
       "criterion": "art-integration",
-      "note": "Still at 3f87238: placed stall pieces on the plaza grid render as brown missing-glyph boxes (tofu) instead of drawn stalls or benches; the page heading carries a thin white box outline; same at 390px.",
+      "note": "Still at 49c3b41: placed stall and bench pieces on the plaza grid render as brown missing-glyph boxes (tofu) instead of drawn stalls or benches, and the page heading carries a thin white box outline; same at 390px and in Quiet.",
       "firstSeen": "2026-10-30T15:40:27.415Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "open",
-      "seenOn": "2026-10-30T16:36:36.685Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
     },
     {
       "fingerprint": "#/parade:desktop-clean:controls",
       "route": "#/parade",
       "state": "desktop-clean",
       "criterion": "controls",
-      "note": "Float picks, ↑ ↓ × reorder buttons, Stroll/March/Dance and Play/Pause/Restart/End/Save parade are raw grey browser-default buttons with small default text; same at 390px.",
+      "note": "Still at 49c3b41: float picks, the up/down/remove reorder buttons, Stroll/March/Dance, Play/Pause/Restart/End/Save parade (and Previous/Next step in Quiet) are raw grey browser-default buttons with small default text; same at 390px.",
       "firstSeen": "2026-10-30T16:24:35.396Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "open",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
     },
     {
       "fingerprint": "#/parade:desktop-clean:art-integration",
       "route": "#/parade",
       "state": "desktop-clean",
       "criterion": "art-integration",
-      "note": "Float icons on the buttons, list and the route render as missing-glyph boxes (tofu), and the start gate and finale are bare red and yellow rectangles beside a plain brown path on the flat page; same at 390px.",
+      "note": "Still at 49c3b41: float icons on the buttons, the order list and the route render as missing-glyph boxes (tofu); the start gate and finale are a bare red bar and yellow rectangle beside a plain brown path on the flat page; same at 390px.",
       "firstSeen": "2026-10-30T16:24:35.396Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "open",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
     },
     {
       "fingerprint": "#/parade:desktop-focus:focus-contrast",
       "route": "#/parade",
       "state": "desktop-focus",
       "criterion": "focus-contrast",
-      "note": "The focused Ring float button shows only a thin black/white default outline on a pale grey button, and the page heading carries a thin white box outline in the clean state; no theme focus ring.",
+      "note": "Still at 49c3b41: the focused Ring float button shows only a thin black/white default outline on a pale grey button, and in the clean state the page heading carries a thin white box outline; no theme focus ring.",
       "firstSeen": "2026-10-30T16:24:35.396Z",
-      "seenAt": "3f8723831a5744311b755544f6b851c9aea33dd0",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "open",
-      "seenOn": "2026-10-30T16:24:35.396Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
     },
     {
       "fingerprint": "#/circuit:desktop-clean:depth",
@@ -658,26 +656,39 @@
       "route": "#/room",
       "state": "narrow-interaction",
       "criterion": "typography",
-      "note": "Still at 0e55deb: at 390px after placing two objects, the filled spot tiles break labels mid-word ('Paper Lanter / n', 'Stripe / d Rug').",
+      "note": "Still at 49c3b41: at 390px after placing two objects, the filled spot tiles break labels mid-word ('Paper Lanter / n', 'Stripe / d Rug').",
       "firstSeen": "2026-10-30T16:36:36.685Z",
-      "seenAt": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
       "status": "open",
-      "seenOn": "2026-10-31T06:52:20.583Z"
+      "seenOn": "2026-11-01T00:20:20.098Z"
+    },
+    {
+      "fingerprint": "#/fair:desktop-clean:composition",
+      "route": "#/fair",
+      "state": "desktop-clean",
+      "criterion": "composition",
+      "note": "At 1280px the 512px plaza grid sits left with a large empty dark area to its right, then rows of pill buttons and four plain status paragraphs below; the grid has no frame, awning or counter tying it to the controls.",
+      "firstSeen": "2026-11-01T00:20:20.098Z",
+      "seenAt": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
+      "status": "open",
+      "seenOn": "2026-11-01T00:20:20.098Z"
     }
   ],
   "reviewedAt": {
     "#/": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
     "#/prizes": "5f4ba101dcf40f9d7d4fb225e5862d7e12065cb7",
-    "#/room": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+    "#/room": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
     "#/toy": "0cf60d3bb4793a887b08d0edfe88bea3b7a9032a",
     "#/trail": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
     "#/circuit": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
     "#/party": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
-    "#/postcard": "0e55deb9a9db8016a21a229c545bb6823af7aa3c",
+    "#/postcard": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
     "#/plush": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
     "#/tune": "d82487a0aed3c940e728d0fc8850306b61a6bfd4",
     "#/snack": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
-    "#/coaster": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7"
+    "#/coaster": "0eb5cb71e009b677b10e370fb5a0fc7c4967cfb7",
+    "#/fair": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f",
+    "#/parade": "49c3b415a50aafb6606a2eceaa0d6b36bc02898f"
   },
-  "reconciledAt": "2026-10-31T18:18:23.165Z"
+  "reconciledAt": "2026-11-01T00:18:21.927Z"
 }
