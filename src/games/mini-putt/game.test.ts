@@ -11,6 +11,7 @@ import {
   METER_LABEL,
   SINK_SPEED,
   aimAt,
+  aimPath,
   beginRound,
   changePower,
   clampPower,
@@ -373,5 +374,58 @@ describe('controls', () => {
     expect(pointerAction(state, 680, 470)).toEqual({ kind: 'putt' });
     putt(state);
     expect(pointerAction(state, 680, 470)).toBeUndefined();
+  });
+});
+
+describe('aim guide', () => {
+  const open = { start: { x: 0, y: 0 }, cup: { x: 0, y: 0 }, walls: [], bumpers: [] };
+
+  it('runs to the first edge and shows the bounce off it', () => {
+    const [start, bounce, next] = aimPath({ x: 400, y: 255 }, Math.PI / 4, open);
+    const bottom = COURSE.y + COURSE.h - BALL_RADIUS;
+    expect(start).toEqual({ x: 400, y: 255 });
+    expect(bounce.x).toBeCloseTo(400 + (bottom - 255));
+    expect(bounce.y).toBeCloseTo(bottom);
+    // Off the bottom edge it heads up and right until the right edge.
+    expect(next.x).toBeCloseTo(COURSE.x + COURSE.w - BALL_RADIUS);
+    expect(next.y).toBeCloseTo(bottom - (next.x - bounce.x));
+  });
+
+  it('stops at the centre wall of hole 1 and bounces straight back', () => {
+    const hole = HOLES[0];
+    const [, bounce, next] = aimPath(hole.start, 0, hole);
+    expect(bounce.x).toBeCloseTo(hole.walls[0].x - BALL_RADIUS);
+    expect(bounce.y).toBeCloseTo(hole.start.y);
+    expect(next.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+    expect(next.y).toBeCloseTo(hole.start.y);
+  });
+
+  it('bounces off a bumper away from its centre', () => {
+    const bumper = { x: 400, y: 255, r: 30 };
+    const hole = { ...open, bumpers: [bumper] };
+    const [, bounce, next] = aimPath({ x: 200, y: 255 }, 0, hole);
+    expect(bounce.x).toBeCloseTo(bumper.x - bumper.r - BALL_RADIUS);
+    expect(next.x).toBeCloseTo(COURSE.x + BALL_RADIUS);
+  });
+
+  it('matches where the rolling ball first bounces on hole 3', () => {
+    const state = createState();
+    startRound(state);
+    while (state.hole < 2) {
+      state.phase = 'holeDone';
+      nextHole(state);
+    }
+    const hole = HOLES[2];
+    const angle = Math.atan2(hole.cup.y - hole.start.y, hole.cup.x - hole.start.x);
+    const [, bounce] = aimPath(state.ball, angle, hole);
+    expect(bounce.x).toBeCloseTo(hole.walls[0].x - BALL_RADIUS);
+
+    setPower(state, 1);
+    state.angle = angle;
+    putt(state);
+    while (state.phase === 'rolling' && state.velocity.x > 0) step(state, 1 / 240);
+    expect(state.velocity.x).toBeLessThan(0);
+    expect(state.ball.x).toBeCloseTo(bounce.x, 0);
+    expect(state.ball.y).toBeCloseTo(bounce.y, -1);
   });
 });

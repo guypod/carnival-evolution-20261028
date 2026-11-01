@@ -242,6 +242,101 @@ export function collideEdges(state: PuttState): void {
   }
 }
 
+interface RayHit {
+  distance: number;
+  normal: Point;
+}
+
+/** Where a ray from `from` along unit `dir` first enters a box, if it does. */
+function rayIntoBox(from: Point, dir: Point, box: Wall): RayHit | undefined {
+  let near = -Infinity;
+  let far = Infinity;
+  let normal: Point = { x: 0, y: 0 };
+  for (const axis of ['x', 'y'] as const) {
+    const low = box[axis];
+    const high = low + (axis === 'x' ? box.w : box.h);
+    if (dir[axis] === 0) {
+      if (from[axis] < low || from[axis] > high) return undefined;
+      continue;
+    }
+    const a = (low - from[axis]) / dir[axis];
+    const b = (high - from[axis]) / dir[axis];
+    const enter = Math.min(a, b);
+    if (enter > near) {
+      near = enter;
+      const side = dir[axis] > 0 ? -1 : 1;
+      normal = axis === 'x' ? { x: side, y: 0 } : { x: 0, y: side };
+    }
+    far = Math.min(far, Math.max(a, b));
+  }
+  if (near > far || near <= 1e-6) return undefined;
+  return { distance: near, normal };
+}
+
+/** Where a ray from `from` along unit `dir` first meets a circle, if it does. */
+function rayIntoCircle(from: Point, dir: Point, cx: number, cy: number, r: number) {
+  const ox = from.x - cx;
+  const oy = from.y - cy;
+  const along = ox * dir.x + oy * dir.y;
+  const gap = along * along - (ox * ox + oy * oy - r * r);
+  if (gap < 0) return undefined;
+  const distance = -along - Math.sqrt(gap);
+  if (distance <= 1e-6) return undefined;
+  const x = from.x + dir.x * distance - cx;
+  const y = from.y + dir.y * distance - cy;
+  return { distance, normal: { x: x / r, y: y / r } };
+}
+
+/** The first thing the ball's centre meets rolling from `from` along unit `dir`. */
+function firstHit(from: Point, dir: Point, hole: Hole): RayHit {
+  // The edges: the ball's centre stays BALL_RADIUS inside the green.
+  const left = COURSE.x + BALL_RADIUS;
+  const right = COURSE.x + COURSE.w - BALL_RADIUS;
+  const top = COURSE.y + BALL_RADIUS;
+  const bottom = COURSE.y + COURSE.h - BALL_RADIUS;
+  const tx = dir.x > 0 ? (right - from.x) / dir.x : dir.x < 0 ? (left - from.x) / dir.x : Infinity;
+  const ty = dir.y > 0 ? (bottom - from.y) / dir.y : dir.y < 0 ? (top - from.y) / dir.y : Infinity;
+  let best: RayHit =
+    tx < ty
+      ? { distance: Math.max(tx, 0), normal: { x: -Math.sign(dir.x), y: 0 } }
+      : { distance: Math.max(ty, 0), normal: { x: 0, y: -Math.sign(dir.y) } };
+  for (const wall of hole.walls) {
+    const grown = {
+      x: wall.x - BALL_RADIUS,
+      y: wall.y - BALL_RADIUS,
+      w: wall.w + BALL_RADIUS * 2,
+      h: wall.h + BALL_RADIUS * 2,
+    };
+    const hit = rayIntoBox(from, dir, grown);
+    if (hit && hit.distance < best.distance) best = hit;
+  }
+  for (const bumper of hole.bumpers) {
+    const hit = rayIntoCircle(from, dir, bumper.x, bumper.y, bumper.r + BALL_RADIUS);
+    if (hit && hit.distance < best.distance) best = hit;
+  }
+  return best;
+}
+
+/**
+ * The aim guide: where the ball's centre would roll from `from` at `angle` on
+ * `hole`, ignoring friction. Returns three points: the start, where the ball
+ * first meets an edge, wall or bumper, and where it meets the next one after
+ * bouncing off the first.
+ */
+export function aimPath(from: Point, angle: number, hole: Hole): Point[] {
+  const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+  const first = firstHit(from, dir, hole);
+  const bounce = { x: from.x + dir.x * first.distance, y: from.y + dir.y * first.distance };
+  const into = dir.x * first.normal.x + dir.y * first.normal.y;
+  const out = { x: dir.x - 2 * into * first.normal.x, y: dir.y - 2 * into * first.normal.y };
+  const second = firstHit(bounce, out, hole);
+  return [
+    { ...from },
+    bounce,
+    { x: bounce.x + out.x * second.distance, y: bounce.y + out.y * second.distance },
+  ];
+}
+
 /** Whether a ball at `ball` moving at `speed` drops into `cup`. */
 export function dropsIn(ball: Point, speed: number, cup: Point): boolean {
   return Math.hypot(ball.x - cup.x, ball.y - cup.y) <= CUP_RADIUS && speed <= SINK_SPEED;
@@ -469,16 +564,13 @@ function draw(ctx: CanvasRenderingContext2D, state: PuttState) {
   ctx.fill();
 
   if (state.phase === 'aiming') {
-    const length = 30 + state.power * 90;
+    const [start, ...rest] = aimPath(state.ball, state.angle, hole);
     ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 3;
     ctx.setLineDash([6, 6]);
     ctx.beginPath();
-    ctx.moveTo(state.ball.x, state.ball.y);
-    ctx.lineTo(
-      state.ball.x + Math.cos(state.angle) * length,
-      state.ball.y + Math.sin(state.angle) * length,
-    );
+    ctx.moveTo(start.x, start.y);
+    for (const point of rest) ctx.lineTo(point.x, point.y);
     ctx.stroke();
     ctx.setLineDash([]);
   }
